@@ -1,124 +1,152 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
+import { signIn, signOut, useSession } from "next-auth/react";
+
+export type UserRole =
+  | "USER"
+  | "PLAYER"
+  | "REFEREE"
+  | "TOURNAMENT_ADMIN"
+  | "MASTER_ADMIN";
+
+interface User {
+  id: string;
+  email: string;
+  username: string;
+  profileImage?: string;
+  role: UserRole;
+  isApproved: boolean;
+}
 
 interface AuthContextType {
-  user: any;
+  user: User | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  register: (
-    username: string,
-    email: string,
-    password: string
-  ) => Promise<void>;
+  isLoading: boolean;
+  login: (provider: string) => Promise<void>;
+  register: (username: string, email: string, role: UserRole) => Promise<void>;
+  logout: () => Promise<void>;
+  hasRole: (roles: UserRole | UserRole[]) => boolean;
+  isApproved: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const { data: session, status } = useSession();
 
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Update user state when session changes
   useEffect(() => {
-    // Check for token on initial load
-    const token = localStorage.getItem("token");
-    if (token) {
-      validateToken(token);
+    if (status === "loading") {
+      setIsLoading(true);
+      return;
     }
-  }, []);
 
-  const login = async (email: string, password: string) => {
-    try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+    if (session && session.user) {
+      setUser({
+        id: session.user.id as string,
+        email: session.user.email as string,
+        username: session.user.name as string,
+        profileImage: session.user.image || undefined,
+        role: (session.user.role as UserRole) || "USER",
+        isApproved: (session.user.isApproved as boolean) || false,
       });
+      setIsLoading(false);
+    } else {
+      setUser(null);
+      setIsLoading(false);
+    }
+  }, [session, status]);
 
-      if (!response.ok) {
-        throw new Error("Login failed");
-      }
-
-      const data = await response.json();
-
-      // Store token and user info
-      localStorage.setItem("token", data.token);
-      setUser(data.user);
-      setIsAuthenticated(true);
+  // Login using OAuth provider
+  const login = async (provider: string = "google") => {
+    setIsLoading(true);
+    try {
+      await signIn(provider, { callbackUrl: "/dashboard" });
     } catch (error) {
-      console.error("Login error:", error);
+      console.error("Authentication error:", error);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // Register new user
   const register = async (
     username: string,
     email: string,
-    password: string
+    role: UserRole = "USER"
   ) => {
+    setIsLoading(true);
     try {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, email, role }),
       });
 
       if (!response.ok) {
-        throw new Error("Registration failed");
+        const error = await response.json();
+        throw new Error(error.message || "Registration failed");
       }
 
-      const data = await response.json();
-
-      // Auto-login after registration
-      await login(email, password);
+      // After registration, redirect to login
+      await login("google");
     } catch (error) {
       console.error("Registration error:", error);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    // Clear token and user info
-    localStorage.removeItem("token");
-    setUser(null);
-    setIsAuthenticated(false);
-  };
-
-  const validateToken = async (token: string) => {
+  // Logout user
+  const logout = async () => {
     try {
-      const response = await fetch("/api/auth/validate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
-        setIsAuthenticated(true);
-      } else {
-        // Token invalid, logout
-        logout();
-      }
+      await signOut({ callbackUrl: "/" });
     } catch (error) {
-      console.error("Token validation error:", error);
-      logout();
+      console.error("Logout error:", error);
     }
+  };
+
+  // Check if user has specified role(s)
+  const hasRole = (roles: UserRole | UserRole[]): boolean => {
+    if (!user) return false;
+
+    if (Array.isArray(roles)) {
+      return roles.includes(user.role);
+    }
+
+    return user.role === roles;
+  };
+
+  // Check if user is approved
+  const isApproved = (): boolean => {
+    return Boolean(user?.isApproved);
+  };
+
+  const contextValue: AuthContextType = {
+    user,
+    isAuthenticated: !!user,
+    isLoading,
+    login,
+    register,
+    logout,
+    hasRole,
+    isApproved,
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        login,
-        logout,
-        register,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
   );
 }
 
