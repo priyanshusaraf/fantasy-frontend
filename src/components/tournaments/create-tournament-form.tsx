@@ -35,10 +35,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-// Tournament Types & Schema
+// Tournament Types & Schema using zod for validation
 const TournamentTypeEnum = z.enum([
   "SINGLES",
   "DOUBLES",
@@ -94,7 +94,7 @@ const CreateTournamentForm: React.FC = () => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Initialize form with zod resolver
+  // Initialize form with react-hook-form and zod resolver for validation
   const form = useForm<CreateTournamentInput>({
     resolver: zodResolver(TournamentSchema),
     defaultValues: {
@@ -103,19 +103,22 @@ const CreateTournamentForm: React.FC = () => {
       maxParticipants: 16,
       entryFee: 0,
       startDate: new Date(),
-      endDate: new Date(new Date().setDate(new Date().getDate() + 2)), // Default to 2 days after start
+      // Default tournament end date set to 2 days after start
+      endDate: new Date(new Date().setDate(new Date().getDate() + 2)),
       registrationOpenDate: new Date(),
+      // Default registration close date set to 1 day after open
       registrationCloseDate: new Date(
         new Date().setDate(new Date().getDate() + 1)
-      ), // Default to 1 day before start
+      ),
     },
   });
 
   const onSubmit = async (data: CreateTournamentInput) => {
+    // If user is not authenticated, show a toast notification and exit early
     if (!user) {
       toast({
-        title: "Error",
-        description: "You must be logged in to create a tournament",
+        title: "Authentication Required",
+        description: "Please sign in to create a tournament.",
         variant: "destructive",
       });
       return;
@@ -143,17 +146,16 @@ const CreateTournamentForm: React.FC = () => {
       const tournament = await response.json();
 
       toast({
-        title: "Success",
-        description: `Tournament "${tournament.name}" created successfully`,
-        variant: "default",
+        title: "Tournament Created",
+        description: "Your tournament has been created successfully!",
       });
 
-      // Redirect to tournament management page
+      // Redirect to the tournament management page using the new tournament's id
       router.push(`/admin/manage-tournament?id=${tournament.id}`);
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Something went wrong. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -162,7 +164,7 @@ const CreateTournamentForm: React.FC = () => {
   };
 
   return (
-    <Card className="max-w-2xl mx-auto">
+    <Card className="max-w-2xl mx-auto dark:bg-gray-800 dark:text-white">
       <CardHeader>
         <CardTitle>Create New Pickleball Tournament</CardTitle>
       </CardHeader>
@@ -247,7 +249,7 @@ const CreateTournamentForm: React.FC = () => {
               )}
             />
 
-            {/* Dates Section */}
+            {/* Registration Dates Section */}
             <div className="grid md:grid-cols-2 gap-4">
               {/* Registration Open Date */}
               <FormField
@@ -260,7 +262,7 @@ const CreateTournamentForm: React.FC = () => {
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                            variant={"outline"}
+                            variant="outline"
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -277,7 +279,11 @@ const CreateTournamentForm: React.FC = () => {
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent
+                        className="w-auto p-2 dark:bg-gray-800"
+                        align="center"
+                        sideOffset={8}
+                      >
                         <Calendar
                           mode="single"
                           selected={field.value}
@@ -305,7 +311,7 @@ const CreateTournamentForm: React.FC = () => {
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                            variant={"outline"}
+                            variant="outline"
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -322,7 +328,11 @@ const CreateTournamentForm: React.FC = () => {
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent
+                        className="w-auto p-2 dark:bg-gray-800"
+                        align="center"
+                        sideOffset={8}
+                      >
                         <Calendar
                           mode="single"
                           selected={field.value}
@@ -340,9 +350,9 @@ const CreateTournamentForm: React.FC = () => {
               />
             </div>
 
-            {/* Tournament Dates */}
+            {/* Tournament Dates Section */}
             <div className="grid md:grid-cols-2 gap-4">
-              {/* Start Date */}
+              {/* Tournament Start Date */}
               <FormField
                 control={form.control}
                 name="startDate"
@@ -353,7 +363,7 @@ const CreateTournamentForm: React.FC = () => {
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                            variant={"outline"}
+                            variant="outline"
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -370,7 +380,11 @@ const CreateTournamentForm: React.FC = () => {
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent
+                        className="w-auto p-2 dark:bg-gray-800"
+                        align="center"
+                        sideOffset={8}
+                      >
                         <Calendar
                           mode="single"
                           selected={field.value}
@@ -387,7 +401,7 @@ const CreateTournamentForm: React.FC = () => {
                 )}
               />
 
-              {/* End Date */}
+              {/* Tournament End Date */}
               <FormField
                 control={form.control}
                 name="endDate"
@@ -398,7 +412,7 @@ const CreateTournamentForm: React.FC = () => {
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                            variant={"outline"}
+                            variant="outline"
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -415,7 +429,11 @@ const CreateTournamentForm: React.FC = () => {
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent
+                        className="w-auto p-2 dark:bg-gray-800"
+                        align="center"
+                        sideOffset={8}
+                      >
                         <Calendar
                           mode="single"
                           selected={field.value}
@@ -433,7 +451,7 @@ const CreateTournamentForm: React.FC = () => {
               />
             </div>
 
-            {/* Tournament Details */}
+            {/* Tournament Details Section */}
             <div className="grid md:grid-cols-2 gap-4">
               {/* Max Participants */}
               <FormField
@@ -505,7 +523,7 @@ const CreateTournamentForm: React.FC = () => {
               )}
             />
 
-            {/* Rules */}
+            {/* Tournament Rules */}
             <FormField
               control={form.control}
               name="rules"
@@ -524,7 +542,7 @@ const CreateTournamentForm: React.FC = () => {
               )}
             />
 
-            {/* Image URL */}
+            {/* Tournament Image URL */}
             <FormField
               control={form.control}
               name="imageUrl"

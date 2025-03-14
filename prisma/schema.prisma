@@ -196,7 +196,7 @@ model Tournament {
   registrationOpenDate   DateTime
   registrationCloseDate  DateTime
   location               String             @db.VarChar(255)
-  imageUrl               String?
+  imageUrl               String?            @default("https://placehold.co/600x400?text=Tournament+Banner")
   maxParticipants        Int
   entryFee               Decimal            @db.Decimal(10, 2)
   prizeMoney             Decimal?           @db.Decimal(10, 2)
@@ -353,7 +353,6 @@ model FantasyTeamPlayer {
 
   @@unique([teamId, playerId])
 }
-
 model PointsSystem {
   id          Int       @id @default(autoincrement())
   action      String
