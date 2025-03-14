@@ -137,11 +137,22 @@ export async function POST(
 
     // Assign prices based on skill level categories
     selectedPlayers.forEach((player) => {
-      const category = (rules as any).categories?.find(
-        (c: any) => c.playerSkillLevel === player.skillLevel
-      );
+      // Find player category from rules
+      let categoryPrice = 5000; // Default price
+      if (
+        (rules as any).categories &&
+        Array.isArray((rules as any).categories)
+      ) {
+        const category = (rules as any).categories.find(
+          (c: any) => c.playerSkillLevel === player.skillLevel
+        );
 
-      playerPrices[player.id] = category?.price || 5000;
+        if (category) {
+          categoryPrice = category.price;
+        }
+      }
+
+      playerPrices[player.id] = categoryPrice;
     });
 
     // Calculate total cost
@@ -167,7 +178,7 @@ export async function POST(
         contestId,
         totalPoints: 0,
         players: {
-          create: players.map((playerId) => ({
+          create: players.map((playerId: number) => ({
             playerId,
             isCaptain: playerId === captain,
             isViceCaptain: playerId === viceCaptain,

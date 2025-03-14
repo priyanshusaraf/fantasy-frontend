@@ -1,4 +1,6 @@
-// src/components/fantasy/FantasySetupForm.tsx
+// src/components/fantasy-pickleball/FantasySetupForm.tsx
+"use client";
+
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -11,32 +13,42 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { TeamSizeSelector } from "@/components/fantasy/TeamSizeSelector";
-import { CategoryPriceSettings } from "@/components/fantasy/CategoryPriceSettings";
-import { EntryFeeOptions } from "@/components/fantasy/EntryFeeOptions";
-import { TeamChangeOptions } from "@/components/fantasy/TeamChangeOptions";
-import {
-  FantasySettings,
-  FantasyCategory,
-  FantasyEntryFee,
-} from "@/types/fantasy";
-import { toast } from "@/components/ui/sonner";
+import TeamChangeOptions from "@/components/fantasy-pickleball/TeamChangeOptions";
+import { toast } from "sonner";
+
+interface FantasyCategory {
+  name: string;
+  playerSkillLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  price: number;
+}
+
+interface FantasySettings {
+  teamSize: number;
+  walletSize: number;
+  allowTeamChanges: boolean;
+  changeFrequency: "daily" | "matchday" | "once";
+  maxPlayersToChange: number;
+  changeWindowStart: string;
+  changeWindowEnd: string;
+  categories: FantasyCategory[];
+  entryFees: {
+    free: boolean;
+    basic: boolean;
+    premium: boolean;
+    elite: boolean;
+  };
+}
 
 interface FantasySetupFormProps {
   tournamentId: string;
 }
 
-export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
+export default function FantasySetupForm({
+  tournamentId,
+}: FantasySetupFormProps) {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -56,12 +68,12 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
       { name: "C Grade", playerSkillLevel: "INTERMEDIATE", price: 7000 },
       { name: "D Grade", playerSkillLevel: "BEGINNER", price: 5000 },
     ],
-    entryFees: [
-      { amount: 0, isEnabled: true }, // Free
-      { amount: 500, isEnabled: true }, // Basic
-      { amount: 1000, isEnabled: true }, // Premium
-      { amount: 1500, isEnabled: true }, // Elite
-    ],
+    entryFees: {
+      free: true,
+      basic: true,
+      premium: true,
+      elite: true,
+    },
   });
 
   const handleTeamSizeChange = (size: number) => {
@@ -70,6 +82,12 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
 
   const handleWalletSizeChange = (size: number) => {
     setSettings((prev) => ({ ...prev, walletSize: size }));
+  };
+
+  const handleCategoryPriceChange = (index: number, price: number) => {
+    const updatedCategories = [...settings.categories];
+    updatedCategories[index].price = price;
+    setSettings((prev) => ({ ...prev, categories: updatedCategories }));
   };
 
   const handleAllowTeamChangesToggle = (allow: boolean) => {
@@ -94,12 +112,17 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
     }));
   };
 
-  const handleCategoriesUpdate = (categories: FantasyCategory[]) => {
-    setSettings((prev) => ({ ...prev, categories }));
-  };
-
-  const handleEntryFeesUpdate = (entryFees: FantasyEntryFee[]) => {
-    setSettings((prev) => ({ ...prev, entryFees }));
+  const handleEntryFeeToggle = (
+    fee: "free" | "basic" | "premium" | "elite",
+    value: boolean
+  ) => {
+    setSettings((prev) => ({
+      ...prev,
+      entryFees: {
+        ...prev.entryFees,
+        [fee]: value,
+      },
+    }));
   };
 
   const nextStep = () => {
@@ -129,19 +152,11 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
         throw new Error("Failed to set up fantasy game");
       }
 
-      toast({
-        title: "Success",
-        description: "Fantasy game settings have been saved successfully.",
-      });
-
-      router.push(`/tournaments/${tournamentId}`);
+      toast("Fantasy game settings have been saved successfully!");
+      router.push(`/tournaments/${tournamentId}/contests`);
     } catch (error) {
       console.error("Error setting up fantasy game:", error);
-      toast({
-        title: "Error",
-        description: "Failed to set up fantasy game.",
-        variant: "destructive",
-      });
+      toast("Failed to set up fantasy game.");
     } finally {
       setSubmitting(false);
     }
@@ -167,11 +182,44 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
               <p className="text-sm text-gray-500 mb-4">
                 Select how many players users can add to their fantasy teams
               </p>
-              <TeamSizeSelector
-                options={[4, 7, 9, 11]}
-                selectedSize={settings.teamSize}
-                onSelect={handleTeamSizeChange}
-              />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {[4, 7, 9, 11].map((size) => (
+                  <Card
+                    key={size}
+                    className={`cursor-pointer transition-colors ${
+                      settings.teamSize === size
+                        ? "border-[#00a1e0] bg-[#00a1e0]/5"
+                        : "hover:border-gray-300"
+                    }`}
+                    onClick={() => handleTeamSizeChange(size)}
+                  >
+                    <CardContent className="flex items-center justify-center p-4">
+                      <span className="text-lg font-medium">
+                        {size} Players
+                      </span>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <div className="mt-2">
+                <Label htmlFor="custom-size">Custom Size</Label>
+                <Input
+                  id="custom-size"
+                  type="number"
+                  min="2"
+                  max="20"
+                  value={
+                    ![4, 7, 9, 11].includes(settings.teamSize)
+                      ? settings.teamSize
+                      : ""
+                  }
+                  onChange={(e) =>
+                    handleTeamSizeChange(parseInt(e.target.value, 10) || 7)
+                  }
+                  placeholder="Enter custom team size"
+                  className="mt-1"
+                />
+              </div>
             </div>
 
             <Separator />
@@ -205,10 +253,35 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
               <p className="text-sm text-gray-500 mb-4">
                 Set prices for players based on their skill levels
               </p>
-              <CategoryPriceSettings
-                categories={settings.categories}
-                onCategoryChange={handleCategoriesUpdate}
-              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {settings.categories.map((category, index) => (
+                  <Card key={index} className="border p-4">
+                    <div className="flex items-center mb-3">
+                      <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                        {category.playerSkillLevel}
+                      </span>
+                      <span className="font-medium">{category.name}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`price-${index}`}>Player Price (₹)</Label>
+                      <Input
+                        id={`price-${index}`}
+                        type="number"
+                        min="1000"
+                        step="1000"
+                        value={category.price}
+                        onChange={(e) =>
+                          handleCategoryPriceChange(
+                            index,
+                            Number(e.target.value)
+                          )
+                        }
+                      />
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -243,12 +316,86 @@ export function FantasySetupForm({ tournamentId }: FantasySetupFormProps) {
                 Entry Fee Options
               </Label>
               <p className="text-sm text-gray-500 mb-4">
-                Configure the entry fee options for your fantasy contests
+                Choose which contest categories to create for this tournament
               </p>
-              <EntryFeeOptions
-                fees={settings.entryFees}
-                onFeesChange={handleEntryFeesUpdate}
-              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Card className="border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-base font-medium">
+                        Free Entry
+                      </Label>
+                      <Switch
+                        checked={settings.entryFees.free}
+                        onCheckedChange={(checked) =>
+                          handleEntryFeeToggle("free", checked)
+                        }
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      For practice or promotional purposes
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-base font-medium">
+                        Basic (₹500)
+                      </Label>
+                      <Switch
+                        checked={settings.entryFees.basic}
+                        onCheckedChange={(checked) =>
+                          handleEntryFeeToggle("basic", checked)
+                        }
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      Entry level contests
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-base font-medium">
+                        Premium (₹1000)
+                      </Label>
+                      <Switch
+                        checked={settings.entryFees.premium}
+                        onCheckedChange={(checked) =>
+                          handleEntryFeeToggle("premium", checked)
+                        }
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      Intermediate level contests
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-base font-medium">
+                        Elite (₹1500)
+                      </Label>
+                      <Switch
+                        checked={settings.entryFees.elite}
+                        onCheckedChange={(checked) =>
+                          handleEntryFeeToggle("elite", checked)
+                        }
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      High stakes contests
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
         )}
