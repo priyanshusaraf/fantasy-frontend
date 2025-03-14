@@ -1,14 +1,17 @@
+"use client";
+
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  TournamentSchema,
-  CreateTournamentInput,
-  TournamentTypeEnum,
-  TournamentStatusEnum,
-} from "@/lib/db/schema";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useRouter } from "next/navigation";
+import { z } from "zod";
+import { format } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/lib/utils";
+
+// UI Components
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import {
   Select,
   SelectContent,
@@ -32,13 +35,62 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/components/ui/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function CreateTournamentForm() {
+// Tournament Types & Schema
+const TournamentTypeEnum = z.enum([
+  "SINGLES",
+  "DOUBLES",
+  "MIXED_DOUBLES",
+  "ROUND_ROBIN",
+  "KNOCKOUT",
+  "LEAGUE",
+]);
+
+const TournamentStatusEnum = z.enum([
+  "DRAFT",
+  "REGISTRATION_OPEN",
+  "REGISTRATION_CLOSED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
+const TournamentSchema = z
+  .object({
+    name: z.string().min(3, "Tournament name must be at least 3 characters"),
+    description: z.string().optional(),
+    type: TournamentTypeEnum,
+    status: TournamentStatusEnum.default("DRAFT"),
+    location: z.string().min(3, "Please enter a valid location"),
+    startDate: z.date(),
+    endDate: z.date(),
+    registrationOpenDate: z.date(),
+    registrationCloseDate: z.date(),
+    maxParticipants: z.number().int().min(2),
+    entryFee: z.number().min(0),
+    prizeMoney: z.number().optional(),
+    rules: z.string().optional(),
+    imageUrl: z.string().url().optional(),
+  })
+  .refine((data) => data.endDate >= data.startDate, {
+    message: "End date must be after start date",
+    path: ["endDate"],
+  })
+  .refine((data) => data.registrationCloseDate >= data.registrationOpenDate, {
+    message: "Registration close date must be after registration open date",
+    path: ["registrationCloseDate"],
+  })
+  .refine((data) => data.startDate >= data.registrationCloseDate, {
+    message: "Tournament must start after registration closes",
+    path: ["startDate"],
+  });
+
+type CreateTournamentInput = z.infer<typeof TournamentSchema>;
+
+const CreateTournamentForm: React.FC = () => {
+  const router = useRouter();
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -51,9 +103,11 @@ export function CreateTournamentForm() {
       maxParticipants: 16,
       entryFee: 0,
       startDate: new Date(),
-      endDate: new Date(),
+      endDate: new Date(new Date().setDate(new Date().getDate() + 2)), // Default to 2 days after start
       registrationOpenDate: new Date(),
-      registrationCloseDate: new Date(),
+      registrationCloseDate: new Date(
+        new Date().setDate(new Date().getDate() + 1)
+      ), // Default to 1 day before start
     },
   });
 
@@ -94,9 +148,9 @@ export function CreateTournamentForm() {
         variant: "default",
       });
 
-      // Reset form or redirect
-      form.reset();
-    } catch (error) {
+      // Redirect to tournament management page
+      router.push(`/admin/manage-tournament?id=${tournament.id}`);
+    } catch (error: any) {
       toast({
         title: "Error",
         description: error.message,
@@ -228,7 +282,9 @@ export function CreateTournamentForm() {
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(date) => date > new Date("2100-01-01")}
+                          disabled={(date: Date) =>
+                            date > new Date("2100-01-01")
+                          }
                           initialFocus
                         />
                       </PopoverContent>
@@ -271,7 +327,9 @@ export function CreateTournamentForm() {
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(date) => date > new Date("2100-01-01")}
+                          disabled={(date: Date) =>
+                            date > new Date("2100-01-01")
+                          }
                           initialFocus
                         />
                       </PopoverContent>
@@ -317,7 +375,9 @@ export function CreateTournamentForm() {
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(date) => date > new Date("2100-01-01")}
+                          disabled={(date: Date) =>
+                            date > new Date("2100-01-01")
+                          }
                           initialFocus
                         />
                       </PopoverContent>
@@ -360,7 +420,9 @@ export function CreateTournamentForm() {
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(date) => date > new Date("2100-01-01")}
+                          disabled={(date: Date) =>
+                            date > new Date("2100-01-01")
+                          }
                           initialFocus
                         />
                       </PopoverContent>
@@ -399,7 +461,7 @@ export function CreateTournamentForm() {
                 name="entryFee"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Entry Fee ($)</FormLabel>
+                    <FormLabel>Entry Fee (₹)</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -428,11 +490,57 @@ export function CreateTournamentForm() {
                       step="0.01"
                       placeholder="Total prize money"
                       {...field}
-                      onChange={(e) =>
-                        field.onChange(Number(e.target.value) || undefined)
-                      }
+                      value={field.value === undefined ? "" : field.value}
+                      onChange={(e) => {
+                        const value =
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value);
+                        field.onChange(value);
+                      }}
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Rules */}
+            <FormField
+              control={form.control}
+              name="rules"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tournament Rules</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Tournament rules (optional)"
+                      {...field}
+                      value={field.value || ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Image URL */}
+            <FormField
+              control={form.control}
+              name="imageUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tournament Image URL</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="https://example.com/tournament-image.jpg"
+                      {...field}
+                      value={field.value || ""}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Enter a URL for the tournament banner image
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -447,6 +555,6 @@ export function CreateTournamentForm() {
       </CardContent>
     </Card>
   );
-}
+};
 
 export default CreateTournamentForm;

@@ -1,213 +1,275 @@
-import { connectToDatabase } from "@/lib/db";
-import {
-  Tournament,
-  CreateTournamentInput,
-  UpdateTournamentInput,
-} from "@/lib/db/schema";
-import { logEvent } from "@/middleware/error-handler";
+// src/lib/services/tournament-service.ts
+import prisma from "../../../prisma";
+import { Prisma } from "@prisma/client";
 
 export class TournamentService {
-  static async createTournament(
-    tournamentData: CreateTournamentInput
-  ): Promise<Tournament> {
-    const connection = await connectToDatabase();
-
+  /**
+   * Create a new tournament
+   */
+  static async createTournament(data: Prisma.TournamentCreateInput) {
     try {
-      const [result] = await connection.execute(
-        `INSERT INTO tournaments 
-        (name, description, type, status, startDate, endDate, 
-        registrationOpenDate, registrationCloseDate, location, 
-        maxParticipants, entryFee, prizeMoney, organizerId, createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          tournamentData.name,
-          tournamentData.description,
-          tournamentData.type,
-          tournamentData.status,
-          tournamentData.startDate,
-          tournamentData.endDate,
-          tournamentData.registrationOpenDate,
-          tournamentData.registrationCloseDate,
-          tournamentData.location,
-          tournamentData.maxParticipants,
-          tournamentData.entryFee,
-          tournamentData.prizeMoney,
-          tournamentData.organizerId,
-          new Date(),
-          new Date(),
-        ]
-      );
-
-      logEvent("Tournament Created", {
-        tournamentName: tournamentData.name,
-        organizerId: tournamentData.organizerId,
+      return await prisma.tournament.create({
+        data,
       });
-
-      return {
-        ...tournamentData,
-        id: result.insertId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as Tournament;
     } catch (error) {
-      logEvent("Tournament Creation Failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        tournamentName: tournamentData.name,
-      });
+      console.error("Error creating tournament:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
-  static async getTournamentById(id: number): Promise<Tournament | null> {
-    const connection = await connectToDatabase();
-
+  /**
+   * Get a tournament by ID with related data
+   */
+  static async getTournamentById(id: number) {
     try {
-      const [tournaments] = await connection.execute(
-        "SELECT * FROM tournaments WHERE id = ?",
-        [id]
-      );
-
-      return (tournaments[0] as Tournament) || null;
-    } catch (error) {
-      logEvent("Get Tournament Failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        tournamentId: id,
+      return await prisma.tournament.findUnique({
+        where: { id },
+        include: {
+          matches: {
+            include: {
+              player1: true,
+              player2: true,
+              referee: true,
+            },
+          },
+          contests: true,
+          playerStats: {
+            include: {
+              player: true,
+            },
+          },
+          entries: {
+            include: {
+              player: true,
+            },
+          },
+        },
       });
+    } catch (error) {
+      console.error(`Error fetching tournament with ID ${id}:`, error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
-  static async updateTournament(
-    id: number,
-    updateData: UpdateTournamentInput
-  ): Promise<Tournament | null> {
-    const connection = await connectToDatabase();
-
-    try {
-      // Prepare update fields dynamically
-      const updateFields = Object.keys(updateData)
-        .filter((key) => updateData[key] !== undefined)
-        .map((key) => `${key} = ?`)
-        .join(", ");
-
-      const values = Object.keys(updateData)
-        .filter((key) => updateData[key] !== undefined)
-        .map((key) => updateData[key]);
-
-      values.push(id);
-
-      // Add updatedAt timestamp
-      const query = `
-        UPDATE tournaments 
-        SET ${updateFields}, updatedAt = ? 
-        WHERE id = ?
-      `;
-
-      await connection.execute(query, [...values, new Date(), id]);
-
-      logEvent("Tournament Updated", {
-        tournamentId: id,
-        updates: Object.keys(updateData),
-      });
-
-      return this.getTournamentById(id);
-    } catch (error) {
-      logEvent("Tournament Update Failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        tournamentId: id,
-      });
-      throw error;
-    } finally {
-      await connection.end();
-    }
-  }
-
-  static async listTournaments(
+  /**
+   * List tournaments with optional filtering
+   */
+  static async listTournaments({
     page = 1,
     limit = 10,
-    filters: Partial<Tournament> = {}
-  ): Promise<{
-    tournaments: Tournament[];
-    total: number;
-    page: number;
-    totalPages: number;
-  }> {
-    const connection = await connectToDatabase();
-
+    status,
+    search,
+    type,
+    orderBy = { startDate: "asc" },
+  }: {
+    page?: number;
+    limit?: number;
+    status?: Prisma.TournamentStatus;
+    search?: string;
+    type?: Prisma.TournamentType;
+    orderBy?: Prisma.TournamentOrderByWithRelationInput;
+  }) {
     try {
-      const offset = (page - 1) * limit;
+      const where: Prisma.TournamentWhereInput = {
+        ...(status && { status }),
+        ...(type && { type }),
+        ...(search && {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { location: { contains: search, mode: "insensitive" } },
+          ],
+        }),
+      };
 
-      // Prepare filter conditions
-      const filterConditions = Object.keys(filters)
-        .filter((key) => filters[key] !== undefined)
-        .map((key) => `${key} = ?`)
-        .join(" AND ");
-
-      const filterValues = Object.keys(filters)
-        .filter((key) => filters[key] !== undefined)
-        .map((key) => filters[key]);
-
-      // Construct query with dynamic filters
-      const baseQuery = `
-        SELECT * FROM tournaments 
-        ${filterConditions ? `WHERE ${filterConditions}` : ""} 
-        LIMIT ? OFFSET ?
-      `;
-
-      const [tournaments] = await connection.execute(baseQuery, [
-        ...filterValues,
-        limit,
-        offset,
+      const [tournaments, total] = await Promise.all([
+        prisma.tournament.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy,
+          include: {
+            _count: {
+              select: {
+                matches: true,
+                entries: true,
+                contests: true,
+              },
+            },
+          },
+        }),
+        prisma.tournament.count({ where }),
       ]);
 
-      // Get total count with same filters
-      const [countResult] = await connection.execute(
-        `SELECT COUNT(*) as total FROM tournaments 
-        ${filterConditions ? `WHERE ${filterConditions}` : ""}`,
-        filterValues
-      );
-
-      const total = countResult[0]["total"];
-
       return {
-        tournaments: tournaments as Tournament[],
+        tournaments,
         total,
         page,
         totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
-      logEvent("List Tournaments Failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        page,
-        limit,
-      });
+      console.error("Error listing tournaments:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
-  static async deleteTournament(id: number): Promise<boolean> {
-    const connection = await connectToDatabase();
-
+  /**
+   * Update a tournament
+   */
+  static async updateTournament(
+    id: number,
+    data: Prisma.TournamentUpdateInput
+  ) {
     try {
-      await connection.execute("DELETE FROM tournaments WHERE id = ?", [id]);
+      return await prisma.tournament.update({
+        where: { id },
+        data,
+      });
+    } catch (error) {
+      console.error(`Error updating tournament with ID ${id}:`, error);
+      throw error;
+    }
+  }
 
-      logEvent("Tournament Deleted", { tournamentId: id });
-
+  /**
+   * Delete a tournament
+   */
+  static async deleteTournament(id: number) {
+    try {
+      await prisma.tournament.delete({
+        where: { id },
+      });
       return true;
     } catch (error) {
-      logEvent("Tournament Deletion Failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        tournamentId: id,
-      });
+      console.error(`Error deleting tournament with ID ${id}:`, error);
       throw error;
-    } finally {
-      await connection.end();
+    }
+  }
+
+  /**
+   * Create a new match for a tournament
+   */
+  static async createMatch(data: Prisma.MatchCreateInput) {
+    try {
+      return await prisma.match.create({
+        data,
+      });
+    } catch (error) {
+      console.error("Error creating match:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * List matches for a tournament
+   */
+  static async getTournamentMatches(
+    tournamentId: number,
+    options?: {
+      round?: string;
+      status?: Prisma.MatchStatus;
+    }
+  ) {
+    try {
+      const where: Prisma.MatchWhereInput = {
+        tournamentId,
+        ...(options?.round && { round: options.round }),
+        ...(options?.status && { status: options.status }),
+      };
+
+      return await prisma.match.findMany({
+        where,
+        include: {
+          player1: true,
+          player2: true,
+          referee: true,
+          team1: true,
+          team2: true,
+          winner: true,
+        },
+        orderBy: {
+          scheduledTime: "asc",
+        },
+      });
+    } catch (error) {
+      console.error(
+        `Error fetching matches for tournament ${tournamentId}:`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Update match details, including scores
+   */
+  static async updateMatch(id: number, data: Prisma.MatchUpdateInput) {
+    try {
+      return await prisma.match.update({
+        where: { id },
+        data,
+      });
+    } catch (error) {
+      console.error(`Error updating match with ID ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Register a player for a tournament
+   */
+  static async registerPlayerForTournament(
+    tournamentId: number,
+    playerId: number
+  ) {
+    try {
+      const entry = await prisma.tournamentEntry.create({
+        data: {
+          tournament: { connect: { id: tournamentId } },
+          player: { connect: { id: playerId } },
+          paymentStatus: "PENDING",
+        },
+        include: {
+          tournament: true,
+          player: true,
+        },
+      });
+
+      return entry;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        // Handle unique constraint violations (player already registered)
+        if (error.code === "P2002") {
+          throw new Error("Player is already registered for this tournament");
+        }
+      }
+      console.error("Error registering player for tournament:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update tournament entry payment status
+   */
+  static async updateEntryPaymentStatus(
+    tournamentId: number,
+    playerId: number,
+    status: Prisma.PaymentStatus
+  ) {
+    try {
+      return await prisma.tournamentEntry.update({
+        where: {
+          tournamentId_playerId: {
+            tournamentId,
+            playerId,
+          },
+        },
+        data: {
+          paymentStatus: status,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating entry payment status:", error);
+      throw error;
     }
   }
 }

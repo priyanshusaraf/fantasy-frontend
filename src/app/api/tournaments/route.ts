@@ -1,93 +1,124 @@
+// src/app/api/tournaments/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { TournamentService } from "@/lib/services/tournament-service";
-import { TournamentSchema, CreateTournamentInput } from "@/lib/db/schema";
-import { z } from "zod";
-import {
-  createValidationError,
-  createAuthenticationError,
-  convertToApiError,
-} from "@/lib/utils/api-error";
-import { authMiddleware } from "@/middleware/auth";
+import { adminMiddleware } from "@/middleware/auth";
+import { TournamentStatus, TournamentType } from "@prisma/client";
 
-// Create Tournament
-export async function POST(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Apply auth middleware
-    const authResult = authMiddleware(req);
-    if (authResult.status !== 200) {
-      throw createAuthenticationError("Authentication failed");
+    // Extract query parameters
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "10");
+    const status = searchParams.get("status") as TournamentStatus | undefined;
+    const type = searchParams.get("type") as TournamentType | undefined;
+    const search = searchParams.get("search") || undefined;
+
+    // Get tournaments with filtering
+    const tournamentsData = await TournamentService.listTournaments({
+      page,
+      limit,
+      status,
+      type,
+      search,
+    });
+
+    return NextResponse.json(tournamentsData, { status: 200 });
+  } catch (error) {
+    console.error("Error fetching tournaments:", error);
+    return NextResponse.json(
+      {
+        message: "Failed to fetch tournaments",
+        error: (error as Error).message,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Only admins can create tournaments
+    const authResponse = await adminMiddleware(request);
+    if (authResponse.status !== 200) {
+      return authResponse;
     }
 
-    // Parse and validate request body
-    const body = await req.json();
+    // Get tournament data from request
+    const data = await request.json();
 
-    // Use safeParse for more robust validation
-    const validationResult = TournamentSchema.safeParse(body);
-    if (!validationResult.success) {
-      throw createValidationError(
-        "Invalid tournament data",
-        validationResult.error.flatten().fieldErrors
+    // Validate dates
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    const registrationOpenDate = new Date(data.registrationOpenDate);
+    const registrationCloseDate = new Date(data.registrationCloseDate);
+
+    if (
+      isNaN(startDate.getTime()) ||
+      isNaN(endDate.getTime()) ||
+      isNaN(registrationOpenDate.getTime()) ||
+      isNaN(registrationCloseDate.getTime())
+    ) {
+      return NextResponse.json(
+        { message: "Invalid date format" },
+        { status: 400 }
+      );
+    }
+
+    if (startDate > endDate) {
+      return NextResponse.json(
+        { message: "End date must be after start date" },
+        { status: 400 }
+      );
+    }
+
+    if (registrationOpenDate > registrationCloseDate) {
+      return NextResponse.json(
+        {
+          message:
+            "Registration close date must be after registration open date",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (registrationCloseDate > startDate) {
+      return NextResponse.json(
+        { message: "Registration must close before tournament starts" },
+        { status: 400 }
       );
     }
 
     // Create tournament
-    const tournament = await TournamentService.createTournament(
-      validationResult.data
-    );
+    const tournament = await TournamentService.createTournament({
+      name: data.name,
+      location: data.location,
+      description: data.description,
+      type: data.type,
+      status: data.status || "DRAFT",
+      startDate,
+      endDate,
+      registrationOpenDate,
+      registrationCloseDate,
+      imageUrl: data.imageUrl,
+      maxParticipants: data.maxParticipants,
+      entryFee: data.entryFee,
+      prizeMoney: data.prizeMoney,
+      rules: data.rules,
+      tournamentAdmin: {
+        connect: { id: data.organizerId },
+      },
+    });
 
     return NextResponse.json(tournament, { status: 201 });
   } catch (error) {
-    // Convert any error to a standardized API error
-    const apiError = convertToApiError(error);
-
-    return NextResponse.json(apiError.toResponse(), {
-      status: apiError.status,
-    });
-  }
-}
-
-// List Tournaments
-export async function GET(req: NextRequest) {
-  try {
-    // Apply auth middleware
-    const authResult = authMiddleware(req);
-    if (authResult.status !== 200) {
-      throw createAuthenticationError("Authentication failed");
-    }
-
-    // Parse query parameters
-    const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
-
-    // Validate pagination parameters
-    if (page < 1 || limit < 1) {
-      throw createValidationError("Invalid pagination parameters", {
-        page: "Page must be 1 or greater",
-        limit: "Limit must be 1 or greater",
-      });
-    }
-
-    // Optional filters
-    const filters = {
-      type: searchParams.get("type") || undefined,
-      status: searchParams.get("status") || undefined,
-    };
-
-    // Fetch tournaments
-    const result = await TournamentService.listTournaments(
-      page,
-      limit,
-      filters
+    console.error("Error creating tournament:", error);
+    return NextResponse.json(
+      {
+        message: "Failed to create tournament",
+        error: (error as Error).message,
+      },
+      { status: 500 }
     );
-
-    return NextResponse.json(result);
-  } catch (error) {
-    // Convert any error to a standardized API error
-    const apiError = convertToApiError(error);
-
-    return NextResponse.json(apiError.toResponse(), {
-      status: apiError.status,
-    });
   }
 }
