@@ -1,233 +1,173 @@
-// src/components/fantasy-pickleball/TeamCreation.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-import { Player } from "@prisma/client";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/form";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { format } from "date-fns";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/form";
+import { Slider } from "@/components/ui/form";
 
-interface TeamCreationProps {
-  contestId: number;
-  maxPlayers: number;
-}
-
-interface PlayerWithSelection extends Player {
-  isSelected: boolean;
-  isCaptain: boolean;
-  isViceCaptain: boolean;
-}
-
-const TeamCreation: React.FC<TeamCreationProps> = ({
-  contestId,
-  maxPlayers,
-}) => {
-  const [players, setPlayers] = useState<PlayerWithSelection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [teamName, setTeamName] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [remainingBudget, setRemainingBudget] = useState(10000); // Default budget
-  const [walletSize, setWalletSize] = useState(10000); // Default wallet size
-  const { isAuthenticated } = useAuth();
+export default function CreateTournamentForm() {
   const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [tournamentType, setTournamentType] = useState("individual");
+  const [playerCount, setPlayerCount] = useState(4);
+  const [selectedPlayers, setSelectedPlayers] = useState<number[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const totalSteps = 7;
 
-  // Fetch players for contest
-  useEffect(() => {
-    if (!contestId) return;
+  // Form state
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    location: "",
+    startDate: new Date(),
+    endDate: new Date(new Date().setDate(new Date().getDate() + 2)),
+    registrationOpenDate: new Date(),
+    registrationCloseDate: new Date(
+      new Date().setDate(new Date().getDate() + 1)
+    ),
+    maxParticipants: 32,
+    type: "SINGLES" as
+      | "SINGLES"
+      | "DOUBLES"
+      | "MIXED_DOUBLES"
+      | "ROUND_ROBIN"
+      | "KNOCKOUT"
+      | "LEAGUE",
+    entryFee: 500,
+    playerCategories: [
+      { name: "A", price: 11000 },
+      { name: "B", price: 9000 },
+      { name: "C", price: 7000 },
+    ],
+    fantasyTeamSize: 7,
+    walletSize: 100000,
+    allowTeamChanges: true,
+    changeFrequency: "daily" as "daily" | "rounds" | "once",
+    maxPlayersToChange: 2,
+    changeWindowStart: "18:00",
+    changeWindowEnd: "22:00",
+    contestTypes: [
+      { name: "Free Entry", entryFee: 0, active: true },
+      { name: "Basic Contest", entryFee: 500, active: true },
+      { name: "Premium Contest", entryFee: 1000, active: true },
+      { name: "Elite Contest", entryFee: 1500, active: true },
+    ],
+  });
 
-    const fetchPlayersForContest = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(
-          `/api/fantasy-pickleball/contests/${contestId}/players`
-        );
+  const handleNext = () => {
+    if (step < totalSteps) {
+      setStep(step + 1);
+    }
+  };
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch players");
-        }
+  const handleBack = () => {
+    if (step > 1) {
+      setStep(step - 1);
+    }
+  };
 
-        const data = await res.json();
+  const handleFormChange = (field: string, value: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
 
-        // Transform players to include selection state
-        const playersWithSelection = data.players.map((player: Player) => ({
-          ...player,
-          isSelected: false,
-          isCaptain: false,
-          isViceCaptain: false,
-        }));
+  const handleDateChange = (field: string, date: Date | undefined) => {
+    if (date) {
+      setFormData((prev) => ({
+        ...prev,
+        [field]: date,
+      }));
+    }
+  };
 
-        setPlayers(playersWithSelection);
-
-        // Set wallet size from contest data
-        if (data.walletSize) {
-          setWalletSize(data.walletSize);
-          setRemainingBudget(data.walletSize);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "An unknown error occurred"
-        );
-      } finally {
-        setLoading(false);
-      }
+  const handleCategoryChange = (
+    index: number,
+    field: "name" | "price",
+    value: string | number
+  ) => {
+    const newCategories = [...formData.playerCategories];
+    newCategories[index] = {
+      ...newCategories[index],
+      [field]: value,
     };
-
-    fetchPlayersForContest();
-  }, [contestId]);
-
-  // Handle player selection/deselection
-  const handlePlayerToggle = (playerId: number) => {
-    setPlayers((prevPlayers) => {
-      // Find the player
-      const playerIndex = prevPlayers.findIndex((p) => p.id === playerId);
-      if (playerIndex === -1) return prevPlayers;
-
-      const player = prevPlayers[playerIndex];
-
-      // If currently not selected
-      if (!player.isSelected) {
-        // Check if we already have max players
-        const selectedCount = prevPlayers.filter((p) => p.isSelected).length;
-        if (selectedCount >= maxPlayers) {
-          setError(`You can only select ${maxPlayers} players`);
-          return prevPlayers;
-        }
-
-        // Check budget
-        const playerPrice = player.rank
-          ? Math.max(1000 / player.rank, 500)
-          : 500;
-        if (remainingBudget < playerPrice) {
-          setError("Not enough budget to select this player");
-          return prevPlayers;
-        }
-
-        // Update remaining budget
-        setRemainingBudget((prev) => prev - playerPrice);
-      } else {
-        // If deselecting, add back to budget
-        const playerPrice = player.rank
-          ? Math.max(1000 / player.rank, 500)
-          : 500;
-        setRemainingBudget((prev) => prev + playerPrice);
-
-        // Also remove captain/vice-captain designation if applicable
-        if (player.isCaptain || player.isViceCaptain) {
-          player.isCaptain = false;
-          player.isViceCaptain = false;
-        }
-      }
-
-      // Toggle selection
-      const newPlayers = [...prevPlayers];
-      newPlayers[playerIndex] = {
-        ...player,
-        isSelected: !player.isSelected,
-      };
-
-      return newPlayers;
-    });
-
-    // Clear any error messages
-    setError(null);
+    setFormData((prev) => ({
+      ...prev,
+      playerCategories: newCategories,
+    }));
   };
 
-  // Handle captain selection
-  const handleCaptainSelect = (playerId: number) => {
-    setPlayers((prevPlayers) => {
-      const newPlayers = prevPlayers.map((player) => ({
-        ...player,
-        isCaptain: player.id === playerId ? true : false,
-        isViceCaptain:
-          player.isViceCaptain && player.id !== playerId ? true : false,
-      }));
-      return newPlayers;
-    });
+  const handleAddCategory = () => {
+    setFormData((prev) => ({
+      ...prev,
+      playerCategories: [
+        ...prev.playerCategories,
+        {
+          name: String.fromCharCode(65 + prev.playerCategories.length),
+          price: 5000,
+        },
+      ],
+    }));
   };
 
-  // Handle vice-captain selection
-  const handleViceCaptainSelect = (playerId: number) => {
-    setPlayers((prevPlayers) => {
-      const newPlayers = prevPlayers.map((player) => ({
-        ...player,
-        isViceCaptain: player.id === playerId ? true : false,
-        isCaptain: player.isCaptain && player.id !== playerId ? true : false,
-      }));
-      return newPlayers;
-    });
+  const handleContestTypeChange = (
+    index: number,
+    field: "name" | "entryFee" | "active",
+    value: string | number | boolean
+  ) => {
+    const newContestTypes = [...formData.contestTypes];
+    newContestTypes[index] = {
+      ...newContestTypes[index],
+      [field]: value,
+    };
+    setFormData((prev) => ({
+      ...prev,
+      contestTypes: newContestTypes,
+    }));
   };
 
-  // Calculate player price based on rank
-  const getPlayerPrice = (player: Player) => {
-    return player.rank ? Math.max(1000 / player.rank, 500) : 500;
-  };
-
-  // Filter players based on search
-  const filteredPlayers = players.filter(
-    (player) =>
-      player.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (player.country &&
-        player.country.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  // Handle team creation
-  const handleCreateTeam = async () => {
-    if (!isAuthenticated) {
-      router.push("/login");
-      return;
-    }
-
-    if (!teamName) {
-      setError("Please enter a team name");
-      return;
-    }
-
-    const selectedPlayers = players.filter((p) => p.isSelected);
-    if (selectedPlayers.length !== maxPlayers) {
-      setError(`You must select exactly ${maxPlayers} players`);
-      return;
-    }
-
-    const captains = selectedPlayers.filter((p) => p.isCaptain);
-    if (captains.length !== 1) {
-      setError("You must select exactly one captain");
-      return;
-    }
-
-    const viceCaptains = selectedPlayers.filter((p) => p.isViceCaptain);
-    if (viceCaptains.length !== 1) {
-      setError("You must select exactly one vice-captain");
-      return;
-    }
-
+  const handleCreateTournament = async () => {
     try {
       setLoading(true);
+      setError(null);
 
-      const response = await fetch("/api/fantasy-pickleball/create-team", {
+      const response = await fetch("/api/tournaments", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          contestId,
-          name: teamName,
-          players: selectedPlayers.map((player) => ({
-            playerId: player.id,
-            isCaptain: player.isCaptain,
-            isViceCaptain: player.isViceCaptain,
-          })),
-        }),
+        body: JSON.stringify(formData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create team");
+        throw new Error(errorData.message || "Failed to create tournament");
       }
 
-      const result = await response.json();
-
-      // Redirect to the team page
-      router.push(`/fantasy/teams/${result.id}`);
+      const tournament = await response.json();
+      router.push(`/admin/tournaments/${tournament.id}`);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "An unknown error occurred"
@@ -237,162 +177,805 @@ const TeamCreation: React.FC<TeamCreationProps> = ({
     }
   };
 
-  if (loading) {
-    return <div className="text-center py-8">Loading players...</div>;
-  }
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">Create Your Fantasy Team</h1>
-
-      <div className="bg-blue-50 p-4 rounded-lg mb-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <span className="font-semibold">Remaining Budget:</span>
-            <span className="ml-2 text-lg font-bold text-green-600">
-              ₹{remainingBudget.toLocaleString()}
-            </span>
-          </div>
-          <div>
-            <span className="font-semibold">Selected:</span>
-            <span className="ml-2 font-bold">
-              {players.filter((p) => p.isSelected).length}/{maxPlayers}
-            </span>
-          </div>
+    <div className="w-full max-w-4xl mx-auto p-4">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">Create Tournament</h1>
+        <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div
+            className="bg-blue-600 h-2.5 rounded-full"
+            style={{ width: `${(step / totalSteps) * 100}%` }}
+          ></div>
+        </div>
+        <div className="flex justify-between text-sm mt-2">
+          <span>Basic Info</span>
+          <span>Players</span>
+          <span>Fantasy Rules</span>
+          <span>Pricing</span>
+          <span>Complete</span>
         </div>
       </div>
+
+      {step === 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Tournament Details</CardTitle>
+            <CardDescription>
+              Enter basic information about your tournament
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="name">Tournament Name</Label>
+              <Input
+                id="name"
+                placeholder="Enter tournament name"
+                value={formData.name}
+                onChange={(e) => handleFormChange("name", e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="description">Description</Label>
+              <textarea
+                id="description"
+                className="w-full min-h-[100px] p-2 border rounded-md"
+                placeholder="Enter tournament description"
+                value={formData.description}
+                onChange={(e) =>
+                  handleFormChange("description", e.target.value)
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="startDate">Start Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.startDate ? (
+                        format(formData.startDate, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={formData.startDate}
+                      onSelect={(date) => handleDateChange("startDate", date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div>
+                <Label htmlFor="endDate">End Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.endDate ? (
+                        format(formData.endDate, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={formData.endDate}
+                      onSelect={(date) => handleDateChange("endDate", date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="location">Location</Label>
+              <Input
+                id="location"
+                placeholder="Enter tournament location"
+                value={formData.location}
+                onChange={(e) => handleFormChange("location", e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="maxParticipants">Maximum Participants</Label>
+              <Input
+                id="maxParticipants"
+                type="number"
+                min="4"
+                value={formData.maxParticipants}
+                onChange={(e) =>
+                  handleFormChange("maxParticipants", parseInt(e.target.value))
+                }
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+            <Button onClick={handleNext}>Continue</Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {step === 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Tournament Format</CardTitle>
+            <CardDescription>
+              Select the format of your tournament
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RadioGroup
+              defaultValue={tournamentType}
+              onValueChange={setTournamentType}
+              className="grid grid-cols-2 gap-4"
+            >
+              <div>
+                <RadioGroupItem
+                  value="individual"
+                  id="individual"
+                  className="sr-only"
+                />
+                <Label
+                  htmlFor="individual"
+                  className={`flex flex-col items-center justify-center rounded-md border-2 p-4 hover:bg-gray-100 ${
+                    tournamentType === "individual"
+                      ? "border-primary"
+                      : "border-gray-200"
+                  }`}
+                >
+                  <span className="text-xl mb-2">👤</span>
+                  <span className="font-medium">Individual Based</span>
+                  <span className="text-xs text-gray-500">
+                    Players compete individually
+                  </span>
+                </Label>
+              </div>
+              <div>
+                <RadioGroupItem value="team" id="team" className="sr-only" />
+                <Label
+                  htmlFor="team"
+                  className={`flex flex-col items-center justify-center rounded-md border-2 p-4 hover:bg-gray-100 ${
+                    tournamentType === "team"
+                      ? "border-primary"
+                      : "border-gray-200"
+                  }`}
+                >
+                  <span className="text-xl mb-2">👥</span>
+                  <span className="font-medium">Team Based</span>
+                  <span className="text-xs text-gray-500">
+                    Players are part of teams
+                  </span>
+                </Label>
+              </div>
+            </RadioGroup>
+
+            <div className="mt-6">
+              <Label>Tournament Type</Label>
+              <select
+                className="w-full mt-2 p-2 border rounded"
+                value={formData.type}
+                onChange={(e) => handleFormChange("type", e.target.value)}
+              >
+                <option value="SINGLES">Singles</option>
+                <option value="DOUBLES">Doubles</option>
+                <option value="MIXED_DOUBLES">Mixed Doubles</option>
+                <option value="ROUND_ROBIN">Round Robin</option>
+                <option value="KNOCKOUT">Knockout</option>
+                <option value="LEAGUE">League</option>
+              </select>
+            </div>
+
+            <div className="mt-6">
+              <Label>Registration Period</Label>
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                  <Label htmlFor="registrationOpenDate">Opens</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal mt-1"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.registrationOpenDate ? (
+                          format(formData.registrationOpenDate, "PPP")
+                        ) : (
+                          <span>Pick a date</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={formData.registrationOpenDate}
+                        onSelect={(date) =>
+                          handleDateChange("registrationOpenDate", date)
+                        }
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <Label htmlFor="registrationCloseDate">Closes</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal mt-1"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.registrationCloseDate ? (
+                          format(formData.registrationCloseDate, "PPP")
+                        ) : (
+                          <span>Pick a date</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={formData.registrationCloseDate}
+                        onSelect={(date) =>
+                          handleDateChange("registrationCloseDate", date)
+                        }
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleBack}>
+              Back
+            </Button>
+            <Button onClick={handleNext}>Continue</Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Add Players</CardTitle>
+            <CardDescription>
+              Add existing players or create new ones
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              <Label>Search Players</Label>
+              <Input placeholder="Search players..." className="mb-4" />
+
+              <div className="border rounded-lg p-4 bg-gray-50 mb-4">
+                <p className="text-sm text-gray-500 mb-3">
+                  Selected Players: {selectedPlayers.length} /{" "}
+                  {formData.maxParticipants}
+                </p>
+                {selectedPlayers.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedPlayers.map((id) => (
+                      <span
+                        key={id}
+                        className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded"
+                      >
+                        Player {id}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    No players selected yet
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                {[1, 2, 3, 4, 5, 6].map((player) => (
+                  <Card
+                    key={player}
+                    className={`border ${
+                      selectedPlayers.includes(player)
+                        ? "border-blue-500"
+                        : "border-gray-200"
+                    }`}
+                  >
+                    <CardContent className="p-4 flex items-center space-x-4">
+                      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-xl">👤</span>
+                      </div>
+                      <div>
+                        <h3 className="font-bold">Player {player}</h3>
+                        <p className="text-sm text-gray-500">
+                          Skill level: Advanced
+                        </p>
+                      </div>
+                      <div className="ml-auto">
+                        <Button
+                          variant={
+                            selectedPlayers.includes(player)
+                              ? "destructive"
+                              : "default"
+                          }
+                          size="sm"
+                          onClick={() => {
+                            if (selectedPlayers.includes(player)) {
+                              setSelectedPlayers(
+                                selectedPlayers.filter((id) => id !== player)
+                              );
+                            } else {
+                              setSelectedPlayers([...selectedPlayers, player]);
+                            }
+                          }}
+                        >
+                          {selectedPlayers.includes(player) ? "Remove" : "Add"}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <Button variant="outline" className="w-full mb-2">
+                Load More Players
+              </Button>
+              <Button variant="secondary" className="w-full">
+                + Create New Player
+              </Button>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleBack}>
+              Back
+            </Button>
+            <Button onClick={handleNext}>Continue</Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {step === 4 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Fantasy Team Configuration</CardTitle>
+            <CardDescription>
+              Set up the fantasy team options for players
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-6">
+              <Label>
+                How many players can be selected for a fantasy team?
+              </Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3">
+                {[4, 7, 9, 11].map((count) => (
+                  <Button
+                    key={count}
+                    variant={
+                      formData.fantasyTeamSize === count ? "default" : "outline"
+                    }
+                    className="h-24 text-center flex flex-col"
+                    onClick={() => handleFormChange("fantasyTeamSize", count)}
+                  >
+                    <span className="text-2xl">{count}</span>
+                    <span className="text-xs">Players</span>
+                  </Button>
+                ))}
+              </div>
+              <div className="mt-4">
+                <Label htmlFor="custom-count">Custom</Label>
+                <Input
+                  id="custom-count"
+                  type="number"
+                  min="1"
+                  placeholder="Enter custom number"
+                  value={
+                    formData.fantasyTeamSize !== 4 &&
+                    formData.fantasyTeamSize !== 7 &&
+                    formData.fantasyTeamSize !== 9 &&
+                    formData.fantasyTeamSize !== 11
+                      ? formData.fantasyTeamSize
+                      : ""
+                  }
+                  onChange={(e) =>
+                    handleFormChange(
+                      "fantasyTeamSize",
+                      parseInt(e.target.value) || 4
+                    )
+                  }
+                />
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleBack}>
+              Back
+            </Button>
+            <Button onClick={handleNext}>Continue</Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {step === 5 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Player Pricing Configuration</CardTitle>
+            <CardDescription>
+              Set base prices for players in different categories
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div>
+                <Label>Wallet Size for Fantasy Players</Label>
+                <Input
+                  type="number"
+                  min="10000"
+                  value={formData.walletSize}
+                  onChange={(e) =>
+                    handleFormChange("walletSize", parseInt(e.target.value))
+                  }
+                  className="mt-2"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Maximum points/currency users can spend on their fantasy team
+                </p>
+              </div>
+
+              <div>
+                <Label className="mb-2 block">
+                  Player Categories & Pricing
+                </Label>
+                <div className="space-y-3">
+                  {formData.playerCategories.map((category, index) => (
+                    <div
+                      key={index}
+                      className="grid grid-cols-3 gap-4 items-center"
+                    >
+                      <div>
+                        <Label htmlFor={`category-${index}`}>
+                          Category {category.name}
+                        </Label>
+                      </div>
+                      <div className="col-span-2">
+                        <Input
+                          id={`category-${index}`}
+                          type="number"
+                          value={category.price}
+                          onChange={(e) =>
+                            handleCategoryChange(
+                              index,
+                              "price",
+                              parseInt(e.target.value)
+                            )
+                          }
+                          placeholder="Base price"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <Button
+                    variant="outline"
+                    className="w-full text-sm"
+                    onClick={handleAddCategory}
+                  >
+                    + Add Another Category
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleBack}>
+              Back
+            </Button>
+            <Button onClick={handleNext}>Continue</Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {step === 6 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Team Changes & Windows</CardTitle>
+            <CardDescription>
+              Configure when and how players can edit their teams
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="allow-changes"
+                    className="rounded"
+                    checked={formData.allowTeamChanges}
+                    onChange={(e) =>
+                      handleFormChange("allowTeamChanges", e.target.checked)
+                    }
+                  />
+                  <Label htmlFor="allow-changes">Allow Team Changes</Label>
+                </div>
+                <p className="text-sm text-gray-500 ml-6">
+                  Enable users to modify their fantasy teams during the
+                  tournament
+                </p>
+              </div>
+
+              {formData.allowTeamChanges && (
+                <>
+                  <div className="space-y-3">
+                    <Label>Change Frequency</Label>
+                    <RadioGroup
+                      defaultValue={formData.changeFrequency}
+                      onValueChange={(value) =>
+                        handleFormChange("changeFrequency", value)
+                      }
+                      className="space-y-2"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="daily" id="daily" />
+                        <Label htmlFor="daily">Daily</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="rounds" id="rounds" />
+                        <Label htmlFor="rounds">Between Rounds</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="once" id="once" />
+                        <Label htmlFor="once">Once During Tournament</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <div>
+                    <Label>Maximum Players to Change</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={formData.fantasyTeamSize}
+                      value={formData.maxPlayersToChange}
+                      onChange={(e) =>
+                        handleFormChange(
+                          "maxPlayersToChange",
+                          parseInt(e.target.value)
+                        )
+                      }
+                      className="mt-2"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      Maximum number of players that can be swapped per change
+                      window
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label>Change Window Duration</Label>
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div>
+                        <Input
+                          type="time"
+                          value={formData.changeWindowStart}
+                          onChange={(e) =>
+                            handleFormChange(
+                              "changeWindowStart",
+                              e.target.value
+                            )
+                          }
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Start Time</p>
+                      </div>
+                      <div>
+                        <Input
+                          type="time"
+                          value={formData.changeWindowEnd}
+                          onChange={(e) =>
+                            handleFormChange("changeWindowEnd", e.target.value)
+                          }
+                        />
+                        <p className="text-xs text-gray-500 mt-1">End Time</p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleBack}>
+              Back
+            </Button>
+            <Button onClick={handleNext}>Continue</Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {step === 7 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Fantasy Entry Fee & Prize Pool</CardTitle>
+            <CardDescription>
+              Configure the financial aspects of your fantasy tournament
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <Tabs defaultValue="preset" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="preset">Preset Categories</TabsTrigger>
+                  <TabsTrigger value="custom">Custom Entry Fee</TabsTrigger>
+                </TabsList>
+                <TabsContent value="preset" className="space-y-4 pt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {formData.contestTypes.slice(0, 2).map((contest, index) => (
+                      <Card
+                        key={index}
+                        className={`border ${
+                          contest.active
+                            ? "border-green-500"
+                            : "border-gray-200"
+                        }`}
+                      >
+                        <CardContent className="p-4 flex flex-col items-center justify-center">
+                          <div className="flex items-center mb-2">
+                            <input
+                              type="checkbox"
+                              id={`contest-${index}`}
+                              checked={contest.active}
+                              onChange={(e) =>
+                                handleContestTypeChange(
+                                  index,
+                                  "active",
+                                  e.target.checked
+                                )
+                              }
+                              className="mr-2"
+                            />
+                            <span className="text-xl font-bold">
+                              {contest.name}
+                            </span>
+                          </div>
+                          <span>₹{contest.entryFee} Entry</span>
+                          <p className="text-xs text-gray-500 mt-2">
+                            {contest.entryFee > 0
+                              ? "80% Prize Pool"
+                              : "For practice only"}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {formData.contestTypes.slice(2, 4).map((contest, index) => (
+                      <Card
+                        key={index + 2}
+                        className={`border ${
+                          contest.active
+                            ? "border-green-500"
+                            : "border-gray-200"
+                        }`}
+                      >
+                        <CardContent className="p-4 flex flex-col items-center justify-center">
+                          <div className="flex items-center mb-2">
+                            <input
+                              type="checkbox"
+                              id={`contest-${index + 2}`}
+                              checked={contest.active}
+                              onChange={(e) =>
+                                handleContestTypeChange(
+                                  index + 2,
+                                  "active",
+                                  e.target.checked
+                                )
+                              }
+                              className="mr-2"
+                            />
+                            <span className="text-xl font-bold">
+                              {contest.name}
+                            </span>
+                          </div>
+                          <span>₹{contest.entryFee} Entry</span>
+                          <p className="text-xs text-gray-500 mt-2">
+                            80% Prize Pool
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </TabsContent>
+                <TabsContent value="custom" className="space-y-4 pt-4">
+                  <div>
+                    <Label htmlFor="entry-fee">Custom Entry Fee (₹)</Label>
+                    <Input
+                      id="entry-fee"
+                      type="number"
+                      min="0"
+                      className="mt-2"
+                      value={formData.entryFee}
+                      onChange={(e) =>
+                        handleFormChange("entryFee", parseInt(e.target.value))
+                      }
+                    />
+                  </div>
+                  <div className="p-4 bg-gray-50 rounded-md">
+                    <h3 className="font-semibold mb-2">Fee Breakdown:</h3>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span>Admin Commission (10%)</span>
+                        <span>₹{(formData.entryFee * 0.1).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Platform Fee (10%)</span>
+                        <span>₹{(formData.entryFee * 0.1).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium">
+                        <span>Prize Pool (80%)</span>
+                        <span>₹{(formData.entryFee * 0.8).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div>
+                <h3 className="font-semibold mb-2">Prize Distribution:</h3>
+                <div className="p-4 bg-gray-50 rounded-md space-y-2">
+                  <div className="flex justify-between">
+                    <span>1st Place (40%)</span>
+                    <span>₹{(formData.entryFee * 0.8 * 0.4).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>2nd Place (24%)</span>
+                    <span>₹{(formData.entryFee * 0.8 * 0.24).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>3rd Place (16%)</span>
+                    <span>₹{(formData.entryFee * 0.8 * 0.16).toFixed(2)}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    For contests with 30+ participants, positions 4-10 will also
+                    receive prizes.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleBack}>
+              Back
+            </Button>
+            <Button onClick={handleCreateTournament} disabled={loading}>
+              {loading ? "Creating..." : "Create Tournament"}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
 
       {error && (
         <div
-          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"
+          className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded"
           role="alert"
         >
-          {error}
+          <p className="font-bold">Error</p>
+          <p>{error}</p>
         </div>
       )}
-
-      <div className="mb-6">
-        <label
-          htmlFor="teamName"
-          className="block text-gray-700 text-sm font-bold mb-2"
-        >
-          Team Name
-        </label>
-        <input
-          type="text"
-          id="teamName"
-          value={teamName}
-          onChange={(e) => setTeamName(e.target.value)}
-          className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-          placeholder="Enter your team name"
-        />
-      </div>
-
-      <div className="mb-6">
-        <label
-          htmlFor="playerSearch"
-          className="block text-gray-700 text-sm font-bold mb-2"
-        >
-          Search Players
-        </label>
-        <input
-          type="text"
-          id="playerSearch"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-          placeholder="Search by name or country"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        {filteredPlayers.map((player) => (
-          <div
-            key={player.id}
-            className={`border rounded-lg overflow-hidden ${
-              player.isSelected
-                ? "border-green-500 bg-green-50"
-                : "border-gray-200"
-            }`}
-          >
-            <div className="p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-lg">{player.name}</h3>
-                <span className="text-green-600 font-semibold">
-                  ₹{getPlayerPrice(player).toLocaleString()}
-                </span>
-              </div>
-
-              <div className="mt-2 text-sm text-gray-600">
-                {player.country && (
-                  <div className="mb-1">Country: {player.country}</div>
-                )}
-                {player.rank && (
-                  <div className="mb-1">Rank: #{player.rank}</div>
-                )}
-                {player.tournamentWins > 0 && (
-                  <div className="mb-1">
-                    Tournament Wins: {player.tournamentWins}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={() => handlePlayerToggle(player.id)}
-                  className={`px-3 py-1 rounded text-sm font-medium ${
-                    player.isSelected
-                      ? "bg-red-500 text-white"
-                      : "bg-blue-500 text-white"
-                  }`}
-                >
-                  {player.isSelected ? "Remove" : "Select"}
-                </button>
-
-                {player.isSelected && (
-                  <>
-                    <button
-                      onClick={() => handleCaptainSelect(player.id)}
-                      className={`px-3 py-1 rounded text-sm font-medium ${
-                        player.isCaptain
-                          ? "bg-yellow-500 text-white"
-                          : "bg-gray-200 text-gray-800"
-                      }`}
-                    >
-                      Captain (2x)
-                    </button>
-
-                    <button
-                      onClick={() => handleViceCaptainSelect(player.id)}
-                      className={`px-3 py-1 rounded text-sm font-medium ${
-                        player.isViceCaptain
-                          ? "bg-purple-500 text-white"
-                          : "bg-gray-200 text-gray-800"
-                      }`}
-                    >
-                      Vice-Captain (1.5x)
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="text-center">
-        <button
-          onClick={handleCreateTeam}
-          disabled={loading}
-          className={`bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-lg ${
-            loading ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-        >
-          {loading ? "Creating..." : "Create Team"}
-        </button>
-      </div>
     </div>
   );
-};
-
-export default TeamCreation;
+}
