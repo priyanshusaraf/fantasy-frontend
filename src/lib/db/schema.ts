@@ -208,5 +208,3 @@ export type FantasyTeam = z.infer<typeof FantasyTeamSchema>;
 // Input Types (for creation/update)
 export type CreateUserInput = z.input<typeof UserSchema>;
 export type UpdateUserInput = Partial<CreateUserInput>;
-
-// Extend this pattern for other models as needed
