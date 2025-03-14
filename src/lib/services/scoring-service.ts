@@ -1,344 +1,334 @@
 // src/lib/services/scoring-service.ts
-import prisma from "../../../prisma";
-import { Prisma, MatchStatus } from "@prisma/client";
-import { FantasyService } from "./fantasy-service";
+import prisma from "@/lib/prisma";
+
+interface MatchResult {
+  matchId: number;
+  player1Id: number;
+  player2Id: number;
+  player1Score: number;
+  player2Score: number;
+  isKnockout: boolean;
+}
 
 export class ScoringService {
   /**
-   * Start a match
+   * Calculate points for a completed match
    */
-  static async startMatch(matchId: number) {
-    try {
-      return await prisma.match.update({
-        where: { id: matchId },
-        data: {
-          status: "IN_PROGRESS",
-          startTime: new Date(),
+  static async calculateMatchPoints(matchId: number) {
+    // Get match details
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        tournament: true,
+        player1: true,
+        player2: true,
+      },
+    });
+
+    if (!match || match.status !== "COMPLETED") {
+      throw new Error("Match not found or not completed");
+    }
+
+    // Extract scores
+    const player1Score = match.player1Score || 0;
+    const player2Score = match.player2Score || 0;
+
+    // Determine if this is a knockout match
+    const isKnockout =
+      match.round.toLowerCase().includes("final") ||
+      match.round.toLowerCase().includes("semi") ||
+      match.round.toLowerCase().includes("quarter");
+
+    // Calculate points for each player
+    const result: MatchResult = {
+      matchId,
+      player1Id: match.player1Id,
+      player2Id: match.player2Id,
+      player1Score,
+      player2Score,
+      isKnockout,
+    };
+
+    const player1Points = this.calculatePlayerPoints(result, match.player1Id);
+    const player2Points = this.calculatePlayerPoints(result, match.player2Id);
+
+    // Store points in database
+    await prisma.playerMatchPoints.upsert({
+      where: {
+        playerId_matchId: {
+          playerId: match.player1Id,
+          matchId,
         },
-        include: {
-          player1: true,
-          player2: true,
-          referee: true,
-          tournament: true,
+      },
+      update: {
+        points: player1Points,
+        breakdown: JSON.stringify(
+          this.getPointsBreakdown(result, match.player1Id)
+        ),
+      },
+      create: {
+        playerId: match.player1Id,
+        matchId,
+        points: player1Points,
+        breakdown: JSON.stringify(
+          this.getPointsBreakdown(result, match.player1Id)
+        ),
+      },
+    });
+
+    await prisma.playerMatchPoints.upsert({
+      where: {
+        playerId_matchId: {
+          playerId: match.player2Id,
+          matchId,
         },
-      });
-    } catch (error) {
-      console.error(`Error starting match ${matchId}:`, error);
-      throw error;
+      },
+      update: {
+        points: player2Points,
+        breakdown: JSON.stringify(
+          this.getPointsBreakdown(result, match.player2Id)
+        ),
+      },
+      create: {
+        playerId: match.player2Id,
+        matchId,
+        points: player2Points,
+        breakdown: JSON.stringify(
+          this.getPointsBreakdown(result, match.player2Id)
+        ),
+      },
+    });
+
+    // Update fantasy team points
+    await this.updateFantasyTeamPoints(matchId);
+
+    return {
+      player1: {
+        id: match.player1Id,
+        name: match.player1.name,
+        points: player1Points,
+      },
+      player2: {
+        id: match.player2Id,
+        name: match.player2.name,
+        points: player2Points,
+      },
+    };
+  }
+
+  /**
+   * Calculate points for a single player in a match
+   */
+  private static calculatePlayerPoints(
+    result: MatchResult,
+    playerId: number
+  ): number {
+    const isPlayer1 = playerId === result.player1Id;
+    const playerScore = isPlayer1 ? result.player1Score : result.player2Score;
+    const opponentScore = isPlayer1 ? result.player2Score : result.player1Score;
+
+    // Base points - each player gets points equal to their score
+    let points = playerScore;
+
+    // Winning bonus
+    const isWinner = playerScore > opponentScore;
+    if (isWinner) {
+      // Perfect game bonus (11-0)
+      if (opponentScore === 0) {
+        points += 15;
+      }
+      // Close game bonus (winning by less than 5 points)
+      else if (playerScore - opponentScore < 5) {
+        points += 10;
+      }
+    }
+
+    // Knockout stage multiplier
+    if (result.isKnockout) {
+      points *= 1.5;
+    }
+
+    return points;
+  }
+
+  /**
+   * Get detailed breakdown of points
+   */
+  private static getPointsBreakdown(
+    result: MatchResult,
+    playerId: number
+  ): any {
+    const isPlayer1 = playerId === result.player1Id;
+    const playerScore = isPlayer1 ? result.player1Score : result.player2Score;
+    const opponentScore = isPlayer1 ? result.player2Score : result.player1Score;
+
+    const breakdown: any = {
+      basePoints: playerScore,
+      bonuses: {},
+    };
+
+    // Winning bonus
+    const isWinner = playerScore > opponentScore;
+    if (isWinner) {
+      breakdown.bonuses.winningMatch = 0;
+
+      // Perfect game bonus (11-0)
+      if (opponentScore === 0) {
+        breakdown.bonuses.perfectGame = 15;
+      }
+      // Close game bonus (winning by less than 5 points)
+      else if (playerScore - opponentScore < 5) {
+        breakdown.bonuses.closeGame = 10;
+      }
+    }
+
+    // Knockout stage multiplier
+    if (result.isKnockout) {
+      breakdown.knockoutMultiplier = 1.5;
+    } else {
+      breakdown.knockoutMultiplier = 1;
+    }
+
+    // Calculate total with multiplier
+    let total = playerScore;
+    Object.values(breakdown.bonuses).forEach((bonus: any) => {
+      total += bonus;
+    });
+
+    total *= breakdown.knockoutMultiplier;
+    breakdown.total = total;
+
+    return breakdown;
+  }
+
+  /**
+   * Update all fantasy team points after a match
+   */
+  private static async updateFantasyTeamPoints(matchId: number) {
+    // Get match details
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        tournament: {
+          include: {
+            fantasyContests: true,
+          },
+        },
+      },
+    });
+
+    if (!match) return;
+
+    // Get all contests affected by this match
+    const contestIds = match.tournament.fantasyContests.map((c) => c.id);
+
+    // For each contest, update all team points
+    for (const contestId of contestIds) {
+      await this.updateContestTeamPoints(contestId);
     }
   }
 
   /**
-   * Update score during a match
+   * Update all team points in a contest
    */
-  static async updateScore(
-    matchId: number,
-    data: {
-      player1Score?: number;
-      player2Score?: number;
+  private static async updateContestTeamPoints(contestId: number) {
+    // Get all teams in this contest
+    const teams = await prisma.fantasyTeam.findMany({
+      where: { contestId },
+      include: {
+        players: true,
+      },
+    });
+
+    // Update each team's points
+    for (const team of teams) {
+      await this.updateTeamPoints(team.id);
     }
-  ) {
-    try {
-      return await prisma.match.update({
-        where: { id: matchId },
-        data: {
-          player1Score: data.player1Score,
-          player2Score: data.player2Score,
-        },
-      });
-    } catch (error) {
-      console.error(`Error updating score for match ${matchId}:`, error);
-      throw error;
-    }
+
+    // Update team rankings
+    await this.updateTeamRankings(contestId);
   }
 
   /**
-   * Record match performance for a player
+   * Update a single team's points
    */
-  static async recordPerformance(data: Prisma.MatchPerformanceCreateInput) {
-    try {
-      return await prisma.matchPerformance.create({
-        data,
-      });
-    } catch (error) {
-      console.error("Error recording match performance:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Complete a match and process results
-   */
-  static async completeMatch(
-    matchId: number,
-    data: {
-      player1Score: number;
-      player2Score: number;
-      performances: Array<{
-        playerId: number;
-        points: number;
-        aces: number;
-        faults: number;
-        winningShots: number;
-        otherStats?: Record<string, any>;
-      }>;
-      matchDuration?: number;
-    }
-  ) {
-    try {
-      return await prisma.$transaction(async (tx) => {
-        // Get the match
-        const match = await tx.match.findUnique({
-          where: { id: matchId },
+  private static async updateTeamPoints(teamId: number) {
+    // Get team details
+    const team = await prisma.fantasyTeam.findUnique({
+      where: { id: teamId },
+      include: {
+        players: true,
+        contest: {
           include: {
             tournament: true,
-            player1: true,
-            player2: true,
           },
-        });
-
-        if (!match) {
-          throw new Error("Match not found");
-        }
-
-        if (match.status === "COMPLETED") {
-          throw new Error("Match is already completed");
-        }
-
-        // Determine the winner
-        const winner =
-          data.player1Score > data.player2Score
-            ? match.player1Id
-            : match.player2Id;
-        const loser =
-          data.player1Score > data.player2Score
-            ? match.player2Id
-            : match.player1Id;
-
-        // Record all performances
-        for (const perf of data.performances) {
-          await tx.matchPerformance.create({
-            data: {
-              match: { connect: { id: matchId } },
-              player: { connect: { id: perf.playerId } },
-              points: perf.points,
-              aces: perf.aces,
-              faults: perf.faults,
-              winningShots: perf.winningShots,
-              otherStats: perf.otherStats || {},
-            },
-          });
-        }
-
-        // Update the match
-        const completedMatch = await tx.match.update({
-          where: { id: matchId },
-          data: {
-            status: "COMPLETED",
-            player1Score: data.player1Score,
-            player2Score: data.player2Score,
-            endTime: new Date(),
-            matchDuration: data.matchDuration,
-          },
-        });
-
-        // Update player stats
-        await this.updatePlayerStats(tx, match.tournamentId, winner, true);
-        await this.updatePlayerStats(tx, match.tournamentId, loser, false);
-
-        // Calculate bonus points for fantasy
-        const winMargin = Math.abs(data.player1Score - data.player2Score);
-        const bonusPoints = this.calculateBonusPoints(
-          data.player1Score,
-          data.player2Score
-        );
-
-        // Apply bonus points to performances
-        for (const perf of data.performances) {
-          const isWinner = perf.playerId === winner;
-
-          if (isWinner && bonusPoints > 0) {
-            // Add bonus points to winner's performance
-            await tx.matchPerformance.update({
-              where: {
-                matchId_playerId: {
-                  matchId,
-                  playerId: perf.playerId,
-                },
-              },
-              data: {
-                points: {
-                  increment: bonusPoints,
-                },
-                otherStats: {
-                  ...perf.otherStats,
-                  bonusPoints,
-                },
-              },
-            });
-          }
-        }
-
-        // Update fantasy points
-        await FantasyService.updatePointsAfterMatch(matchId);
-
-        return completedMatch;
-      });
-    } catch (error) {
-      console.error(`Error completing match ${matchId}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Calculate bonus points based on match rules
-   */
-  private static calculateBonusPoints(
-    player1Score: number,
-    player2Score: number
-  ): number {
-    const winningScore = Math.max(player1Score, player2Score);
-    const losingScore = Math.min(player1Score, player2Score);
-
-    // If a player wins by 11-0, they get 15 bonus points
-    if (winningScore === 11 && losingScore === 0) {
-      return 15;
-    }
-
-    // If they win by under 5 points, they get 10 bonus points
-    if (winningScore - losingScore < 5) {
-      return 10;
-    }
-
-    return 0;
-  }
-
-  /**
-   * Update player statistics after a match
-   */
-  private static async updatePlayerStats(
-    tx: Prisma.TransactionClient,
-    tournamentId: number,
-    playerId: number,
-    isWinner: boolean
-  ) {
-    // Check if stats exist for this player and tournament
-    const existingStats = await tx.playerStats.findFirst({
-      where: {
-        playerId,
-        tournamentId,
+        },
       },
     });
 
-    if (existingStats) {
-      // Update existing stats
-      await tx.playerStats.update({
-        where: { id: existingStats.id },
-        data: {
-          wins: { increment: isWinner ? 1 : 0 },
-          losses: { increment: isWinner ? 0 : 1 },
-        },
-      });
-    } else {
-      // Create new stats
-      await tx.playerStats.create({
-        data: {
-          player: { connect: { id: playerId } },
-          tournament: { connect: { id: tournamentId } },
-          wins: isWinner ? 1 : 0,
-          losses: isWinner ? 0 : 1,
-        },
-      });
-    }
+    if (!team) return;
 
-    // Update global player stats
-    await tx.player.update({
-      where: { id: playerId },
-      data: {
-        tournamentWins: isWinner ? { increment: 1 } : undefined,
-      },
-    });
-  }
+    // Get tournament ID
+    const tournamentId = team.contest.tournamentId;
 
-  /**
-   * Get live matches
-   */
-  static async getLiveMatches() {
-    try {
-      return await prisma.match.findMany({
+    // Get player points for this tournament
+    let totalPoints = 0;
+
+    for (const teamPlayer of team.players) {
+      const playerPoints = await prisma.playerMatchPoints.findMany({
         where: {
-          status: "IN_PROGRESS",
-        },
-        include: {
-          tournament: true,
-          player1: true,
-          player2: true,
-          referee: true,
-        },
-        orderBy: {
-          startTime: "asc",
-        },
-      });
-    } catch (error) {
-      console.error("Error fetching live matches:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get match with full details
-   */
-  static async getMatchWithDetails(id: number) {
-    try {
-      return await prisma.match.findUnique({
-        where: { id },
-        include: {
-          tournament: true,
-          player1: true,
-          player2: true,
-          referee: true,
-          team1: true,
-          team2: true,
-          performances: {
-            include: {
-              player: true,
-            },
-          },
-          playerPoints: {
-            include: {
-              player: true,
-            },
+          playerId: teamPlayer.playerId,
+          match: {
+            tournamentId,
           },
         },
       });
-    } catch (error) {
-      console.error(`Error fetching match details for ID ${id}:`, error);
-      throw error;
-    }
-  }
 
-  /**
-   * Generate leaderboard from match results
-   */
-  static async generateLeaderboard(tournamentId: number) {
-    try {
-      const playerStats = await prisma.playerStats.findMany({
-        where: {
-          tournamentId,
-        },
-        include: {
-          player: true,
-        },
-        orderBy: [{ wins: "desc" }, { pointsScored: "desc" }],
-      });
-
-      return playerStats;
-    } catch (error) {
-      console.error(
-        `Error generating leaderboard for tournament ${tournamentId}:`,
-        error
+      // Calculate player's total points with captain/vice-captain multipliers
+      let playerTotalPoints = playerPoints.reduce(
+        (sum, p) => sum + Number(p.points),
+        0
       );
-      throw error;
+
+      // Apply captain/vice-captain multipliers
+      if (teamPlayer.isCaptain) {
+        playerTotalPoints *= 2;
+      } else if (teamPlayer.isViceCaptain) {
+        playerTotalPoints *= 1.5;
+      }
+
+      totalPoints += playerTotalPoints;
+    }
+
+    // Update team's total points
+    await prisma.fantasyTeam.update({
+      where: { id: teamId },
+      data: {
+        totalPoints,
+      },
+    });
+  }
+
+  /**
+   * Update team rankings in a contest
+   */
+  private static async updateTeamRankings(contestId: number) {
+    // Get all teams ordered by points
+    const teams = await prisma.fantasyTeam.findMany({
+      where: { contestId },
+      orderBy: {
+        totalPoints: "desc",
+      },
+    });
+
+    // Update ranks
+    for (let i = 0; i < teams.length; i++) {
+      await prisma.fantasyTeam.update({
+        where: { id: teams[i].id },
+        data: {
+          rank: i + 1,
+        },
+      });
     }
   }
 }

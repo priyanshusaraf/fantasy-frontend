@@ -1,79 +1,90 @@
 // src/app/api/players/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { PlayerService } from "@/lib/services/player-service";
-import { adminMiddleware } from "@/middleware/auth";
-import { PlayerSkillLevel } from "@prisma/client";
+import { authMiddleware } from "@/middleware/auth";
+import { errorHandler } from "@/middleware/error-handler";
+import prisma from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   try {
-    // Extract query parameters
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
-    const isActive =
-      searchParams.get("isActive") === "true"
-        ? true
-        : searchParams.get("isActive") === "false"
-        ? false
-        : undefined;
-    const country = searchParams.get("country") || undefined;
-    const search = searchParams.get("search") || undefined;
-    const skillLevel = searchParams.get("skillLevel") as
-      | PlayerSkillLevel
-      | undefined;
+    const limit = parseInt(searchParams.get("limit") || "20");
+    const search = searchParams.get("search") || "";
+    const skillLevel = searchParams.get("skillLevel");
 
-    // Get players with filtering
-    const playersData = await PlayerService.listPlayers({
-      page,
-      limit,
-      isActive,
-      country,
-      search,
-      skillLevel,
+    // Build query conditions
+    const where: any = {};
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { country: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    if (skillLevel) {
+      where.skillLevel = skillLevel;
+    }
+
+    // Get players with pagination
+    const [players, total] = await Promise.all([
+      prisma.player.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { name: "asc" },
+      }),
+      prisma.player.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      players,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     });
-
-    return NextResponse.json(playersData, { status: 200 });
   } catch (error) {
-    console.error("Error fetching players:", error);
-    return NextResponse.json(
-      { message: "Failed to fetch players", error: (error as Error).message },
-      { status: 500 }
-    );
+    return errorHandler(error as Error, request);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Only admins can create players
-    const authResponse = await adminMiddleware(request);
-    if (authResponse.status !== 200) {
-      return authResponse;
+    // Check authentication
+    const authResult = await authMiddleware(request);
+    if (authResult.status !== 200) {
+      return authResult;
     }
 
-    // Get player data from request
-    const playerData = await request.json();
+    const data = await request.json();
 
-    // Create player using the service
-    const player = await PlayerService.createPlayer({
-      name: playerData.name,
-      imageUrl: playerData.imageUrl,
-      age: playerData.age,
-      country: playerData.country,
-      skillLevel: playerData.skillLevel,
-      dominantHand: playerData.dominantHand,
-      rank: playerData.rank,
-      tournamentWins: playerData.tournamentWins || 0,
-      careerWinRate: playerData.careerWinRate || 0,
-      bio: playerData.bio,
-      isActive: playerData.isActive !== undefined ? playerData.isActive : true,
+    // Validate required fields
+    if (!data.name) {
+      return NextResponse.json(
+        {
+          message: "Player name is required",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Create new player
+    const player = await prisma.player.create({
+      data: {
+        name: data.name,
+        country: data.country || null,
+        skillLevel: data.skillLevel || "INTERMEDIATE",
+        dominantHand: data.dominantHand || "RIGHT",
+        imageUrl: data.imageUrl || null,
+        isActive: true,
+      },
     });
 
     return NextResponse.json(player, { status: 201 });
   } catch (error) {
-    console.error("Error creating player:", error);
-    return NextResponse.json(
-      { message: "Failed to create player", error: (error as Error).message },
-      { status: 500 }
-    );
+    return errorHandler(error as Error, request);
   }
 }
