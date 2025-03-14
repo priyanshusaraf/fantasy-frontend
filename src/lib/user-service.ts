@@ -1,7 +1,6 @@
 // src/lib/user-service.ts
-import mysql, { RowDataPacket } from "mysql2/promise";
 import bcrypt from "bcryptjs";
-import { connectToDatabase } from "./db";
+import prisma from "./db";
 
 export interface User {
   id?: number;
@@ -14,166 +13,134 @@ export interface User {
   createdAt?: Date;
 }
 
+export interface UserListResult {
+  users: User[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 export class UserService {
+  private static async hashPassword(password: string): Promise<string> {
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(password, salt);
+  }
+
   public static async createUser(
     userData: Omit<User, "id" | "createdAt">
   ): Promise<number> {
-    const connection = await connectToDatabase();
-
     try {
-      // Hash password if it exists
-      let hashedPassword = userData.password;
-      if (userData.password) {
-        const salt = await bcrypt.genSalt(10);
-        hashedPassword = await bcrypt.hash(userData.password, salt);
+      // Validate input
+      if (!userData.username || !userData.email) {
+        throw new Error("Username and email are required");
       }
 
-      // Prepare user data
-      const newUser = {
-        ...userData,
-        password: hashedPassword,
-        role: userData.role || "user",
-        isVerified: false,
-        createdAt: new Date(),
-      };
+      // Hash password if it exists
+      const hashedPassword = userData.password
+        ? await this.hashPassword(userData.password)
+        : null;
 
-      // Insert user into database
-      const [result] = await connection.execute<mysql.OkPacket>(
-        "INSERT INTO users (username, email, password, role, isVerified, createdAt, profileImage) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-          newUser.username,
-          newUser.email,
-          newUser.password,
-          newUser.role,
-          newUser.isVerified,
-          newUser.createdAt,
-          newUser.profileImage || null,
-        ]
-      );
+      // Create user with Prisma
+      const user = await prisma.user.create({
+        data: {
+          ...userData,
+          password: hashedPassword,
+          role: userData.role || "user",
+          isVerified: false,
+          createdAt: new Date(),
+        },
+      });
 
-      return result.insertId;
+      return user.id;
     } catch (error) {
       console.error("User creation error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
   public static async findByEmail(email: string): Promise<User | null> {
-    const connection = await connectToDatabase();
-
     try {
-      const [rows] = await connection.execute<RowDataPacket[]>(
-        "SELECT * FROM users WHERE email = ?",
-        [email]
-      );
-
-      return rows.length > 0 ? (rows[0] as User) : null;
+      return await prisma.user.findUnique({
+        where: { email },
+      });
     } catch (error) {
       console.error("Find user by email error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
   public static async getUserById(id: number): Promise<User | null> {
-    const connection = await connectToDatabase();
-
     try {
-      const [rows] = await connection.execute<RowDataPacket[]>(
-        "SELECT id, username, email, role, isVerified, createdAt, profileImage FROM users WHERE id = ?",
-        [id]
-      );
-
-      return rows.length > 0 ? (rows[0] as User) : null;
+      return await prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          isVerified: true,
+          createdAt: true,
+          profileImage: true,
+        },
+      });
     } catch (error) {
       console.error("Get user error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
   public static async updateUser(id: number, updateData: Partial<User>) {
-    const connection = await connectToDatabase();
-
     try {
       // Handle password hashing if password is being updated
       if (updateData.password) {
-        const salt = await bcrypt.genSalt(10);
-        updateData.password = await bcrypt.hash(updateData.password, salt);
+        updateData.password = await this.hashPassword(updateData.password);
       }
 
-      // Explicitly type-safe key filtering
-      const updateFields: (keyof User)[] = [
-        "username",
-        "email",
-        "password",
-        "role",
-        "profileImage",
-        "isVerified",
-      ];
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: updateData,
+      });
 
-      const fieldsToUpdate = updateFields.filter(
-        (key) => updateData[key] !== undefined
-      );
-
-      const sqlSetClauses = fieldsToUpdate
-        .map((field) => `${String(field)} = ?`)
-        .join(", ");
-
-      const values = fieldsToUpdate.map((field) => updateData[field]);
-      values.push(id);
-
-      const query = `UPDATE users SET ${sqlSetClauses} WHERE id = ?`;
-
-      await connection.execute<mysql.OkPacket>(query, values);
-
-      return this.getUserById(id);
+      return updatedUser;
     } catch (error) {
       console.error("User update error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
   public static async deleteUser(id: number): Promise<boolean> {
-    const connection = await connectToDatabase();
-
     try {
-      const [result] = await connection.execute<mysql.OkPacket>(
-        "DELETE FROM users WHERE id = ?",
-        [id]
-      );
-      return result.affectedRows > 0;
+      await prisma.user.delete({
+        where: { id },
+      });
+      return true;
     } catch (error) {
       console.error("User deletion error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
-  public static async listUsers(page = 1, limit = 10) {
-    const connection = await connectToDatabase();
-
+  public static async listUsers(page = 1, limit = 10): Promise<UserListResult> {
     try {
       const offset = (page - 1) * limit;
 
       // Get users
-      const [users] = await connection.execute<RowDataPacket[]>(
-        "SELECT id, username, email, role, isVerified, createdAt, profileImage FROM users LIMIT ? OFFSET ?",
-        [limit, offset]
-      );
+      const users = await prisma.user.findMany({
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          isVerified: true,
+          createdAt: true,
+          profileImage: true,
+        },
+      });
 
       // Get total count
-      const [countResult] = await connection.execute<RowDataPacket[]>(
-        "SELECT COUNT(*) as total FROM users"
-      );
-      const total = countResult[0]["total"];
+      const total = await prisma.user.count();
 
       return {
         users,
@@ -184,8 +151,6 @@ export class UserService {
     } catch (error) {
       console.error("List users error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 
@@ -193,20 +158,12 @@ export class UserService {
     email: string,
     password: string
   ): Promise<User | null> {
-    const connection = await connectToDatabase();
-
     try {
-      const [rows] = await connection.execute<RowDataPacket[]>(
-        "SELECT * FROM users WHERE email = ?",
-        [email]
-      );
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
 
-      if (!rows || rows.length === 0) return null;
-
-      const user = rows[0] as User;
-
-      // For Google OAuth users, password might be null
-      if (user.password === null) return null;
+      if (!user || user.password === null) return null;
 
       // Compare passwords
       const isMatch = await bcrypt.compare(password, user.password);
@@ -215,8 +172,6 @@ export class UserService {
     } catch (error) {
       console.error("Credential verification error:", error);
       throw error;
-    } finally {
-      await connection.end();
     }
   }
 }

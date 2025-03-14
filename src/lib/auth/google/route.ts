@@ -1,23 +1,61 @@
-// src/app/api/auth/google/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { authenticateWithGoogle } from "@/lib/auth/google-auth";
-import { errorHandler } from "@/middleware/error-handler";
+import { NextAuthRequest } from "next-auth/lib";
+import { NextResponse } from "next/server";
+import NextAuth from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
+import prisma from "@/lib/db";
 
-export async function POST(request: NextRequest) {
-  try {
-    const { token } = await request.json();
+const handler = NextAuth({
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      authorization: {
+        params: {
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code",
+        },
+      },
+    }),
+  ],
+  callbacks: {
+    async signIn({ account, profile }) {
+      if (!profile?.email) {
+        throw new Error("No profile email");
+      }
 
-    if (!token) {
-      return NextResponse.json(
-        { message: "Google token is required" },
-        { status: 400 }
-      );
-    }
+      // Check if user exists, if not, create a new user
+      const existingUser = await prisma.user.findUnique({
+        where: { email: profile.email },
+      });
 
-    const result = await authenticateWithGoogle(token);
+      if (!existingUser) {
+        await prisma.user.create({
+          data: {
+            email: profile.email,
+            username: profile.name || profile.email.split("@")[0],
+            role: "user",
+            isVerified: true,
+            password: null, // OAuth users don't have a password
+            createdAt: new Date(),
+            profileImage: profile.picture,
+          },
+        });
+      }
 
-    return NextResponse.json(result, { status: 200 });
-  } catch (error) {
-    return errorHandler(error as Error, request);
-  }
-}
+      return true;
+    },
+    async session({ session, token }) {
+      if (token.sub) {
+        session.user.id = token.sub;
+      }
+      return session;
+    },
+  },
+  pages: {
+    signIn: "/login",
+    error: "/auth/error",
+  },
+});
+
+export { handler as GET, handler as POST };
