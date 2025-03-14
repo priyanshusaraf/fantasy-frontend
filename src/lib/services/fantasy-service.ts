@@ -1,5 +1,5 @@
 // src/lib/services/fantasy-service.ts
-import prisma from "../../../prisma";
+import prisma from "@/lib/db";
 import { Prisma } from "@prisma/client";
 
 export class FantasyService {

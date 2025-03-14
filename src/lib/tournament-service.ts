@@ -1,6 +1,11 @@
-// src/lib/services/tournament-service.ts
-import prisma from "../../../prisma";
-import { Prisma } from "@prisma/client";
+import prisma from "@/lib/db";
+import {
+  Prisma,
+  TournamentType,
+  TournamentStatus,
+  MatchStatus,
+  PaymentStatus,
+} from "@prisma/client";
 
 export class TournamentService {
   /**
@@ -8,9 +13,7 @@ export class TournamentService {
    */
   static async createTournament(data: Prisma.TournamentCreateInput) {
     try {
-      return await prisma.tournament.create({
-        data,
-      });
+      return await prisma.tournament.create({ data });
     } catch (error) {
       console.error("Error creating tournament:", error);
       throw error;
@@ -32,16 +35,13 @@ export class TournamentService {
               referee: true,
             },
           },
-          contests: true,
+          // Remove or update 'contests' if it is not defined in your Prisma schema
+          // contests: true,
           playerStats: {
-            include: {
-              player: true,
-            },
+            include: { player: true },
           },
           entries: {
-            include: {
-              player: true,
-            },
+            include: { player: true },
           },
         },
       });
@@ -64,9 +64,9 @@ export class TournamentService {
   }: {
     page?: number;
     limit?: number;
-    status?: Prisma.TournamentStatus;
+    status?: TournamentStatus;
     search?: string;
-    type?: Prisma.TournamentType;
+    type?: TournamentType;
     orderBy?: Prisma.TournamentOrderByWithRelationInput;
   }) {
     try {
@@ -75,8 +75,8 @@ export class TournamentService {
         ...(type && { type }),
         ...(search && {
           OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { location: { contains: search, mode: "insensitive" } },
+            { name: { contains: search } }, // Removed mode option
+            { location: { contains: search } }, // Removed mode option
           ],
         }),
       };
@@ -92,7 +92,7 @@ export class TournamentService {
               select: {
                 matches: true,
                 entries: true,
-                contests: true,
+                fantasyContests: true,
               },
             },
           },
@@ -150,9 +150,7 @@ export class TournamentService {
    */
   static async createMatch(data: Prisma.MatchCreateInput) {
     try {
-      return await prisma.match.create({
-        data,
-      });
+      return await prisma.match.create({ data });
     } catch (error) {
       console.error("Error creating match:", error);
       throw error;
@@ -164,10 +162,7 @@ export class TournamentService {
    */
   static async getTournamentMatches(
     tournamentId: number,
-    options?: {
-      round?: string;
-      status?: Prisma.MatchStatus;
-    }
+    options?: { round?: string; status?: MatchStatus }
   ) {
     try {
       const where: Prisma.MatchWhereInput = {
@@ -186,9 +181,7 @@ export class TournamentService {
           team2: true,
           winner: true,
         },
-        orderBy: {
-          scheduledTime: "asc",
-        },
+        orderBy: { scheduledTime: "asc" },
       });
     } catch (error) {
       console.error(
@@ -233,11 +226,9 @@ export class TournamentService {
           player: true,
         },
       });
-
       return entry;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        // Handle unique constraint violations (player already registered)
         if (error.code === "P2002") {
           throw new Error("Player is already registered for this tournament");
         }
@@ -253,7 +244,7 @@ export class TournamentService {
   static async updateEntryPaymentStatus(
     tournamentId: number,
     playerId: number,
-    status: Prisma.PaymentStatus
+    status: PaymentStatus
   ) {
     try {
       return await prisma.tournamentEntry.update({
@@ -263,9 +254,7 @@ export class TournamentService {
             playerId,
           },
         },
-        data: {
-          paymentStatus: status,
-        },
+        data: { paymentStatus: status },
       });
     } catch (error) {
       console.error("Error updating entry payment status:", error);

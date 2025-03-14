@@ -6,10 +6,16 @@ export interface User {
   id?: number;
   username: string;
   email: string;
-  password: string | null;
-  role?: "user" | "admin";
+  password?: string | null; // Optional for OAuth users
+  role:
+    | "USER"
+    | "PLAYER"
+    | "REFEREE"
+    | "TOURNAMENT_ADMIN"
+    | "MASTER_ADMIN"
+    | "ORGANIZER";
+  isApproved: boolean;
   profileImage?: string | null;
-  isVerified?: boolean;
   createdAt?: Date;
 }
 
@@ -45,7 +51,7 @@ export class UserService {
         data: {
           ...userData,
           password: hashedPassword,
-          role: userData.role || "user",
+          role: userData.role || "USER",
           isVerified: false,
           createdAt: new Date(),
         },
@@ -78,6 +84,7 @@ export class UserService {
           username: true,
           email: true,
           role: true,
+          isApproved: true,
           isVerified: true,
           createdAt: true,
           profileImage: true,
@@ -96,9 +103,12 @@ export class UserService {
         updateData.password = await this.hashPassword(updateData.password);
       }
 
+      // Remove the 'id' property if present, since it should not be updated
+      const { id: _, ...data } = updateData;
+
       const updatedUser = await prisma.user.update({
         where: { id },
-        data: updateData,
+        data,
       });
 
       return updatedUser;
@@ -133,6 +143,7 @@ export class UserService {
           username: true,
           email: true,
           role: true,
+          isApproved: true,
           isVerified: true,
           createdAt: true,
           profileImage: true,
