@@ -1,4 +1,3 @@
-// src/components/referee/CreateMatch.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -50,7 +49,7 @@ interface Tournament {
   name: string;
 }
 
-// Form schema
+// Form schema for creating a match
 const createMatchSchema = z.object({
   tournamentId: z.number(),
   matchType: z.enum(["singles", "doubles"]),
@@ -71,14 +70,14 @@ const createMatchSchema = z.object({
 type CreateMatchFormValues = z.infer<typeof createMatchSchema>;
 
 export default function CreateMatch() {
+  const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [filteredPlayers, setFilteredPlayers] = useState<Player[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
 
   const form = useForm<CreateMatchFormValues>({
     resolver: zodResolver(createMatchSchema),
@@ -95,27 +94,24 @@ export default function CreateMatch() {
   const watchMatchType = form.watch("matchType");
   const watchTournamentId = form.watch("tournamentId");
 
-  // Fetch tournaments and players
+  // Ensure that only authenticated referees can access this page
   useEffect(() => {
     if (!isAuthenticated || user?.role !== "REFEREE") {
       router.push("/");
-      return;
     }
+  }, [isAuthenticated, user, router]);
 
-    const fetchData = async () => {
+  // Fetch tournaments (in progress)
+  useEffect(() => {
+    const fetchTournaments = async () => {
       try {
-        // Fetch tournaments
-        const tournamentsResponse = await fetch(
-          "/api/tournaments?status=IN_PROGRESS",
-          {
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          }
-        );
-
-        if (tournamentsResponse.ok) {
-          const data = await tournamentsResponse.json();
+        const res = await fetch("/api/tournaments?status=IN_PROGRESS", {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
           setTournaments(data.tournaments);
         }
       } catch (error) {
@@ -123,17 +119,15 @@ export default function CreateMatch() {
         toast.error("Failed to load tournaments");
       }
     };
+    fetchTournaments();
+  }, []);
 
-    fetchData();
-  }, [isAuthenticated, user, router]);
-
-  // Fetch players when tournament is selected
+  // Fetch players and teams when a tournament is selected
   useEffect(() => {
     if (!watchTournamentId) return;
-
-    const fetchPlayers = async () => {
+    const fetchPlayersAndTeams = async () => {
       try {
-        const playersResponse = await fetch(
+        const playersRes = await fetch(
           `/api/tournaments/${watchTournamentId}/players`,
           {
             headers: {
@@ -141,15 +135,12 @@ export default function CreateMatch() {
             },
           }
         );
-
-        if (playersResponse.ok) {
-          const data = await playersResponse.json();
+        if (playersRes.ok) {
+          const data = await playersRes.json();
           setPlayers(data.players);
           setFilteredPlayers(data.players);
         }
-
-        // Fetch teams if available
-        const teamsResponse = await fetch(
+        const teamsRes = await fetch(
           `/api/tournaments/${watchTournamentId}/teams`,
           {
             headers: {
@@ -157,18 +148,16 @@ export default function CreateMatch() {
             },
           }
         );
-
-        if (teamsResponse.ok) {
-          const data = await teamsResponse.json();
+        if (teamsRes.ok) {
+          const data = await teamsRes.json();
           setTeams(data.teams);
         }
       } catch (error) {
-        console.error("Error fetching players:", error);
-        toast.error("Failed to load players");
+        console.error("Error fetching players/teams:", error);
+        toast.error("Failed to load players or teams");
       }
     };
-
-    fetchPlayers();
+    fetchPlayersAndTeams();
   }, [watchTournamentId]);
 
   // Filter players based on search term
@@ -176,18 +165,18 @@ export default function CreateMatch() {
     if (searchTerm.trim() === "") {
       setFilteredPlayers(players);
     } else {
-      const filtered = players.filter((player) =>
-        player.name.toLowerCase().includes(searchTerm.toLowerCase())
+      setFilteredPlayers(
+        players.filter((player) =>
+          player.name.toLowerCase().includes(searchTerm.toLowerCase())
+        )
       );
-      setFilteredPlayers(filtered);
     }
   }, [searchTerm, players]);
 
   const onSubmit = async (values: CreateMatchFormValues) => {
     setLoading(true);
     try {
-      // Format data based on match type
-      const matchData = {
+      const matchData: any = {
         tournamentId: values.tournamentId,
         round: values.round,
         maxScore: values.maxScore,
@@ -195,10 +184,10 @@ export default function CreateMatch() {
         isGoldenPoint: values.isGoldenPoint,
         courtNumber: values.courtNumber,
         startTime: values.startTime,
-        refereeId: user?.id, // Current referee
+        refereeId: user?.id,
       };
 
-      // Add player or team data based on match type
+      // Handle match data based on match type
       if (values.matchType === "singles") {
         Object.assign(matchData, {
           player1Id: values.player1Id,
@@ -206,14 +195,13 @@ export default function CreateMatch() {
         });
       } else {
         if (teams.length > 0) {
-          // Using pre-defined teams
+          // Use pre-defined teams if available
           Object.assign(matchData, {
             team1Id: values.team1Id,
             team2Id: values.team2Id,
           });
         } else {
-          // Creating ad-hoc teams for doubles match
-          // This would require additional backend support to create temporary teams
+          // Ad-hoc doubles match: select individual players
           Object.assign(matchData, {
             player1Id: values.player1Id,
             player2Id: values.player2Id,
@@ -224,7 +212,7 @@ export default function CreateMatch() {
         }
       }
 
-      const response = await fetch(
+      const res = await fetch(
         `/api/tournaments/${values.tournamentId}/matches`,
         {
           method: "POST",
@@ -236,14 +224,12 @@ export default function CreateMatch() {
         }
       );
 
-      if (!response.ok) {
+      if (!res.ok) {
         throw new Error("Failed to create match");
       }
 
-      const createdMatch = await response.json();
+      const createdMatch = await res.json();
       toast.success("Match created successfully");
-
-      // Redirect to live scoring page for the new match
       router.push(`/referee/live-scoring/${createdMatch.id}`);
     } catch (error) {
       console.error("Error creating match:", error);
@@ -254,7 +240,7 @@ export default function CreateMatch() {
   };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
+    <Card className="w-full max-w-4xl mx-auto my-8">
       <CardHeader>
         <CardTitle className="text-2xl text-[#00a1e0]">Create Match</CardTitle>
         <CardDescription>Set up a new match to referee</CardDescription>
@@ -307,18 +293,18 @@ export default function CreateMatch() {
                       defaultValue={field.value}
                       className="flex space-x-4"
                     >
-                      <FormItem className="flex items-center space-x-2">
-                        <FormControl>
-                          <RadioGroupItem value="singles" />
-                        </FormControl>
-                        <FormLabel className="font-normal">Singles</FormLabel>
-                      </FormItem>
-                      <FormItem className="flex items-center space-x-2">
-                        <FormControl>
-                          <RadioGroupItem value="doubles" />
-                        </FormControl>
-                        <FormLabel className="font-normal">Doubles</FormLabel>
-                      </FormItem>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="singles" id="singles" />
+                        <Label htmlFor="singles" className="font-normal">
+                          Singles
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="doubles" id="doubles" />
+                        <Label htmlFor="doubles" className="font-normal">
+                          Doubles
+                        </Label>
+                      </div>
                     </RadioGroup>
                   </FormControl>
                   <FormMessage />
@@ -326,19 +312,18 @@ export default function CreateMatch() {
               )}
             />
 
-            {/* Player Selection */}
+            {/* Conditional: Player or Team Selection */}
             {watchTournamentId && (
               <div className="space-y-4">
-                <div>
+                <div className="mb-4">
                   <Label>Search Players</Label>
                   <Input
                     placeholder="Search by player name"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="mb-4"
+                    className="mt-1"
                   />
                 </div>
-
                 {watchMatchType === "singles" ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
@@ -411,7 +396,6 @@ export default function CreateMatch() {
                     />
                   </div>
                 ) : teams.length > 0 ? (
-                  // If teams are available, select teams
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
@@ -479,7 +463,6 @@ export default function CreateMatch() {
                     />
                   </div>
                 ) : (
-                  // If no teams are available, select individual players for doubles
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <h4 className="font-medium mb-2">Team 1</h4>
@@ -641,10 +624,7 @@ export default function CreateMatch() {
                   <FormItem>
                     <FormLabel>Round</FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder="e.g. Quarterfinal, Round 1"
-                        {...field}
-                      />
+                      <Input placeholder="e.g. Quarterfinal" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -727,21 +707,19 @@ export default function CreateMatch() {
                       <FormLabel>Winning Format</FormLabel>
                       <div className="flex items-center space-x-2 mt-2">
                         <FormControl>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={field.value}
-                              onChange={field.onChange}
-                              id="isGoldenPoint"
-                              className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                            />
-                            <label htmlFor="isGoldenPoint">Golden Point</label>
-                          </div>
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            id="isGoldenPoint"
+                            className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                          />
                         </FormControl>
+                        <Label htmlFor="isGoldenPoint">Golden Point</Label>
                       </div>
                       <FormDescription>
-                        If checked, win by 1 point. If unchecked, win by 2
-                        points (deuce).
+                        If checked, win by 1 point; if unchecked, win by 2
+                        (deuce).
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

@@ -1,26 +1,18 @@
-"use client";
-
-import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
 
-export function Navbar() {
-  const { data: session } = useSession();
-
+export default function Navbar() {
   return (
-    <nav>
-      {session ? (
-        <div>
-          <span>Welcome, {session.user?.name}</span>
-          <Button onClick={() => signOut()}>Logout</Button>
-        </div>
-      ) : (
-        <Link href="/login">
-          <Button asChild>
-            <a>Login</a>
-          </Button>
-        </Link>
-      )}
+    <nav className="bg-gray-800 text-white p-4 flex justify-between">
+      <div>
+        <Link href="/">Home</Link>
+      </div>
+      <div className="space-x-4">
+        <Link href="/referee/create-match">Create Match</Link>
+        <Link href="/referee/live-scoring/123">Live Scoring</Link>
+        <Link href="/fantasy/team">Fantasy Team</Link>
+        <Link href="/leaderboard">Leaderboards</Link>
+        {/* Add other links as necessary */}
+      </div>
     </nav>
   );
 }
