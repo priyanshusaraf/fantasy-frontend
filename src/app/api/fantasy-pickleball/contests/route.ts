@@ -22,6 +22,7 @@ interface ContestRules {
  */
 export async function GET(request: NextRequest) {
   try {
+    console.log("Fetching fantasy contests");
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "10");
@@ -53,6 +54,9 @@ export async function GET(request: NextRequest) {
       where.tournamentId = parseInt(tournamentId);
     }
 
+    console.log("Query parameters:", { page, limit, status, tournamentId });
+    console.log("Where conditions:", where);
+
     // Get contests with pagination
     const [contests, total] = await Promise.all([
       prisma.fantasyContest.findMany({
@@ -60,6 +64,7 @@ export async function GET(request: NextRequest) {
         include: {
           tournament: {
             select: {
+              id: true,
               name: true,
               startDate: true,
               endDate: true,
@@ -81,6 +86,18 @@ export async function GET(request: NextRequest) {
       prisma.fantasyContest.count({ where }),
     ]);
 
+    console.log(`Found ${contests.length} contests out of ${total} total`);
+    
+    // For debugging, log the first contest if available
+    if (contests.length > 0) {
+      console.log("First contest:", {
+        id: contests[0].id,
+        name: contests[0].name,
+        tournamentId: contests[0].tournamentId,
+        tournamentName: contests[0].tournament?.name
+      });
+    }
+
     // Parse rules for each contest
     const contestsWithParsedRules = contests.map((contest) => {
       let rules: ContestRules = {};
@@ -97,19 +114,21 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const totalPages = Math.ceil(total / limit);
+    console.log(`Returning ${contestsWithParsedRules.length} contests, page ${page} of ${totalPages}`);
+
     return NextResponse.json(
       {
         contests: contestsWithParsedRules,
-        meta: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-        },
+        total,
+        page,
+        limit,
+        totalPages,
       },
       { status: 200 }
     );
   } catch (error: any) {
+    console.error("Error fetching fantasy contests:", error);
     return errorHandler(error, request);
   }
 }

@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { 
+import {
   Table, 
   TableBody, 
   TableCell, 
@@ -322,12 +322,12 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
         },
         body: JSON.stringify(teamData),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to create team");
       }
-      
+
       const result = await response.json();
       
       toast.success("Fantasy team created successfully!");
@@ -350,7 +350,7 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
         <span className="ml-2">Loading contest data...</span>
       </div>
     );
-  }
+    }
 
   if (error) {
     return (
@@ -395,8 +395,8 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
             </TabsList>
             
             <TabsContent value="selection">
-              <Card>
-                <CardHeader>
+        <Card>
+          <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>Available Players</span>
                     <div className="flex space-x-2">
@@ -406,21 +406,21 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                       </Button>
                     </div>
                   </CardTitle>
-                  <CardDescription>
+            <CardDescription>
                     Select {MAX_TEAM_SIZE} players to build your fantasy team within the budget.
-                  </CardDescription>
+            </CardDescription>
                   <div className="relative mt-2">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
+              <Input
                       placeholder="Search players..."
                       className="pl-8"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                  </div>
+              </div>
                 </CardHeader>
                 
-                <CardContent>
+          <CardContent>
                   <div className="mb-4">
                     <Label>Filter by category:</Label>
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -434,9 +434,9 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                           {category.tier}: {category.label} (₹{category.priceRange})
                         </Badge>
                       ))}
-                    </div>
-                  </div>
-                  
+              </div>
+            </div>
+
                   <div className="h-[400px] overflow-y-auto border rounded-md">
                     <Table>
                       <TableHeader>
@@ -463,13 +463,13 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                               <TableCell>{player.skillLevel}</TableCell>
                               <TableCell>₹{player.price.toLocaleString()}</TableCell>
                               <TableCell className="text-right">
-                                <Button
+                      <Button
                                   size="sm"
                                   onClick={() => handleAddPlayer(player.id)}
                                   disabled={remainingBudget < player.price || selectedPlayers.length >= MAX_TEAM_SIZE}
                                 >
                                   Add
-                                </Button>
+                      </Button>
                               </TableCell>
                             </TableRow>
                           ))
@@ -482,19 +482,19 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                         )}
                       </TableBody>
                     </Table>
-                  </div>
-                </CardContent>
-              </Card>
+            </div>
+          </CardContent>
+        </Card>
             </TabsContent>
-            
+
             <TabsContent value="rules">
-              <Card>
-                <CardHeader>
+        <Card>
+          <CardHeader>
                   <CardTitle>Fantasy Scoring Rules</CardTitle>
-                  <CardDescription>
+            <CardDescription>
                     Understand how points are calculated in this fantasy contest
-                  </CardDescription>
-                </CardHeader>
+            </CardDescription>
+          </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
                     <h3 className="text-lg font-semibold mb-2">Basic Scoring</h3>
@@ -518,28 +518,28 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                   <div>
                     <h3 className="text-lg font-semibold mb-2">Knockout Stages</h3>
                     <p>Points earned in knockout stages are multiplied by 1.5x</p>
-                  </div>
-                  
-                  <div>
+              </div>
+
+                      <div>
                     <h3 className="text-lg font-semibold mb-2">Captain & Vice-Captain</h3>
                     <ul className="list-disc pl-5 space-y-1">
                       <li>Captain: Points multiplied by 2x</li>
                       <li>Vice-Captain: Points multiplied by 1.5x</li>
                     </ul>
-                  </div>
-                </CardContent>
-              </Card>
+                      </div>
+                    </CardContent>
+                  </Card>
             </TabsContent>
           </Tabs>
-        </div>
-        
+              </div>
+
         <div>
-          <Card>
-            <CardHeader>
+        <Card>
+          <CardHeader>
               <CardTitle>Your Fantasy Team</CardTitle>
-              <CardDescription>
+            <CardDescription>
                 {selectedPlayers.length}/{MAX_TEAM_SIZE} players selected
-              </CardDescription>
+            </CardDescription>
               <div className="mt-2">
                 <Label htmlFor="team-name">Team Name</Label>
                 <Input
@@ -550,22 +550,22 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                   className="mt-1"
                 />
               </div>
-            </CardHeader>
+          </CardHeader>
             
-            <CardContent>
+          <CardContent>
               <div className="flex justify-between mb-4">
                 <div>
                   <Label className="text-sm text-muted-foreground">Budget</Label>
                   <p className="font-semibold">₹{budget.toLocaleString()}</p>
                 </div>
-                <div>
+              <div>
                   <Label className="text-sm text-muted-foreground">Remaining</Label>
                   <p className={`font-semibold ${remainingBudget < 0 ? 'text-red-500' : ''}`}>
                     ₹{remainingBudget.toLocaleString()}
                   </p>
                 </div>
               </div>
-              
+
               <Separator className="my-4" />
               
               {selectedPlayers.length > 0 ? (
@@ -583,7 +583,7 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                               {player.name.substring(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
-                          <div>
+              <div>
                             <div className="flex items-center">
                               <span className="font-medium">{player.name}</span>
                               {selectedPlayer.isCaptain && (
@@ -592,10 +592,10 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                               {selectedPlayer.isViceCaptain && (
                                 <Badge variant="secondary" className="ml-2">VC</Badge>
                               )}
-                            </div>
+                      </div>
                             <p className="text-sm text-muted-foreground">₹{player.price.toLocaleString()}</p>
-                          </div>
-                        </div>
+                      </div>
+                    </div>
                         <div className="flex items-center gap-2">
                           <Button
                             size="icon"
@@ -615,19 +615,19 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                           >
                             <Star className="h-4 w-4" />
                           </Button>
-                          <Button
+                  <Button
                             size="icon"
                             variant="ghost"
                             onClick={() => handleRemovePlayer(player.id)}
                             title="Remove Player"
                           >
                             <AlertCircle className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                  </Button>
+                </div>
+              </div>
                     );
                   })}
-                </div>
+            </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <p>Your team is empty</p>
@@ -643,11 +643,11 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                     <div className="flex justify-between text-sm">
                       <span>Captain selected:</span>
                       <span>{selectedPlayers.some(p => p.isCaptain) ? '✅' : '❌'}</span>
-                    </div>
+                  </div>
                     <div className="flex justify-between text-sm">
                       <span>Vice-Captain selected:</span>
                       <span>{selectedPlayers.some(p => p.isViceCaptain) ? '✅' : '❌'}</span>
-                    </div>
+                      </div>
                     <div className="flex justify-between text-sm">
                       <span>Team complete:</span>
                       <span>{teamComplete ? '✅' : '❌'}</span>
@@ -655,7 +655,7 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                   </div>
                 </>
               )}
-            </CardContent>
+          </CardContent>
             
             <CardFooter>
               <Button
@@ -663,7 +663,7 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                 size="lg"
                 disabled={!teamValid || submitting}
                 onClick={handleCreateTeam}
-              >
+                      >
                 {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -672,9 +672,9 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                 ) : (
                   <>Create Fantasy Team</>
                 )}
-              </Button>
-            </CardFooter>
-          </Card>
+            </Button>
+          </CardFooter>
+        </Card>
           
           {contest.entryFee > 0 && (
             <Alert className="mt-4">

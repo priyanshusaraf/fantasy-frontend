@@ -1,0 +1,83 @@
+# PROJECT OVERVIEW
+I am trying to build a sports-tech business called MatchUp.
+
+MatchUp launches it’s own tournament management and organisation software, MatchX, which is an amalgamation of 2 different software ideas: live scoring and fantasy game. the entire website is designed to be mobile first, but must work on all devices.
+
+here’s the general flow of the entire application with features distinctly outlined: 
+there are 5 different kinds of roles inside of this application: the user, the admin, the referee, the player, and the master. they have been named as: 
+
+PLAYER
+REFEREE
+TOURNAMENT_ADMIN
+MASTER_ADMIN
+ORGANIZER
+USER
+
+target market: small scale tournaments across cities where there are several organisational issues, such as noting of scores, discrepancies in scores, unknown live scores, and giving the ability to friends of players and players alike to bet on their friends performing well by virtue of creation of fantasy teams, and allowing local tournaments to be digitised and commoditised this way. 
+
+here’s the expected flow of the entire software and how each part links with the other: 
+
+1. the admin creates a tournament, in which he mentions the available players (players will be allowed to create their accounts, and the admin gets an option to select the players when creating this tournament), whether it is team based or not, which means that whether there are distinctions based on teams (for example in a tournament being organised locally, there are 24 teams of 11 players each, so in this case the admin would select team based tournament, mention each of the team’s names, add the players inside of each of the teams, but have the flexibility of adding lesser than 11 players in case one team has lesser number of players, basically everything should be dynamic here). there is no such requirement of format entering as there can be various formats inside of a single pickleball tournament, such as a mixture of round robin and knockouts, etc. admin creates this tournament with the players and teams, tells us the duration of the tournament, and then moves on to the next step
+2. the admin now creates various fantasy team categories. these fantasy games are basically going to be how football fantasy leagues work, in which users can create their team by selecting players from various teams and their individual performances totalled (so no. of points won in fantasy summed up) will be the metric to determine who is the winner of the fantasy league. Note that in case of no teams, players can choose their teams at random based on the budget criteria. also note that in case the tournament is of multiple days, then the admin has the option of creating updates in these fantasy teams. for example, if a player is disqualified in the first day of the tournament itself, then the next day the user who had that player in their fantasy team has an option to change their team, in a specified window of time as specified by the admin, in which they can change their team to replace this player based on their budget availabilities. the player removed from the team will add back their amount to the budget (say if the player was worth 5000 points, then they add back that 5000 to the budget). the player can now add some other player from this budget. Now the categories will be based on pricing. for example, there can be multiple tiers of pricing for the fantasy teams inside of a single tournament. the admin basically selects a button to add fantasy league, selects the pricing of that league, selects budget availability of that league, and then clicks continue. they can add as many leagues as they want. say for example there is someone who selects “free”, “₹500”, “₹1000”, and “₹1500” as their 4 different leagues for a single tournament. this means that players will be able to participate in 4 different categories, each having different fantasy teams. the prize money will be based on the no. of users we get in each of the categories. for example, if there are only 5 users in one category, then there is only 1 winner, for 6-8, there are 2 winners who split the prize pool in the ratio 65-35, for 8-15 there are 3 winners, who split in the ratio 50/30/20, for 15-25 there are 5 winners who split in the ratio 35/25/20/10/10, and then 25 onwards there are 10 winners, in which the top 3 win the most, and from 4-10, everyone makes their money back. the prize pool will be 80% of the entire amount pooled in, and the out of the remaining 20%, we will take home 10% and the admin will take home 10%. 
+3. general rules for fantasy include the following: If a player wins a game by 11-0 they get 15 points extra and if they win under 5 then they get 10 points. In case the player wins on deuce 12-10, 13-11 etc then also only 11 points will be awarded to the winning team players and 10 to the losing team players. Knockout Stages- Points multiply 1.5x MVP of Tournament- 50 points extra (you only get these points if you had that player from day 1). each team will have one captain player (2x point multiplier) and vice captain (1.5x point multiplier)
+4. admin also gets to allow for live scoring. now in case they choose live scoring as an option, they must select the referees that they want to take inside of the tournament. note that there are often cases in which both players and referees join the tournament after the admin is done selecting everything. we ideally want that these are also accepted, and for that we will be allowing for players and referees to “request to join” a tournament, which will show up in the admin panel of the admin. the live scoring feature has been explained below. 
+
+now for the view of the live scoring screen, this will be mobile first. this screen will only be visible to the referees who are actually scoring the match, while a different screen will be viewed by players who will basically see the scores in a consolidated page. the scoring screen itself is only there for referees. the way this works is that the phone will be required to be tilted to landscape mode, and the left side will be the first team and the right side will be the second team. the display will show a pickleball court. on clicking the left side, a point is added to the left team, and on clicking the right side, a point is added to right team. based on the score that was mentioned by the referee when setting up the match, the match ends at that point when that score is reached (for example, if final score was a match of 11 with 1 set then the match ends automatically when there are 11 points reached). the live score will be shown on the bottom of the horizontal view and on top of the live score, on the other end of the phone, the referee would see an option to end game, in case there is some emergency.
+
+scores would be updated live and all players having accounts will be able to see this live score.
+
+there will be at max 4 concurrent live matches going on, which means that there are 4 live scores to be displayed to the end user. ensure that this is implemented carefully as well.
+
+note that from the end score of these matches done by referees, i also want a leaderboard to exist that will show which player has won how many points and how many matches. the leaderboard will show something like:
+
+player name                       matches won                  points won              bonus points
+
+and based on this, the fantasy shall also operate. note that as mentioned in the fantasy input, if the player wins by a higher difference then bonus points are added which will be shown in the bonus points section.
+
+A few more things to note here: The user has a new wallet for each of the fantasy leagues that they join. for example, if a player is joining the free category, then his team and his fantasy budget will both be lets say 11 members with 100000 as total corpus to spend. note that the price of each of the players to be added to a team will depend upon the category of the players. so an A tier player will obviously be more costly than a D tier player. 
+
+the admin also gets a nice dashboard to track analytics, just general things that they might want to see. this is optional and should only be added after everything else is done. 
+
+now let’s move on to the referee view :
+
+each referee will be given the ability to create a new match. this referee will obviously require to firstly be admitted into the tournament by the admin (there will be an admin approval required here, so the referees will be required to request to join a tournament, or be added by the admin when creating a tournament), after which they can create a new match, select the type of match (singles or doubles), select the players that will be playing against each other (so if there is a doubles match then the first two players selected will be for team 1 and the next two players selected will be for team 2), select the scoring mechanism (custom, default will be 11 points, with 1 set. both can be edited as per referees’ requirements, also select whether to play for golden point or to play for deuce(difference of 2 points wins)). then once the referee selects confirm, the match scoring begins. any user will be able to view the scores live (socket implementation required here of course) on their devices as soon as they log in. i want it to be such that there’s one page where the user sees “tournaments” and on clicking that, they can see the live scores of each of the matches going on in the tournament, along with the name of the players who’re playing in that match, along with their team names. after the referee finishes the scoring, there should be a confirmation button to confirm the score that was inputted. then once the score is confirmed, the final score is reflected in the fantasy cards of the players as per the rules of fantasy. after this, in case of any disputes, the referee still has an option to edit the scores, and these edited scores shall also be reflected on the fantasy games. 
+
+in case there is no system of live scoring selected by the admin, then the admin has to manually create games and enter scores of those games. 
+
+note that there can be several referees for a single tournament, each scoring simultaneously. so we need to make the software robust so that it can handle something like that.
+
+now let’s move on to the users: 
+
+needs to be mobile first. creates an account, and gets to see a dashboard where all their active and available fantasy games are shown, along with a live scores tab that shows the live scores of all tournaments. note that each of the tournaments that are showing live scores will be limited upto 4 per page. so the way this would work is that there is say a sidebar or in their hamburger menu, in which there’s a section saying “live scores”, in which there are various tournaments that are listed, and clicking on one tournament opens up a screen that shows 4 live scores in one page, then an option to click on the next page, then 4 there, etc. similarly on the other tournaments as well. the user also gets to see their fantasy teams, leaderboard of that tournament’s fantasy league, a leaderboards section in which there is an option to select which tournament and in each of the tournaments selected it shows that particular leaderboard, an option to join new fantasy leagues inside of new tournaments, and then when they click on join new tournament, they are first shown more details about the tournament, players playing, amount to be paid, cash prize pool, etc, then they are prompted to pay the amount, once the user pays the amount they see the screen in which they can make their team, in which they can choose their team players from a bar above which shows that tournament’s players along with their categories, and then various roles inside of the fantasy team section. everything should work as the admin had intended to, and once the user clicks confirm he must be able to also edit the team in the window that the admin specifies. also give a confirmation alert over here so that they can review their team. as mentioned previously, the wallet should be specific to each fantasy team inside of each tournament, which means there are several wallets for a single user, and several teams for a single user as well. they get to see on their dashboard a section of ‘my teams’ that shows how their teams are performing. the payments will be done via razorpay. ensure that the prize pool logic of the entire software is very well done.
+
+now lets move on to the players: 
+
+the players are pretty simple, they create their account, mention their category, these shall be editable later on, provide a profile photo (optional), give a description (optional), select gender, enter age, give google authentication, and then see their stats. the players will be shown the fantasy feature and will also be shown the various tournaments in which they can participate. they will be required to request to join each tournament, and upon the admin’s approval, can be added to fantasy teams as well. the players will also be able to play fantasy, view live scores, etc all just like general users. they will have a stats page that mentions their recent wins (as received from the tournament live scores or entered by admins) and other essential stats over here. 
+
+general rules of the entire application:
+
+- made using google authentication only, so the prerequisite authentication form is really important to verify the role of the user.
+- deployment first orientation of the code: there should be nothing that hampers deployment status of the website
+- website based application initially: entirely made on next js, react, use shadcn and tailwind along with any other ui libraries that might be good. use sockets for live scoring as well.
+- mobile responsiveness is very very important
+- use typescript along with es6 moduling across the entire website to maintain consistency and reduce bugs on deployment
+- includes razorpay as payment method wherever required.
+- database of choice is mysql with prisma
+- minimise cost for the servers.
+- ensure that the entire app works very well and does not break at any given point, emphasise on dynamics of the site, such that it comes out as a b2b saas project.
+
+# PERSONALITY
+
+you are a debugger
+
+# TECH STACK
+
+primarily in next js, react js, shadcn, websockets, google oauth, uses mysql and prisma for database.
+
+#ERROR FIXING PROCESS
+
+figure out the files which are causing the errors. then fix them one by one.
+
+# CURRENT FILE STRUCTURE
+
+tree -I 'node_modules'

@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
           data: {
             role: "MASTER_ADMIN",
             isApproved: true,
+            isVerified: true,
             username: username,
           },
         });
@@ -75,10 +76,15 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      return NextResponse.json(
-        { message: "User is already a MASTER_ADMIN" },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        message: "User is already a MASTER_ADMIN",
+        user: {
+          id: existingUser.id,
+          email: existingUser.email,
+          username: existingUser.username,
+          role: existingUser.role,
+        }
+      });
     }
     
     // Create new user with MASTER_ADMIN role
@@ -86,6 +92,7 @@ export async function POST(request: NextRequest) {
       data: {
         email,
         username,
+        name: username, // Added name field for Google OAuth compatibility
         role: "MASTER_ADMIN",
         isApproved: true,
         isVerified: true,

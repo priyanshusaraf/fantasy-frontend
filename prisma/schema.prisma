@@ -94,33 +94,44 @@ enum RefereeJoinStatus {
 
 
 model User {
-  id               Int       @id @default(autoincrement())
-  name             String?
-  username         String?   @unique @db.VarChar(100)
-  email            String?   @unique @db.VarChar(255)
-  password         String?   @db.VarChar(255)
-  role             UserRole  @default(USER)
-  profileImage     String?
-  googleId         String?   @unique
-  emailVerified    DateTime?
-  isVerified       Boolean   @default(false)
-  isApproved       Boolean   @default(false)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  // Relations (Account, Session, Player, etc.)
-  accounts         Account[] @relation("AccountToUser")
-  sessions         Session[] @relation("SessionToUser")
-  profile          Profile?
-  player           Player?
-  referee          Referee?
-  tournamentAdmin  TournamentAdmin?
-  masterAdmin      MasterAdmin?
-  wallet           Wallet?
-  transactions     Transaction[]
-  notifications    Notification[]
-  paymentMethods   PaymentMethod[]
-  fantasyTeams     FantasyTeam[]
+  id                  Int                @id @default(autoincrement())
+  username            String?            @unique
+  email               String             @unique
+  password            String?
+  name                String?            // Adding the missing name field
+  role                String             @default("USER") // USER, PLAYER, REFEREE, TOURNAMENT_ADMIN, MASTER_ADMIN
+  status              String             @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED
+  firstName           String?
+  lastName            String?
+  profilePicture      String?
+  bio                 String?            @db.Text
+  phone               String?
+  address             String?
+  city                String?
+  state               String?
+  country             String?
+  postalCode          String?
+  dateOfBirth         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  
+  // Relations
+  accounts            Account[]          @relation("AccountToUser")
+  sessions            Session[]          @relation("SessionToUser")
+  profile             Profile?
+  player              Player?
+  referee             Referee?
+  tournamentAdmin     TournamentAdmin?
+  masterAdmin         MasterAdmin?
+  wallet              Wallet?
+  transactions        Transaction[]
+  notifications       Notification[]
+  paymentMethods      PaymentMethod[]
+  fantasyTeams        FantasyTeam[]
+  
+  // New relations for tournament invitations and join requests
+  tournamentInvitations TournamentInvitation[] @relation
+  tournamentJoinRequests TournamentJoinRequest[] @relation
 }
  
 
@@ -225,10 +236,13 @@ model Tournament {
   fantasyContests        FantasyContest[]
   playerStats            PlayerStats[]
   rules                  String?            @db.Text
+  fantasySettings        String?            @db.Text
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
-  // New relation field for referee join requests
+  // New relation fields for invitations and join requests
   refereeJoinRequests    RefereeJoinRequest[] @relation("TournamentToRefereeJoinRequests")
+  invitations            TournamentInvitation[] @relation("TournamentToInvitations")
+  joinRequests           TournamentJoinRequest[] @relation("TournamentToJoinRequests")
 
   @@index([organizerId])
 }
@@ -490,6 +504,45 @@ model RefereeJoinRequest {
 
   tournament   Tournament         @relation("TournamentToRefereeJoinRequests", fields: [tournamentId], references: [id])
   referee      Referee            @relation("RefereeToRefereeJoinRequests", fields: [refereeId], references: [id])
+}
+
+// Tournament Invitation Model
+model TournamentInvitation {
+  id             Int       @id @default(autoincrement())
+  tournamentId   Int
+  tournament     Tournament @relation("TournamentToInvitations", fields: [tournamentId], references: [id])
+  invitedEmail   String
+  invitedUserId  Int?
+  invitedUser    User?     @relation(fields: [invitedUserId], references: [id])
+  role           String    // PLAYER, REFEREE, TEAM_CAPTAIN
+  status         String    // PENDING, ACCEPTED, REJECTED, EXPIRED
+  invitationCode String    @unique
+  message        String?   @db.Text
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([tournamentId])
+  @@index([invitedUserId])
+  @@index([invitationCode])
+}
+
+// Tournament Join Request Model
+model TournamentJoinRequest {
+  id           Int       @id @default(autoincrement())
+  tournamentId Int
+  tournament   Tournament @relation("TournamentToJoinRequests", fields: [tournamentId], references: [id])
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id])
+  role         String    // PLAYER, REFEREE, TEAM_CAPTAIN
+  status       String    // PENDING, APPROVED, REJECTED
+  message      String?   @db.Text
+  feedback     String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([tournamentId])
+  @@index([userId])
 }
 
 enum RequestStatus {

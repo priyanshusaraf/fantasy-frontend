@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import { Plus, Trash2, CopyPlus } from "lucide-react";
 
@@ -88,17 +88,59 @@ export default function FantasySetup() {
   const contests = watch("fantasy.contests") || [];
   const enableFantasy = watch("fantasy.enableFantasy");
   
+  // Add logging to see what values are being used
+  const fantasyValues = watch("fantasy");
+  useEffect(() => {
+    console.log("Fantasy values in FantasySetup:", fantasyValues);
+    console.log("Contests in FantasySetup:", fantasyValues?.contests || []);
+    console.log("Number of contests:", (fantasyValues?.contests || []).length);
+    
+    if (fantasyValues?.contests?.length > 0) {
+      console.log("First contest:", JSON.stringify(fantasyValues.contests[0], null, 2));
+    }
+  }, [fantasyValues]);
+  
   // Handle adding a new contest
   const handleAddContest = () => {
-    if (!newContest.name) return;
+    if (!newContest.name) {
+      console.error("Contest name is required");
+      return;
+    }
     
-    const updatedContests = [...(getValues("fantasy.contests") || [])];
-    updatedContests.push({
+    console.log("Adding new contest:", JSON.stringify(newContest, null, 2));
+    
+    // Ensure all required fields are set with defaults if needed
+    const contestToAdd = {
       ...newContest,
       id: `contest-${Date.now()}`,
-    });
+      entryFee: newContest.entryFee || 0,
+      maxEntries: newContest.maxEntries || 100,
+      totalPrize: newContest.totalPrize || 0,
+      description: newContest.description || `Contest for ${newContest.name}`,
+      // Ensure prize breakdown exists
+      prizeBreakdown: newContest.prizeBreakdown?.length > 0 
+        ? newContest.prizeBreakdown 
+        : [{ position: 1, percentage: 100 }],
+      // Ensure rules object exists with defaults
+      rules: {
+        captainMultiplier: newContest.rules?.captainMultiplier || 2,
+        viceCaptainMultiplier: newContest.rules?.viceCaptainMultiplier || 1.5,
+        teamSize: newContest.rules?.teamSize || 5,
+        maxPlayersPerTeam: newContest.rules?.maxPlayersPerTeam || 3,
+        maxPlayersFromSameTeam: newContest.rules?.maxPlayersFromSameTeam || 3,
+        substitutionsAllowed: newContest.rules?.substitutionsAllowed || 0,
+      }
+    };
     
+    console.log("Contest prepared for saving:", JSON.stringify(contestToAdd, null, 2));
+    
+    const updatedContests = [...(getValues("fantasy.contests") || [])];
+    updatedContests.push(contestToAdd);
+    
+    console.log("Updated contests array:", JSON.stringify(updatedContests, null, 2));
     setValue("fantasy.contests", updatedContests);
+    
+    // Reset the form
     setNewContest({
       name: "",
       entryFee: 0,
@@ -112,6 +154,13 @@ export default function FantasySetup() {
       },
     });
     setShowAddContestDialog(false);
+    
+    // Log the current fantasy values after update
+    setTimeout(() => {
+      const currentValues = getValues("fantasy");
+      console.log("Fantasy values after adding contest:", currentValues);
+      console.log("Number of contests after adding:", (currentValues.contests || []).length);
+    }, 100);
   };
   
   // Handle removing a contest
@@ -612,11 +661,11 @@ export default function FantasySetup() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {contests.map((contest, index) => (
+                    {contests.map((contest: ContestTemplate, index: number) => (
                       <TableRow key={contest.id || index}>
                         <TableCell className="font-medium">{contest.name}</TableCell>
-                        <TableCell>₹{contest.entryFee.toFixed(2)}</TableCell>
-                        <TableCell>₹{contest.totalPrize.toFixed(2)}</TableCell>
+                        <TableCell>₹{Number(contest.entryFee).toFixed(2)}</TableCell>
+                        <TableCell>₹{Number(contest.totalPrize).toFixed(2)}</TableCell>
                         <TableCell>{contest.maxEntries}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">

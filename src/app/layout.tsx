@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -16,7 +16,19 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Pickleball Fantasy",
-  description: "Fantasy tournament app for pickleball",
+  description: "Premium fantasy tournament app for pickleball enthusiasts",
+  keywords: ["pickleball", "fantasy sports", "tournaments", "sports", "fantasy leagues"],
+  authors: [{ name: "PickleBall Fantasy Team" }],
+  category: "Sports",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "white" },
+    { media: "(prefers-color-scheme: dark)", color: "#1e1e2e" },
+  ],
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -25,9 +37,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="scrollbar-custom">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} font-sans`}
+        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen`}
         suppressHydrationWarning
       >
         <Providers>{children}</Providers>

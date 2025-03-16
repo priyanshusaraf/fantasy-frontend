@@ -1,24 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getToken } from "next-auth/jwt";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Get token and check authorization
-    const token = await getToken({ req: request });
+    // Check authentication and authorization
+    const session = await getServerSession(authOptions);
+    
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized: You must be logged in" },
+        { status: 401 }
+      );
+    }
 
-    if (!token || token.role !== "MASTER_ADMIN") {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 403 });
+    // Check if user has admin role
+    if (
+      session.user.role !== "MASTER_ADMIN" &&
+      session.user.role !== "TOURNAMENT_ADMIN"
+    ) {
+      return NextResponse.json(
+        { error: "Forbidden: Insufficient permissions" },
+        { status: 403 }
+      );
+    }
+
+    // Only MASTER_ADMIN can set MASTER_ADMIN role
+    const body = await request.json();
+    if (body.role === "MASTER_ADMIN" && session.user.role !== "MASTER_ADMIN") {
+      return NextResponse.json(
+        { error: "Forbidden: Only Master Admins can create other Master Admins" },
+        { status: 403 }
+      );
     }
 
     // Get user ID from params
     const userId = params.id;
-
-    // Get role from request body
-    const { role } = await request.json();
 
     // Validate role
     const validRoles = [
@@ -28,14 +50,14 @@ export async function PUT(
       "TOURNAMENT_ADMIN",
       "MASTER_ADMIN",
     ];
-    if (!validRoles.includes(role)) {
+    if (!validRoles.includes(body.role)) {
       return NextResponse.json({ message: "Invalid role" }, { status: 400 });
     }
 
     // Update user role
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { role },
+      data: { role: body.role },
       select: {
         id: true,
         name: true,
@@ -46,13 +68,13 @@ export async function PUT(
     });
 
     // For specific roles, create or update related records
-    if (role === "TOURNAMENT_ADMIN") {
+    if (body.role === "TOURNAMENT_ADMIN") {
       await prisma.tournamentAdmin.upsert({
         where: { userId },
         update: {},
         create: { userId },
       });
-    } else if (role === "REFEREE") {
+    } else if (body.role === "REFEREE") {
       await prisma.referee.upsert({
         where: { userId },
         update: {},
@@ -61,7 +83,7 @@ export async function PUT(
           certificationLevel: "Standard",
         },
       });
-    } else if (role === "PLAYER") {
+    } else if (body.role === "PLAYER") {
       const user = await prisma.user.findUnique({
         where: { id: userId },
       });
@@ -77,9 +99,21 @@ export async function PUT(
       });
     }
 
-    return NextResponse.json(updatedUser, { status: 200 });
+    return NextResponse.json({ 
+      success: true, 
+      message: "User role updated successfully",
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role
+      }
+    });
   } catch (error) {
-    console.error("Role update error:", error);
-    return NextResponse.json({ message: "An error occurred" }, { status: 500 });
+    console.error("Error updating user role:", error);
+    return NextResponse.json(
+      { error: "Failed to update user role" },
+      { status: 500 }
+    );
   }
 }

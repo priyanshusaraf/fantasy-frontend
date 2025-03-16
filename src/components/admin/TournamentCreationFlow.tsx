@@ -367,7 +367,7 @@ export default function TournamentCreationFlow() {
       });
 
       // Redirect to the tournament management page
-      router.push(`/admin/manage-tournament?id=${tournamentId}`);
+      router.push(`/admin/tournaments/${tournamentId}`);
     } catch (error: any) {
       toast({
         title: "Error",

@@ -39,6 +39,57 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+    async signIn({ user, account, profile, email, credentials }) {
+      if (account && profile) {
+        if (profile.email) {
+          const existingUser = await prisma.user.findUnique({
+            where: { email: profile.email }
+          });
+          
+          if (existingUser) {
+            const linkedAccount = await prisma.account.findFirst({
+              where: { 
+                userId: existingUser.id,
+                provider: account.provider
+              }
+            });
+            
+            if (!linkedAccount) {
+              await prisma.account.create({
+                data: {
+                  userId: existingUser.id,
+                  type: account.type,
+                  provider: account.provider,
+                  providerAccountId: account.providerAccountId,
+                  refresh_token: account.refresh_token,
+                  access_token: account.access_token,
+                  expires_at: account.expires_at,
+                  token_type: account.token_type,
+                  scope: account.scope,
+                  id_token: account.id_token,
+                  session_state: account.session_state
+                }
+              });
+              
+              if (!existingUser.name || !existingUser.isApproved) {
+                await prisma.user.update({
+                  where: { id: existingUser.id },
+                  data: {
+                    name: profile.name || existingUser.username || profile.email.split('@')[0],
+                    isApproved: true
+                  }
+                });
+              }
+            }
+            
+            user.id = existingUser.id.toString();
+            return true;
+          }
+        }
+      }
+      
+      return true;
+    }
   },
   pages: {
     signIn: "/login",

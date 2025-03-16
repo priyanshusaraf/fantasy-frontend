@@ -216,6 +216,7 @@ export default function TournamentCreationFlow() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem("token") || sessionStorage.getItem("token") || ""}`,
         },
         body: JSON.stringify(data),
       });
@@ -231,8 +232,11 @@ export default function TournamentCreationFlow() {
         description: "Your tournament has been successfully created.",
       });
       
-      // Redirect to the tournament management page
-      router.push(`/manage-tournament?id=${result.id}`);
+      // Convert numeric ID to string if needed
+      const tournamentId = result.id ? String(result.id) : (result.tournamentId ? String(result.tournamentId) : '');
+      
+      // Redirect to the tournament management page with the correct tournament ID
+      router.push(`/admin/tournaments/${tournamentId}`);
     } catch (error) {
       console.error('Error creating tournament:', error);
       toast({

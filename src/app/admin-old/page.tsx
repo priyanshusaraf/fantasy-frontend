@@ -28,10 +28,10 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Button onClick={() => router.push("/admin/create-tournament")}>
+            <Button onClick={() => router.push("/admin/tournaments/create")}>
               Create Tournament
             </Button>
-            <Button onClick={() => router.push("/admin/manage-tournament")}>
+            <Button onClick={() => router.push("/admin/tournaments")}>
               Manage Tournaments
             </Button>
             <Button onClick={() => router.push("/admin/player-management")}>

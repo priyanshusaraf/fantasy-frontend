@@ -22,95 +22,120 @@ declare module "next/server" {
  */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
-    const status = searchParams.get("status");
-    const searchQuery = searchParams.get("q");
-
-    // Validate pagination
-    if (page < 1 || limit < 1) {
-      return NextResponse.json(
-        {
-          message: "Invalid pagination parameters",
-        },
-        { status: 400 }
-      );
+    // Optional authentication
+    // If user is authenticated, we can show them additional info
+    let userId: number | null = null;
+    try {
+      const authResult = await authMiddleware(request);
+      if (authResult.status === 200) {
+        userId = (request as any).user?.id || null;
+      }
+    } catch (error) {
+      // Continue without user auth
+      console.log("Non-authenticated request to tournaments");
     }
+
+    // Parse query parameters
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    const type = url.searchParams.get("type");
+    const search = url.searchParams.get("search");
+    const limit = parseInt(url.searchParams.get("limit") || "100");
+    const organizerId = url.searchParams.get("organizerId");
 
     // Build filter conditions
-    const where: any = {};
+    const whereConditions: any = {};
 
     if (status) {
-      // Handle multiple status values
-      const statusValues = status.split(",");
-      where.status = {
-        in: statusValues,
-      };
+      whereConditions.status = status;
     }
 
-    if (searchQuery) {
-      where.OR = [
-        { name: { contains: searchQuery, mode: "insensitive" } },
-        { description: { contains: searchQuery, mode: "insensitive" } },
-        { location: { contains: searchQuery, mode: "insensitive" } },
+    if (type) {
+      whereConditions.type = type;
+    }
+
+    if (organizerId) {
+      whereConditions.organizerId = parseInt(organizerId);
+    }
+
+    if (search) {
+      whereConditions.OR = [
+        {
+          name: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          location: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
       ];
     }
 
-    // Get tournaments with pagination
-    const [tournaments, total] = await Promise.all([
-      prisma.tournament.findMany({
-        where,
-        include: {
-          entries: true,
-          matches: true,
-          fantasyContests: true,
-          tournamentAdmin: {
-            include: {
-              user: {
-                select: {
-                  username: true,
-                  email: true,
-                },
+    // Get tournaments from database
+    const tournaments = await prisma.tournament.findMany({
+      where: whereConditions,
+      take: limit,
+      orderBy: {
+        startDate: "asc",
+      },
+      include: {
+        tournamentAdmin: {
+          include: {
+            user: {
+              select: {
+                username: true,
+                email: true,
               },
             },
           },
         },
-        orderBy: { startDate: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      prisma.tournament.count({ where }),
-    ]);
-
-    // Calculate additional metadata
-    const tournamentsWithMeta = tournaments.map((tournament) => ({
-      ...tournament,
-      totalEntries: tournament.entries.length,
-      totalMatches: tournament.matches.length,
-      registrationOpen:
-        new Date() >= tournament.registrationOpenDate &&
-        new Date() <= tournament.registrationCloseDate,
-      daysUntilStart: Math.ceil(
-        (tournament.startDate.getTime() - new Date().getTime()) /
-          (1000 * 60 * 60 * 24)
-      ),
-    }));
-
-    return NextResponse.json(
-      {
-        tournaments: tournamentsWithMeta,
-        meta: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-        },
+        entries: true,
       },
-      { status: 200 }
+    });
+
+    // Get player counts for each tournament
+    const tournamentsWithCounts = await Promise.all(
+      tournaments.map(async (tournament) => {
+        // Count players in the tournament
+        const playerCount = await prisma.tournamentEntry.count({
+          where: {
+            tournamentId: tournament.id,
+          },
+        });
+
+        // Format tournament data
+        return {
+          id: tournament.id,
+          name: tournament.name,
+          description: tournament.description,
+          type: tournament.type,
+          status: tournament.status,
+          startDate: tournament.startDate,
+          endDate: tournament.endDate,
+          location: tournament.location,
+          imageUrl: tournament.imageUrl,
+          maxParticipants: tournament.maxParticipants,
+          entryFee: tournament.entryFee,
+          prizeMoney: tournament.prizeMoney,
+          playerCount,
+          organizer: tournament.tournamentAdmin?.user?.username || "Unknown",
+          registrationOpen: 
+            tournament.status === "REGISTRATION_OPEN" ||
+            (tournament.registrationOpenDate <= new Date() && 
+             tournament.registrationCloseDate >= new Date()),
+          createdAt: tournament.createdAt,
+          updatedAt: tournament.updatedAt,
+        };
+      })
     );
-  } catch (error: any) {
-    return errorHandler(error, request);
+
+    return NextResponse.json({ tournaments: tournamentsWithCounts });
+  } catch (error) {
+    return errorHandler(error as Error, request);
   }
 }
 

@@ -1,5 +1,5 @@
 // src/hooks/useAuth.ts
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { User } from "@/lib/user-service";
 import { useSession } from "next-auth/react";
@@ -11,6 +11,7 @@ export function useAuth() {
   const router = useRouter();
   const { data: session, status } = useSession();
 
+  // Use useCallback for all functions that will be returned or used in effects
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     setUser(null);
@@ -18,6 +19,7 @@ export function useAuth() {
     router.push("/login");
   }, [router]);
 
+  // Memoize the validation function to prevent recreation on each render
   const validateToken = useCallback(
     async (token: string) => {
       try {
@@ -66,25 +68,40 @@ export function useAuth() {
     [session, status]
   );
 
+  // Use a dedicated authentication effect with proper dependencies
   useEffect(() => {
-    // If we have a NextAuth session, use that
-    if (status === "authenticated" && session?.user) {
-      setUser(session.user as unknown as User);
-      setIsAuthenticated(true);
-      setIsLoading(false);
-      return;
-    }
+    let isMounted = true;
     
-    // Otherwise try the token from localStorage
-    const token = localStorage.getItem("token");
-    if (token) {
-      validateToken(token);
-    } else {
-      setIsLoading(false);
-    }
+    const authenticateUser = async () => {
+      // If we have a NextAuth session, use that
+      if (status === "authenticated" && session?.user) {
+        if (isMounted) {
+          setUser(session.user as unknown as User);
+          setIsAuthenticated(true);
+          setIsLoading(false);
+        }
+        return;
+      }
+      
+      // Otherwise try the token from localStorage
+      const token = localStorage.getItem("token");
+      if (token) {
+        await validateToken(token);
+      } else if (isMounted) {
+        setIsLoading(false);
+      }
+    };
+    
+    authenticateUser();
+    
+    // Cleanup function to prevent state updates if the component unmounts
+    return () => {
+      isMounted = false;
+    };
   }, [validateToken, session, status]);
 
-  const login = async (email: string, password: string) => {
+  // Functions that update state should be memoized to prevent recreation
+  const login = useCallback(async (email: string, password: string) => {
     try {
       setIsLoading(true);
       const response = await fetch("/api/auth/login", {
@@ -115,68 +132,88 @@ export function useAuth() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [router]);
 
-  const register = async (
-    username: string,
-    email: string,
-    password: string,
-    role: string = "user"
-  ) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password, role }),
-      });
+  const register = useCallback(
+    async (
+      username: string,
+      email: string,
+      password: string,
+      role: string = "user"
+    ) => {
+      try {
+        setIsLoading(true);
+        const response = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, email, password, role }),
+        });
 
-      if (!response.ok) {
-        throw new Error("Registration failed");
+        if (!response.ok) {
+          throw new Error("Registration failed");
+        }
+
+        // Consume the response without storing it to avoid unused variable warning.
+        await response.json();
+
+        if (role !== "user") {
+          // If role requires approval, redirect to pending approval page
+          router.push("/approval-pending");
+        } else {
+          // Otherwise proceed with login
+          await login(email, password);
+        }
+      } catch (error) {
+        console.error("Registration error:", error);
+        throw error;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [login, router]
+  );
+
+  // Memoize utility functions
+  const hasRole = useCallback(
+    (roles: string | string[]) => {
+      if (!user) return false;
+
+      if (Array.isArray(roles)) {
+        return roles.includes(user.role);
       }
 
-      // Consume the response without storing it to avoid unused variable warning.
-      await response.json();
+      return user.role === roles;
+    },
+    [user]
+  );
 
-      if (role !== "user") {
-        // If role requires approval, redirect to pending approval page
-        router.push("/approval-pending");
-      } else {
-        // Otherwise proceed with login
-        await login(email, password);
-      }
-    } catch (error) {
-      console.error("Registration error:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Check if user has a specific role
-  const hasRole = (roles: string | string[]) => {
-    if (!user) return false;
-
-    if (Array.isArray(roles)) {
-      return roles.includes(user.role);
-    }
-
-    return user.role === roles;
-  };
-
-  // Check if user is approved
-  const isApproved = () => {
+  const isApproved = useCallback(() => {
     return user?.isApproved || false;
-  };
+  }, [user]);
 
-  return {
-    user,
-    isAuthenticated,
-    isLoading,
-    login,
-    register,
-    logout,
-    hasRole,
-    isApproved,
-  };
+  // Memoize the return object to prevent unnecessary rerenders in dependent components
+  const authState = useMemo(
+    () => ({
+      user,
+      isAuthenticated,
+      isLoading,
+      login,
+      register,
+      logout,
+      hasRole,
+      isApproved,
+    }),
+    [
+      user,
+      isAuthenticated,
+      isLoading,
+      login,
+      register,
+      logout,
+      hasRole,
+      isApproved,
+    ]
+  );
+
+  return authState;
 }

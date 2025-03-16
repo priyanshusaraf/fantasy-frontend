@@ -78,13 +78,23 @@ export default function AdminSetupPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Alert variant="default" className="bg-green-50 border-green-100">
+            <Alert variant="default" className="bg-green-50 border-green-100 mb-4">
               <CheckCircle className="h-5 w-5 text-green-600" />
               <AlertTitle>Success!</AlertTitle>
               <AlertDescription>
                 Your MASTER_ADMIN account has been created successfully. You can now log in.
               </AlertDescription>
             </Alert>
+            
+            <Alert variant="default" className="bg-blue-50 border-blue-100">
+              <AlertCircle className="h-5 w-5 text-blue-600" />
+              <AlertTitle>Important!</AlertTitle>
+              <AlertDescription>
+                <p>Please sign in with Google using the <strong>exact same email address</strong> you just registered: <strong>{email}</strong></p>
+                <p className="mt-2">If you encounter any authentication issues, use the <Link href="/fix-admin-auth" className="text-blue-600 hover:underline">Fix Admin Auth</Link> tool.</p>
+              </AlertDescription>
+            </Alert>
+            
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-500 mb-4">
                 Redirecting to login page...
