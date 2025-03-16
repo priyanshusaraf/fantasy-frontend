@@ -1,4 +1,3 @@
-// src/app/api/auth/google/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { googleOAuthService } from "@/lib/oauth";
 import { UserService } from "@/lib/user-service";
@@ -7,13 +6,11 @@ import { generateToken } from "@/lib/jwt";
 export async function GET() {
   // Generate Google OAuth URL
   const authUrl = googleOAuthService.generateAuthUrl();
-
   return NextResponse.redirect(authUrl);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Extract code from request body
     const body = await request.json();
     const { code } = body;
 
@@ -24,12 +21,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get tokens
+    // Exchange code for tokens
     const tokens = await googleOAuthService.getTokens(code);
 
-    // Verify ID token
+    // Verify the ID token
     const userInfo = await googleOAuthService.verifyIdToken(tokens.id_token);
-
     if (!userInfo) {
       return NextResponse.json(
         { message: "Failed to verify Google user" },
@@ -37,37 +33,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists in database
+    // Check if user already exists
     const existingUser = await UserService.findByEmail(userInfo.email);
 
     let userId: number;
     if (!existingUser) {
+      // For a brand-new user, include all required fields
       userId = await UserService.createUser({
         username: userInfo.name,
         email: userInfo.email,
         password: null,
-        role: "user",
+        role: "USER",
         profileImage: userInfo.picture,
+        isApproved: false, // required by your model
       });
     } else {
+      // Use the non-null assertion operator (!) if you're sure 'id' is defined
       userId = existingUser.id!;
     }
 
-    // Fetch user to ensure we have the latest data
     const user = await UserService.getUserById(userId);
-
     if (!user) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
 
     // Generate JWT
     const token = generateToken({
-      id: user.id!,
+      id: user.id,
       email: user.email,
-      role: user.role || "user",
+      role: user.role || "USER",
     });
 
-    // Return user info and token
     return NextResponse.json({
       token,
       user: {

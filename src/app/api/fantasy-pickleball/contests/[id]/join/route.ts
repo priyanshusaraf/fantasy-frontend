@@ -4,6 +4,20 @@ import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 import prisma from "@/lib/prisma";
 
+// Contest rules interface
+interface ContestRules {
+  playerCategories?: Array<{name: string, price: number}>;
+  walletSize?: number;
+  fantasyTeamSize?: number;
+  teamSize?: number; // Some code seems to use this instead of fantasyTeamSize
+  allowTeamChanges?: boolean;
+  changeFrequency?: string;
+  maxPlayersToChange?: number;
+  changeWindowStart?: string;
+  changeWindowEnd?: string;
+  [key: string]: any;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -75,18 +89,19 @@ export async function POST(
     }
 
     // Parse contest rules
-    let rules = {};
+    let rules: ContestRules = {};
     try {
-      rules =
-        typeof contest.rules === "string"
-          ? JSON.parse(contest.rules)
-          : contest.rules || {};
+      if (typeof contest.rules === "string") {
+        rules = JSON.parse(contest.rules || "{}") as ContestRules;
+      } else if (contest.rules) {
+        rules = contest.rules as ContestRules;
+      }
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
 
     // Check team size
-    const teamSize = (rules as any).teamSize || 7;
+    const teamSize = rules.teamSize || rules.fantasyTeamSize || 7;
     if (players.length !== teamSize) {
       return NextResponse.json(
         {
@@ -132,7 +147,7 @@ export async function POST(
     });
 
     // Get player prices from rules
-    const walletSize = (rules as any).walletSize || 100000;
+    const walletSize = rules.walletSize || 100000;
     const playerPrices: Record<number, number> = {};
 
     // Assign prices based on skill level categories
@@ -140,10 +155,10 @@ export async function POST(
       // Find player category from rules
       let categoryPrice = 5000; // Default price
       if (
-        (rules as any).categories &&
-        Array.isArray((rules as any).categories)
+        rules.playerCategories &&
+        Array.isArray(rules.playerCategories)
       ) {
-        const category = (rules as any).categories.find(
+        const category = rules.playerCategories.find(
           (c: any) => c.playerSkillLevel === player.skillLevel
         );
 

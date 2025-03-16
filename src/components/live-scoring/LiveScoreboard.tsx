@@ -8,10 +8,11 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
+  CardFooter,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, ChevronLeft, ChevronRight, Smartphone, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   Table,
@@ -22,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useSocket } from "@/hooks/useSocket";
 
 interface Player {
   id: number;
@@ -51,23 +53,32 @@ interface MatchScore {
   player2Score: number;
   courtNumber?: number;
   round: string;
+  sets?: Array<{ team1: number; team2: number }>;
+  currentSet?: number;
 }
 
 interface LiveScoreboardProps {
   tournamentId?: number;
   maxMatches?: number;
+  showPagination?: boolean;
+  compactView?: boolean;
 }
 
 export default function LiveScoreboard({
   tournamentId,
   maxMatches = 4,
+  showPagination = true,
+  compactView = false,
 }: LiveScoreboardProps) {
   const [matches, setMatches] = useState<MatchScore[]>([]);
+  const [allMatches, setAllMatches] = useState<MatchScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const router = useRouter();
+  const { socket, isConnected } = useSocket();
 
   // Function to fetch matches from the server
   const fetchMatches = async () => {
@@ -83,7 +94,24 @@ export default function LiveScoreboard({
       }
 
       const data = await res.json();
-      setMatches(data.matches.slice(0, maxMatches));
+      const fetchedMatches = data.matches || [];
+      
+      setAllMatches(fetchedMatches);
+      
+      // Calculate total pages
+      const pages = Math.ceil(fetchedMatches.length / maxMatches);
+      setTotalPages(pages > 0 ? pages : 1);
+      
+      // Update current page if it's out of bounds
+      if (currentPage > pages && pages > 0) {
+        setCurrentPage(1);
+      }
+      
+      // Get matches for current page
+      const startIdx = (currentPage - 1) * maxMatches;
+      const endIdx = startIdx + maxMatches;
+      setMatches(fetchedMatches.slice(startIdx, endIdx));
+      
       setLastUpdate(new Date());
     } catch (err) {
       setError(
@@ -99,87 +127,99 @@ export default function LiveScoreboard({
     fetchMatches();
     const interval = setInterval(fetchMatches, 30000); // every 30 seconds
     return () => clearInterval(interval);
-  }, [tournamentId, maxMatches]);
+  }, [tournamentId, maxMatches, currentPage]);
 
   // Socket connection for real-time updates
   useEffect(() => {
-    const socketIo = io(
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-    );
+    if (!socket || !isConnected) return;
 
     // Join match rooms upon connection
-    socketIo.on("connect", () => {
-      console.log("Connected to socket server");
-      matches.forEach((match) => {
-        socketIo.emit("joinMatch", match.id);
-      });
+    matches.forEach((match) => {
+      socket.emit("joinMatch", match.id);
     });
 
     // Handle real-time score updates
-    socketIo.on("scoreUpdate", (data) => {
-      setMatches((prevMatches) =>
-        prevMatches.map((match) =>
+    const handleScoreUpdate = (data: any) => {
+      setAllMatches((prevMatches) => {
+        const updatedMatches = prevMatches.map((match) =>
           match.id === data.matchId
             ? {
                 ...match,
                 player1Score: data.player1Score,
                 player2Score: data.player2Score,
+                currentSet: data.currentSet,
+                sets: data.sets,
               }
             : match
-        )
-      );
+        );
+        
+        // Update current page matches
+        const startIdx = (currentPage - 1) * maxMatches;
+        const endIdx = startIdx + maxMatches;
+        setMatches(updatedMatches.slice(startIdx, endIdx));
+        
+        return updatedMatches;
+      });
       setLastUpdate(new Date());
-    });
+    };
 
     // Handle match end events
-    socketIo.on("matchEnd", (data) => {
-      setMatches((prevMatches) =>
-        prevMatches.map((match) =>
-          match.id === data.matchId ? { ...match, status: "COMPLETED" } : match
-        )
-      );
+    const handleMatchEnd = (data: any) => {
+      setAllMatches((prevMatches) => {
+        const updatedMatches = prevMatches.map((match) =>
+          match.id === data.matchId 
+            ? { 
+                ...match, 
+                status: "COMPLETED" as const,
+                player1Score: data.player1Score,
+                player2Score: data.player2Score,
+                sets: data.sets,
+              } 
+            : match
+        );
+        
+        // Update current page matches
+        const startIdx = (currentPage - 1) * maxMatches;
+        const endIdx = startIdx + maxMatches;
+        setMatches(updatedMatches.slice(startIdx, endIdx));
+        
+        return updatedMatches;
+      });
       setLastUpdate(new Date());
-    });
+    };
 
     // When a new match starts, refresh the matches list
-    const refreshMatches = async () => {
-      try {
-        const endpoint = tournamentId
-          ? `/api/tournaments/${tournamentId}/matches?status=IN_PROGRESS`
-          : "/api/matches/live";
-        const res = await fetch(endpoint);
-        if (res.ok) {
-          const data = await res.json();
-          setMatches(data.matches.slice(0, maxMatches));
-          setLastUpdate(new Date());
-          // Join new match rooms
-          data.matches.forEach((match: MatchScore) => {
-            socketIo.emit("joinMatch", match.id);
-          });
-        }
-      } catch (err) {
-        console.error("Error refreshing matches:", err);
-      }
+    const handleMatchStart = () => {
+      fetchMatches();
     };
 
-    socketIo.on("matchStart", () => {
-      refreshMatches();
-    });
-
-    socketIo.on("connect_error", (err) => {
-      console.error("Socket connection error:", err);
-    });
-
-    setSocket(socketIo);
+    socket.on("scoreUpdate", handleScoreUpdate);
+    socket.on("matchEnd", handleMatchEnd);
+    socket.on("matchStart", handleMatchStart);
 
     return () => {
-      socketIo.disconnect();
+      socket.off("scoreUpdate", handleScoreUpdate);
+      socket.off("matchEnd", handleMatchEnd);
+      socket.off("matchStart", handleMatchStart);
     };
-  }, [tournamentId, maxMatches, matches]);
+  }, [socket, isConnected, matches, currentPage, maxMatches]);
 
   // Handler for manual refresh
   const handleRefresh = async () => {
     await fetchMatches();
+  };
+
+  // Pagination handlers
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
   };
 
   // Helper to render each match row in the table
@@ -194,22 +234,79 @@ export default function LiveScoreboard({
     return (
       <TableRow
         key={match.id}
-        className="cursor-pointer hover:bg-gray-100"
+        className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
         onClick={() => router.push(`/referee/live-scoring/${match.id}`)}
       >
-        <TableCell>{match.id}</TableCell>
-        <TableCell>{displayName}</TableCell>
+        {!compactView && <TableCell>{match.id}</TableCell>}
+        <TableCell className="font-medium">{displayName}</TableCell>
         <TableCell>
           <Badge
             variant={match.status === "IN_PROGRESS" ? "secondary" : "default"}
+            className="px-2 py-1"
           >
             {match.player1Score} - {match.player2Score}
           </Badge>
         </TableCell>
-        <TableCell>{match.courtNumber ?? "N/A"}</TableCell>
-        <TableCell>{match.round}</TableCell>
-        <TableCell>{match.status}</TableCell>
+        {!compactView && <TableCell>{match.courtNumber ?? "N/A"}</TableCell>}
+        {!compactView && <TableCell>{match.round}</TableCell>}
+        <TableCell>
+          <Badge 
+            variant={
+              match.status === "IN_PROGRESS" 
+                ? "default" 
+                : match.status === "COMPLETED" 
+                ? "secondary" 
+                : "secondary"
+            }
+          >
+            {match.status.replace("_", " ")}
+          </Badge>
+        </TableCell>
       </TableRow>
+    );
+  };
+
+  // Compact card view for mobile
+  const renderMatchCard = (match: MatchScore) => {
+    const displayName =
+      match.player1 && match.player2
+        ? `${match.player1.name} vs ${match.player2.name}`
+        : match.team1 && match.team2
+        ? `${match.team1.name} vs ${match.team2.name}`
+        : "TBD";
+
+    return (
+      <Card 
+        key={match.id} 
+        className="mb-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        onClick={() => router.push(`/referee/live-scoring/${match.id}`)}
+      >
+        <CardContent className="p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="font-medium text-sm">{displayName}</h3>
+            <Badge
+              variant={
+                match.status === "IN_PROGRESS" 
+                  ? "default" 
+                  : match.status === "COMPLETED" 
+                  ? "secondary" 
+                  : "secondary"
+              }
+            >
+              {match.status.replace("_", " ")}
+            </Badge>
+          </div>
+          <div className="flex justify-between items-center">
+            <div>
+              <span className="text-sm text-muted-foreground">Court {match.courtNumber ?? "N/A"}</span>
+              <span className="text-sm text-muted-foreground ml-2">• {match.round}</span>
+            </div>
+            <Badge variant="secondary" className="text-lg px-3 py-1">
+              {match.player1Score} - {match.player2Score}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
     );
   };
 
@@ -220,49 +317,100 @@ export default function LiveScoreboard({
           <CardTitle>Live Scoreboard</CardTitle>
           <CardDescription>
             Last updated: {lastUpdate.toLocaleTimeString()}
+            {isConnected && (
+              <span className="ml-2 text-green-500 text-xs">• Live</span>
+            )}
           </CardDescription>
         </div>
         <Button
           variant="outline"
           onClick={handleRefresh}
           className="mt-4 sm:mt-0"
+          disabled={loading}
         >
-          <RefreshCw className="mr-2 h-4 w-4" />
+          {loading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
           Refresh
         </Button>
       </CardHeader>
       <CardContent>
         {error && (
           <Alert variant="destructive" className="mb-4">
-            <AlertTitle>
-              <AlertCircle className="mr-2 h-4 w-4" />
-              Error
-            </AlertTitle>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+        
         {loading ? (
-          <p>Loading matches...</p>
+          <div className="flex justify-center items-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-2">Loading matches...</span>
+          </div>
         ) : matches.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Match</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Court</TableHead>
-                <TableHead>Round</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {matches.map((match) => renderMatchRow(match))}
-            </TableBody>
-          </Table>
+          <>
+            {/* Desktop view */}
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {!compactView && <TableHead>ID</TableHead>}
+                    <TableHead>Match</TableHead>
+                    <TableHead>Score</TableHead>
+                    {!compactView && <TableHead>Court</TableHead>}
+                    {!compactView && <TableHead>Round</TableHead>}
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {matches.map((match) => renderMatchRow(match))}
+                </TableBody>
+              </Table>
+            </div>
+            
+            {/* Mobile view */}
+            <div className="md:hidden">
+              {matches.map((match) => renderMatchCard(match))}
+            </div>
+          </>
         ) : (
-          <p>No live matches available.</p>
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No live matches available at the moment.</p>
+            <p className="text-sm mt-2">Check back later or refresh to update.</p>
+          </div>
         )}
       </CardContent>
+      
+      {showPagination && totalPages > 1 && (
+        <CardFooter className="flex justify-between items-center">
+          <div className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrevPage}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span className="sr-only">Previous</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+              <span className="sr-only">Next</span>
+            </Button>
+          </div>
+        </CardFooter>
+      )}
     </Card>
   );
 }

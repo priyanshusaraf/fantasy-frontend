@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -37,6 +37,19 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Search, Plus, Trash, CalendarIcon, X } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 // Tournament Types & Schema using zod for validation
 const TournamentTypeEnum = z.enum([
@@ -57,521 +70,1015 @@ const TournamentStatusEnum = z.enum([
   "CANCELLED",
 ]);
 
-const TournamentSchema = z
-  .object({
-    name: z.string().min(3, "Tournament name must be at least 3 characters"),
-    description: z.string().optional(),
-    type: TournamentTypeEnum,
-    status: TournamentStatusEnum.default("DRAFT"),
-    location: z.string().min(3, "Please enter a valid location"),
-    startDate: z.date(),
-    endDate: z.date(),
-    registrationOpenDate: z.date(),
-    registrationCloseDate: z.date(),
-    maxParticipants: z.number().int().min(2),
-    entryFee: z.number().min(0),
-    prizeMoney: z.number().optional(),
-    rules: z.string().optional(),
-    imageUrl: z.string().url().optional(),
-  })
-  .refine((data) => data.endDate >= data.startDate, {
-    message: "End date must be after start date",
-    path: ["endDate"],
-  })
-  .refine((data) => data.registrationCloseDate >= data.registrationOpenDate, {
-    message: "Registration close date must be after registration open date",
-    path: ["registrationCloseDate"],
-  })
-  .refine((data) => data.startDate >= data.registrationCloseDate, {
-    message: "Tournament must start after registration closes",
-    path: ["startDate"],
-  });
+const TournamentSchema = z.object({
+  name: z.string().min(3, "Tournament name must have at least 3 characters"),
+  description: z.string().optional(),
+  type: TournamentTypeEnum,
+  startDate: z.date(),
+  endDate: z.date(),
+  registrationOpenDate: z.date(),
+  registrationCloseDate: z.date(),
+  location: z.string().min(3, "Location must have at least 3 characters"),
+  maxParticipants: z.number().min(2, "Must have at least 2 participants"),
+  entryFee: z.number().min(0, "Entry fee cannot be negative"),
+  isTeamBased: z.boolean().optional(),
+  enableLiveScoring: z.boolean().optional(),
+  imageUrl: z.string().optional(),
+  rules: z.string().optional(),
+  prizeMoney: z.number().optional(),
+});
 
 type CreateTournamentInput = z.infer<typeof TournamentSchema>;
 
-const CreateTournamentForm: React.FC = () => {
-  const router = useRouter();
-  const { user } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+// Define types for players and referees
+interface Player {
+  id: number;
+  name: string;
+  skillLevel?: string;
+  imageUrl?: string;
+}
 
-  // Initialize form with react-hook-form and zod resolver for validation
+interface Team {
+  id: string; // Temporary client-side ID
+  name: string;
+  players: Player[];
+}
+
+interface Referee {
+  id: number;
+  name: string;
+  certificationLevel?: string;
+}
+
+const CreateTournamentForm: React.FC = () => {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
+  const [availableReferees, setAvailableReferees] = useState<Referee[]>([]);
+  const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
+  const [selectedReferees, setSelectedReferees] = useState<Referee[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentTab, setCurrentTab] = useState('basic');
+  const [step, setStep] = useState(1);
+  
   const form = useForm<CreateTournamentInput>({
     resolver: zodResolver(TournamentSchema),
     defaultValues: {
+      name: "",
+      description: "",
       type: "SINGLES",
-      status: "DRAFT",
-      maxParticipants: 16,
-      entryFee: 0,
       startDate: new Date(),
-      // Default tournament end date set to 2 days after start
-      endDate: new Date(new Date().setDate(new Date().getDate() + 2)),
+      endDate: new Date(new Date().setDate(new Date().getDate() + 7)),
       registrationOpenDate: new Date(),
-      // Default registration close date set to 1 day after open
-      registrationCloseDate: new Date(
-        new Date().setDate(new Date().getDate() + 1)
-      ),
+      registrationCloseDate: new Date(new Date().setDate(new Date().getDate() + 5)),
+      location: "",
+      maxParticipants: 32,
+      entryFee: 0,
+      isTeamBased: false,
+      enableLiveScoring: true,
+      rules: "",
+      prizeMoney: 0,
     },
   });
 
-  const onSubmit = async (data: CreateTournamentInput) => {
-    // If user is not authenticated, show a toast notification and exit early
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please sign in to create a tournament.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const isTeamBased = form.watch("isTeamBased");
+  const enableLiveScoring = form.watch("enableLiveScoring");
+  const tournamentType = form.watch("type");
 
-    setIsSubmitting(true);
+  // Fetch available players
+  useEffect(() => {
+    const fetchPlayers = async () => {
+      try {
+        const response = await fetch("/api/players");
+        if (response.ok) {
+          const data = await response.json();
+          setAvailablePlayers(data.players);
+        }
+      } catch (error) {
+        console.error("Error fetching players:", error);
+        toast.error("Failed to load players");
+      }
+    };
+
+    fetchPlayers();
+  }, []);
+
+  // Fetch available referees
+  useEffect(() => {
+    const fetchReferees = async () => {
+      try {
+        const response = await fetch("/api/referees");
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableReferees(data.referees);
+        }
+      } catch (error) {
+        console.error("Error fetching referees:", error);
+        toast.error("Failed to load referees");
+      }
+    };
+
+    if (enableLiveScoring) {
+      fetchReferees();
+    }
+  }, [enableLiveScoring]);
+
+  // Filter players based on search term
+  const filteredPlayers = availablePlayers.filter(
+    (player) =>
+      player.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      !selectedPlayers.some((selected) => selected.id === player.id) &&
+      !teams.some((team) =>
+        team.players.some((teamPlayer) => teamPlayer.id === player.id)
+      )
+  );
+
+  // Filter referees based on search term
+  const filteredReferees = availableReferees.filter(
+    (referee) =>
+      referee.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      !selectedReferees.some((selected) => selected.id === referee.id)
+  );
+
+  const handlePlayerSelect = (player: Player) => {
+    setSelectedPlayers([...selectedPlayers, player]);
+    setSearchTerm('');
+  };
+
+  const handleRefereeSelect = (referee: Referee) => {
+    setSelectedReferees([...selectedReferees, referee]);
+    setSearchTerm('');
+  };
+
+  const handleRemovePlayer = (playerId: number) => {
+    setSelectedPlayers(selectedPlayers.filter((p) => p.id !== playerId));
+  };
+
+  const handleRemoveReferee = (refereeId: number) => {
+    setSelectedReferees(selectedReferees.filter((r) => r.id !== refereeId));
+  };
+
+  const handleAddTeam = () => {
+    const newTeam: Team = {
+      id: `team-${Date.now()}`,
+      name: `Team ${teams.length + 1}`,
+      players: [],
+    };
+    setTeams([...teams, newTeam]);
+  };
+
+  const handleUpdateTeamName = (teamId: string, newName: string) => {
+    setTeams(
+      teams.map((team) =>
+        team.id === teamId ? { ...team, name: newName } : team
+      )
+    );
+  };
+
+  const handleAddPlayerToTeam = (teamId: string, player: Player) => {
+    setTeams(
+      teams.map((team) =>
+        team.id === teamId
+          ? { ...team, players: [...team.players, player] }
+          : team
+      )
+    );
+    setSelectedPlayers(selectedPlayers.filter((p) => p.id !== player.id));
+  };
+
+  const handleRemovePlayerFromTeam = (teamId: string, playerId: number) => {
+    const removedPlayer = teams
+      .find((team) => team.id === teamId)
+      ?.players.find((player) => player.id === playerId);
+
+    if (removedPlayer) {
+      setSelectedPlayers([...selectedPlayers, removedPlayer]);
+      setTeams(
+        teams.map((team) =>
+          team.id === teamId
+            ? {
+                ...team,
+                players: team.players.filter(
+                  (player) => player.id !== playerId
+                ),
+              }
+            : team
+        )
+      );
+    }
+  };
+
+  const handleRemoveTeam = (teamId: string) => {
+    const teamToRemove = teams.find((team) => team.id === teamId);
+    if (teamToRemove) {
+      // Add players back to selected players
+      setSelectedPlayers([...selectedPlayers, ...teamToRemove.players]);
+      setTeams(teams.filter((team) => team.id !== teamId));
+    }
+  };
+
+  const onSubmit = async (data: CreateTournamentInput) => {
     try {
+      setLoading(true);
+
+      // Validate based on isTeamBased
+      if (isTeamBased && teams.length < 2) {
+        toast.error("You need at least 2 teams for a team-based tournament");
+        setLoading(false);
+        return;
+      }
+
+      if (!isTeamBased && selectedPlayers.length < 2) {
+        toast.error("You need at least 2 players for an individual tournament");
+        setLoading(false);
+        return;
+      }
+
+      if (enableLiveScoring && selectedReferees.length === 0) {
+        toast.error("You need at least 1 referee for live scoring");
+        setLoading(false);
+        return;
+      }
+
+      // Prepare player IDs
+      const playerIds = isTeamBased
+        ? teams.flatMap((team) => team.players.map((player) => player.id))
+        : selectedPlayers.map((player) => player.id);
+
+      // Prepare teams data
+      const teamsData = isTeamBased
+        ? teams.map((team) => ({
+            name: team.name,
+            playerIds: team.players.map((player) => player.id),
+          }))
+        : [];
+
+      // Prepare referee IDs
+      const refereeIds = selectedReferees.map((referee) => referee.id);
+
+      // Create the tournament
+      const tournamentData = {
+        ...data,
+        organizerId: user?.id,
+        playerIds,
+        teamsData: isTeamBased ? teamsData : undefined,
+        refereeIds: enableLiveScoring ? refereeIds : undefined,
+      };
+
       const response = await fetch("/api/tournaments", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({
-          ...data,
-          organizerId: user.id,
-        }),
+        body: JSON.stringify(tournamentData),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create tournament");
+        throw new Error("Failed to create tournament");
       }
 
-      const tournament = await response.json();
-
-      toast({
-        title: "Tournament Created",
-        description: "Your tournament has been created successfully!",
-      });
-
-      // Redirect to the tournament management page using the new tournament's id
-      router.push(`/admin/manage-tournament?id=${tournament.id}`);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Something went wrong. Please try again.",
-        variant: "destructive",
-      });
+      const result = await response.json();
+      toast.success("Tournament created successfully!");
+      router.push(`/tournaments/${result.id}`);
+    } catch (error) {
+      console.error("Error creating tournament:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "An error occurred while creating the tournament"
+      );
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
+    }
+  };
+
+  const nextStep = () => {
+    if (step < 3) {
+      setStep(step + 1);
+    } else {
+      form.handleSubmit(onSubmit)();
+    }
+  };
+
+  const prevStep = () => {
+    if (step > 1) {
+      setStep(step - 1);
     }
   };
 
   return (
-    <Card className="max-w-2xl mx-auto dark:bg-gray-800 dark:text-white">
-      <CardHeader>
-        <CardTitle>Create New Pickleball Tournament</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Tournament Name */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tournament Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter tournament name" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+    <div className="mx-auto max-w-4xl p-4 md:p-8 bg-white dark:bg-gray-900 rounded-lg shadow-lg">
+      <h1 className="text-2xl font-bold mb-6">Create New Tournament</h1>
 
-            {/* Description */}
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Tournament description (optional)"
-                      {...field}
-                      value={field.value || ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+      <div className="mb-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <div
+            className={`h-8 w-8 rounded-full ${
+              step >= 1 ? "bg-primary" : "bg-gray-300 dark:bg-gray-700"
+            } flex items-center justify-center text-white font-bold`}
+          >
+            1
+          </div>
+          <div className="h-1 w-16 bg-gray-300 dark:bg-gray-700 flex-grow"></div>
+          <div
+            className={`h-8 w-8 rounded-full ${
+              step >= 2 ? "bg-primary" : "bg-gray-300 dark:bg-gray-700"
+            } flex items-center justify-center text-white font-bold`}
+          >
+            2
+          </div>
+          <div className="h-1 w-16 bg-gray-300 dark:bg-gray-700 flex-grow"></div>
+          <div
+            className={`h-8 w-8 rounded-full ${
+              step >= 3 ? "bg-primary" : "bg-gray-300 dark:bg-gray-700"
+            } flex items-center justify-center text-white font-bold`}
+          >
+            3
+          </div>
+        </div>
+      </div>
 
-            {/* Tournament Type */}
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tournament Type</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select tournament type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {TournamentTypeEnum.options.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {type.replace("_", " ")}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Location */}
-            <FormField
-              control={form.control}
-              name="location"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Location</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Tournament venue" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Registration Dates Section */}
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Registration Open Date */}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          {step === 1 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">Basic Information</h2>
               <FormField
                 control={form.control}
-                name="registrationOpenDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Registration Opens</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                            <span className="ml-auto h-4 w-4 opacity-50">
-                              📅
-                            </span>
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-auto p-2 dark:bg-gray-800"
-                        align="center"
-                        sideOffset={8}
-                      >
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date: Date) =>
-                            date > new Date("2100-01-01")
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Registration Close Date */}
-              <FormField
-                control={form.control}
-                name="registrationCloseDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Registration Closes</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                            <span className="ml-auto h-4 w-4 opacity-50">
-                              📅
-                            </span>
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-auto p-2 dark:bg-gray-800"
-                        align="center"
-                        sideOffset={8}
-                      >
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date: Date) =>
-                            date > new Date("2100-01-01")
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Tournament Dates Section */}
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Tournament Start Date */}
-              <FormField
-                control={form.control}
-                name="startDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Tournament Start Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                            <span className="ml-auto h-4 w-4 opacity-50">
-                              📅
-                            </span>
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-auto p-2 dark:bg-gray-800"
-                        align="center"
-                        sideOffset={8}
-                      >
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date: Date) =>
-                            date > new Date("2100-01-01")
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Tournament End Date */}
-              <FormField
-                control={form.control}
-                name="endDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Tournament End Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                            <span className="ml-auto h-4 w-4 opacity-50">
-                              📅
-                            </span>
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-auto p-2 dark:bg-gray-800"
-                        align="center"
-                        sideOffset={8}
-                      >
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date: Date) =>
-                            date > new Date("2100-01-01")
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Tournament Details Section */}
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Max Participants */}
-              <FormField
-                control={form.control}
-                name="maxParticipants"
+                name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Max Participants</FormLabel>
+                    <FormLabel>Tournament Name</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="Maximum number of participants"
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
-                      />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
-              {/* Entry Fee */}
               <FormField
                 control={form.control}
-                name="entryFee"
+                name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Entry Fee (₹)</FormLabel>
+                    <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Tournament entry fee"
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
-                      />
+                      <Textarea {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="location"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Location</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="maxParticipants"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Participants</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={2}
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(parseInt(e.target.value, 10))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="entryFee"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Entry Fee (₹)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value ? parseFloat(e.target.value) : 0
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Set to 0 for free entry
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="prizeMoney"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Prize Money (₹)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value ? parseFloat(e.target.value) : 0
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Total prize pool amount
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
+          )}
 
-            {/* Prize Money (Optional) */}
-            <FormField
-              control={form.control}
-              name="prizeMoney"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Prize Money (Optional)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Total prize money"
-                      {...field}
-                      value={field.value === undefined ? "" : field.value}
-                      onChange={(e) => {
-                        const value =
-                          e.target.value === ""
-                            ? undefined
-                            : Number(e.target.value);
-                        field.onChange(value);
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          {step === 2 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">Tournament Setup</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tournament Type</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="SINGLES">Singles</SelectItem>
+                          <SelectItem value="DOUBLES">Doubles</SelectItem>
+                          <SelectItem value="MIXED_DOUBLES">
+                            Mixed Doubles
+                          </SelectItem>
+                          <SelectItem value="ROUND_ROBIN">
+                            Round Robin
+                          </SelectItem>
+                          <SelectItem value="KNOCKOUT">Knockout</SelectItem>
+                          <SelectItem value="LEAGUE">League</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="rules"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tournament Rules</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          placeholder="Enter tournament rules and guidelines..."
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            {/* Tournament Rules */}
-            <FormField
-              control={form.control}
-              name="rules"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tournament Rules</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Tournament rules (optional)"
-                      {...field}
-                      value={field.value || ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Start Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < new Date()
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="endDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>End Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < form.getValues("startDate")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            {/* Tournament Image URL */}
-            <FormField
-              control={form.control}
-              name="imageUrl"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tournament Image URL</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="https://example.com/tournament-image.jpg"
-                      {...field}
-                      value={field.value || ""}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Enter a URL for the tournament banner image
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="registrationOpenDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Registration Start</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="registrationCloseDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Registration End</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < form.getValues("registrationOpenDate") ||
+                              date > form.getValues("startDate")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            {/* Submit Button */}
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Creating Tournament..." : "Create Tournament"}
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="isTeamBased"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Team-based Tournament</FormLabel>
+                        <FormDescription>
+                          Enable team-based tournament format
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="enableLiveScoring"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Live Scoring</FormLabel>
+                        <FormDescription>
+                          Enable live scoring for matches
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">
+                {isTeamBased ? "Team Setup" : "Player Selection"}
+              </h2>
+
+              {/* Search component */}
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={`Search for ${
+                    enableLiveScoring ? "players or referees" : "players"
+                  }...`}
+                  className="pl-8"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <Tabs defaultValue="players" className="w-full">
+                <TabsList className="w-full">
+                  <TabsTrigger value="players" className="w-full">
+                    Players
+                  </TabsTrigger>
+                  {enableLiveScoring && (
+                    <TabsTrigger value="referees" className="w-full">
+                      Referees
+                    </TabsTrigger>
+                  )}
+                  {isTeamBased && (
+                    <TabsTrigger value="teams" className="w-full">
+                      Teams
+                    </TabsTrigger>
+                  )}
+                </TabsList>
+                <TabsContent value="players">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Available Players</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-40 overflow-y-auto mb-4 border rounded-md">
+                        {filteredPlayers.length > 0 ? (
+                          <ul className="divide-y">
+                            {filteredPlayers.map((player) => (
+                              <li
+                                key={player.id}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer flex justify-between items-center"
+                                onClick={() => handlePlayerSelect(player)}
+                              >
+                                <span>{player.name}</span>
+                                <Badge variant="secondary">
+                                  {player.skillLevel || "Unrated"}
+                                </Badge>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="p-4 text-center text-muted-foreground">
+                            No players found
+                          </p>
+                        )}
+                      </div>
+
+                      <h3 className="text-lg font-medium mb-2">Selected Players</h3>
+                      <div className="border rounded-md p-2 min-h-20">
+                        {selectedPlayers.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {selectedPlayers.map((player) => (
+                              <Badge
+                                key={player.id}
+                                className="py-1 px-2 flex items-center"
+                                variant="outline"
+                              >
+                                {player.name}
+                                <X
+                                  className="ml-1 h-3 w-3 cursor-pointer"
+                                  onClick={() => handleRemovePlayer(player.id)}
+                                />
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-center text-muted-foreground">
+                            No players selected
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {enableLiveScoring && (
+                  <TabsContent value="referees">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Available Referees</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-40 overflow-y-auto mb-4 border rounded-md">
+                          {filteredReferees.length > 0 ? (
+                            <ul className="divide-y">
+                              {filteredReferees.map((referee) => (
+                                <li
+                                  key={referee.id}
+                                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer flex justify-between items-center"
+                                  onClick={() => handleRefereeSelect(referee)}
+                                >
+                                  <span>{referee.name}</span>
+                                  <Badge variant="secondary">
+                                    {referee.certificationLevel || "Level 1"}
+                                  </Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="p-4 text-center text-muted-foreground">
+                              No referees found
+                            </p>
+                          )}
+                        </div>
+
+                        <h3 className="text-lg font-medium mb-2">
+                          Selected Referees
+                        </h3>
+                        <div className="border rounded-md p-2 min-h-20">
+                          {selectedReferees.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {selectedReferees.map((referee) => (
+                                <Badge
+                                  key={referee.id}
+                                  className="py-1 px-2 flex items-center"
+                                  variant="outline"
+                                >
+                                  {referee.name}
+                                  <X
+                                    className="ml-1 h-3 w-3 cursor-pointer"
+                                    onClick={() => handleRemoveReferee(referee.id)}
+                                  />
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-center text-muted-foreground">
+                              No referees selected
+                            </p>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                )}
+
+                {isTeamBased && (
+                  <TabsContent value="teams">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle>Teams</CardTitle>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddTeam}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> Add Team
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        {teams.length === 0 && (
+                          <p className="text-center py-4 text-muted-foreground">
+                            No teams created yet. Click &quot;Add Team&quot; to create a team.
+                          </p>
+                        )}
+                        
+                        {teams.map((team) => (
+                          <div
+                            key={team.id}
+                            className="mb-6 p-4 border rounded-md"
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <div className="flex items-center">
+                                <Input
+                                  value={team.name}
+                                  onChange={(e) =>
+                                    handleUpdateTeamName(team.id, e.target.value)
+                                  }
+                                  className="w-48 mr-2"
+                                />
+                                <Badge>
+                                  {team.players.length}{" "}
+                                  {team.players.length === 1
+                                    ? "player"
+                                    : "players"}
+                                </Badge>
+                              </div>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleRemoveTeam(team.id)}
+                              >
+                                <Trash className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            
+                            <div className="mb-2">
+                              <h4 className="text-sm font-medium mb-1">Team Members</h4>
+                              {team.players.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {team.players.map((player) => (
+                                    <Badge
+                                      key={player.id}
+                                      className="py-1 px-2 flex items-center"
+                                      variant="outline"
+                                    >
+                                      {player.name}
+                                      <X
+                                        className="ml-1 h-3 w-3 cursor-pointer"
+                                        onClick={() =>
+                                          handleRemovePlayerFromTeam(
+                                            team.id,
+                                            player.id
+                                          )
+                                        }
+                                      />
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">
+                                  No players added to team
+                                </p>
+                              )}
+                            </div>
+                            
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">
+                                Add Players to Team
+                              </h4>
+                              {selectedPlayers.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedPlayers.map((player) => (
+                                    <Badge
+                                      key={player.id}
+                                      className="bg-primary-foreground text-primary hover:bg-primary hover:text-primary-foreground cursor-pointer"
+                                      onClick={() =>
+                                        handleAddPlayerToTeam(team.id, player)
+                                      }
+                                    >
+                                      + {player.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">
+                                  No available players to add
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                )}
+              </Tabs>
+            </div>
+          )}
+
+          <div className="flex justify-between mt-8">
+            {step > 1 ? (
+              <Button type="button" variant="outline" onClick={prevStep}>
+                Back
+              </Button>
+            ) : (
+              <div></div>
+            )}
+            
+            <Button
+              type={step === 3 ? "submit" : "button"}
+              onClick={step < 3 ? nextStep : undefined}
+              disabled={loading}
+            >
+              {loading && <span className="animate-spin mr-2">⏳</span>}
+              {step < 3 ? "Next" : "Create Tournament"}
             </Button>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+          </div>
+        </form>
+      </Form>
+    </div>
   );
 };
 

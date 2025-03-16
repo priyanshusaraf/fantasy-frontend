@@ -1,10 +1,10 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
+import { createPrismaAdapter } from "@/lib/auth";
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: createPrismaAdapter(prisma),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -16,27 +16,33 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  secret: process.env.NEXTAUTH_SECRET,
+  session: {
+    strategy: "jwt",
+  },
   callbacks: {
-    async session({ session, user }) {
-      // Add user ID and role to the session
-      session.user.id = user.id;
-      session.user.role = user.role;
-      return session;
-    },
-    async signIn({ account, profile }) {
-      if (account?.provider === "google") {
-        return profile?.email_verified ?? false;
+    async jwt({ token, user, account }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.username = user.username;
+        token.isApproved = user.isApproved;
       }
-      return true;
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.username = token.username as string;
+        session.user.isApproved = token.isApproved as boolean;
+      }
+      return session;
     },
   },
   pages: {
     signIn: "/login",
     error: "/auth/error",
-  },
-  session: {
-    strategy: "database",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
 };
 

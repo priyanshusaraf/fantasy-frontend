@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useSession } from "next-auth/react";
 // import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
 interface AuthGuardProps {
@@ -17,15 +18,43 @@ export function AuthGuard({
   allowedRoles = [],
   requireApproval = false,
 }: AuthGuardProps) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading: customAuthLoading } = useAuth();
+  const { status: sessionStatus } = useSession();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is authenticated
-    if (!isAuthenticated) {
+    // Wait for both auth systems to resolve
+    if (customAuthLoading || sessionStatus === "loading") {
+      return;
+    }
+
+    // NextAuth is authenticated, allow access
+    if (sessionStatus === "authenticated") {
+      setLoading(false);
+      return;
+    }
+
+    // Custom auth is authenticated, allow access
+    if (isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
+    // Both auth systems have completed loading and user is not authenticated
+    if (!isAuthenticated && sessionStatus === "unauthenticated") {
+      // Store current URL to return after login, but prevent redirect loops
+      const currentPath = window.location.pathname;
+      
+      // Don't redirect to login page if already on a login-related page
+      const loginRelatedPaths = ['/login', '/auth', '/register'];
+      if (loginRelatedPaths.some(path => currentPath.startsWith(path))) {
+        setLoading(false);
+        return;
+      }
+      
       router.push(
-        "/login?callbackUrl=" + encodeURIComponent(window.location.pathname)
+        "/login?callbackUrl=" + encodeURIComponent(currentPath)
       );
       return;
     }
@@ -43,7 +72,7 @@ export function AuthGuard({
     }
 
     setLoading(false);
-  }, [isAuthenticated, user, router, allowedRoles, requireApproval]);
+  }, [isAuthenticated, customAuthLoading, sessionStatus, user, router, allowedRoles, requireApproval]);
 
   if (loading) {
     return (

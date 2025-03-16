@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -13,969 +13,680 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/form";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { format } from "date-fns";
-import { Calendar as CalendarIcon } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/form";
-import { Slider } from "@/components/ui/form";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { AlertCircle, Search, Info, Crown, Star, Trophy, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useAuth } from "@/hooks/useAuth";
 
-export default function CreateTournamentForm() {
+interface Player {
+  id: number;
+  name: string;
+  imageUrl?: string;
+  skillLevel: string;
+  price: number;
+  stats?: {
+    tournamentWins: number;
+    careerWinRate: number;
+    recentForm?: string;
+  };
+}
+
+interface Contest {
+  id: number;
+  name: string;
+  entryFee: number;
+  tournament: {
+    id: number;
+    name: string;
+    startDate: string;
+    endDate: string;
+  };
+  prizePool: number;
+  maxEntries: number;
+  currentEntries: number;
+  status: string;
+}
+
+interface SelectedPlayer {
+  playerId: number;
+  isCaptain: boolean;
+  isViceCaptain: boolean;
+}
+
+interface PlayerCategory {
+  tier: string;
+  label: string;
+  priceRange: string;
+  color: string;
+}
+
+const playerCategories: PlayerCategory[] = [
+  { tier: "A", label: "Elite", priceRange: "8000-10000", color: "bg-purple-500" },
+  { tier: "B", label: "Premium", priceRange: "6000-7900", color: "bg-blue-500" },
+  { tier: "C", label: "Standard", priceRange: "4000-5900", color: "bg-green-500" },
+  { tier: "D", label: "Budget", priceRange: "2000-3900", color: "bg-yellow-500" },
+  { tier: "E", label: "Value", priceRange: "1000-1900", color: "bg-orange-500" },
+];
+
+const MAX_TEAM_SIZE = 11;
+
+export default function TeamCreation({ contestId }: { contestId: number }) {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [tournamentType, setTournamentType] = useState("individual");
-  const [playerCount, setPlayerCount] = useState(4);
-  const [selectedPlayers, setSelectedPlayers] = useState<number[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [contest, setContest] = useState<Contest | null>(null);
+  const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
+  const [filteredPlayers, setFilteredPlayers] = useState<Player[]>([]);
+  const [selectedPlayers, setSelectedPlayers] = useState<SelectedPlayer[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [budget, setBudget] = useState(100000);
+  const [remainingBudget, setRemainingBudget] = useState(100000);
+  const [teamComplete, setTeamComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const totalSteps = 7;
+  const [teamValid, setTeamValid] = useState(false);
+  const [activeTab, setActiveTab] = useState("selection");
 
-  // Form state
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    location: "",
-    startDate: new Date(),
-    endDate: new Date(new Date().setDate(new Date().getDate() + 2)),
-    registrationOpenDate: new Date(),
-    registrationCloseDate: new Date(
-      new Date().setDate(new Date().getDate() + 1)
-    ),
-    maxParticipants: 32,
-    type: "SINGLES" as
-      | "SINGLES"
-      | "DOUBLES"
-      | "MIXED_DOUBLES"
-      | "ROUND_ROBIN"
-      | "KNOCKOUT"
-      | "LEAGUE",
-    entryFee: 500,
-    playerCategories: [
-      { name: "A", price: 11000 },
-      { name: "B", price: 9000 },
-      { name: "C", price: 7000 },
-    ],
-    fantasyTeamSize: 7,
-    walletSize: 100000,
-    allowTeamChanges: true,
-    changeFrequency: "daily" as "daily" | "rounds" | "once",
-    maxPlayersToChange: 2,
-    changeWindowStart: "18:00",
-    changeWindowEnd: "22:00",
-    contestTypes: [
-      { name: "Free Entry", entryFee: 0, active: true },
-      { name: "Basic Contest", entryFee: 500, active: true },
-      { name: "Premium Contest", entryFee: 1000, active: true },
-      { name: "Elite Contest", entryFee: 1500, active: true },
-    ],
-  });
+  // Fantasy rules modal
+  const [showRules, setShowRules] = useState(false);
 
-  const handleNext = () => {
-    if (step < totalSteps) {
-      setStep(step + 1);
-    }
-  };
+  useEffect(() => {
+    const fetchContestDetails = async () => {
+      try {
+        // Fetch contest details
+        const contestResponse = await fetch(`/api/fantasy-pickleball/contests/${contestId}`);
+        if (!contestResponse.ok) {
+          throw new Error("Failed to fetch contest details");
+        }
+        const contestData = await contestResponse.json();
+        setContest(contestData);
+        
+        // Also set the budget from the contest configuration
+        setBudget(contestData.budget || 100000);
+        setRemainingBudget(contestData.budget || 100000);
 
-  const handleBack = () => {
-    if (step > 1) {
-      setStep(step - 1);
-    }
-  };
-
-  const handleFormChange = (field: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const handleDateChange = (field: string, date: Date | undefined) => {
-    if (date) {
-      setFormData((prev) => ({
-        ...prev,
-        [field]: date,
-      }));
-    }
-  };
-
-  const handleCategoryChange = (
-    index: number,
-    field: "name" | "price",
-    value: string | number
-  ) => {
-    const newCategories = [...formData.playerCategories];
-    newCategories[index] = {
-      ...newCategories[index],
-      [field]: value,
+        // Fetch available players for the tournament
+        const playersResponse = await fetch(`/api/tournaments/${contestData.tournament.id}/players`);
+        if (!playersResponse.ok) {
+          throw new Error("Failed to fetch available players");
+        }
+        
+        const playersData = await playersResponse.json();
+        
+        // Assign prices based on skill level if not already set
+        const playersWithPrices = playersData.players.map((player: any) => {
+          // Price based on skill level if not already set
+          let basePrice = 5000; // Default price
+          
+          switch(player.skillLevel) {
+            case "PROFESSIONAL":
+              basePrice = 9000 + Math.floor(Math.random() * 1000);
+              break;
+            case "ADVANCED":
+              basePrice = 7000 + Math.floor(Math.random() * 1000);
+              break;
+            case "INTERMEDIATE":
+              basePrice = 5000 + Math.floor(Math.random() * 1000);
+              break;
+            case "BEGINNER":
+              basePrice = 3000 + Math.floor(Math.random() * 1000);
+              break;
+            default:
+              basePrice = 5000 + Math.floor(Math.random() * 1000);
+          }
+          
+          return {
+            ...player,
+            price: player.price || basePrice
+          };
+        });
+        
+        setAvailablePlayers(playersWithPrices);
+        setFilteredPlayers(playersWithPrices);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "An error occurred");
+        toast.error("Failed to load contest data");
+      } finally {
+        setLoading(false);
+      }
     };
-    setFormData((prev) => ({
-      ...prev,
-      playerCategories: newCategories,
-    }));
-  };
 
-  const handleAddCategory = () => {
-    setFormData((prev) => ({
-      ...prev,
-      playerCategories: [
-        ...prev.playerCategories,
-        {
-          name: String.fromCharCode(65 + prev.playerCategories.length),
-          price: 5000,
-        },
-      ],
-    }));
-  };
+    if (contestId) {
+      fetchContestDetails();
+    }
+  }, [contestId]);
 
-  const handleContestTypeChange = (
-    index: number,
-    field: "name" | "entryFee" | "active",
-    value: string | number | boolean
-  ) => {
-    const newContestTypes = [...formData.contestTypes];
-    newContestTypes[index] = {
-      ...newContestTypes[index],
-      [field]: value,
-    };
-    setFormData((prev) => ({
-      ...prev,
-      contestTypes: newContestTypes,
-    }));
-  };
-
-  const handleCreateTournament = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch("/api/tournaments", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
+  // Filter players based on search term and selected category
+  useEffect(() => {
+    let filtered = availablePlayers;
+    
+    if (searchTerm) {
+      filtered = filtered.filter((player) =>
+        player.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    if (selectedCategory) {
+      filtered = filtered.filter((player) => {
+        const price = player.price;
+        const category = playerCategories.find(cat => cat.tier === selectedCategory);
+        
+        if (category) {
+          const [min, max] = category.priceRange.split('-').map(Number);
+          return price >= min && price <= max;
+        }
+        
+        return true;
       });
+    }
+    
+    // Exclude already selected players
+    filtered = filtered.filter(
+      (player) => !selectedPlayers.some((sp) => sp.playerId === player.id)
+    );
+    
+    setFilteredPlayers(filtered);
+  }, [availablePlayers, searchTerm, selectedCategory, selectedPlayers]);
 
+  // Validate team composition and set team status
+  useEffect(() => {
+    const totalPrice = selectedPlayers.reduce((sum, sp) => {
+      const player = availablePlayers.find(p => p.id === sp.playerId);
+      return sum + (player?.price || 0);
+    }, 0);
+    
+    const remaining = budget - totalPrice;
+    setRemainingBudget(remaining);
+    
+    // Check if team is complete
+    const isComplete = selectedPlayers.length === MAX_TEAM_SIZE;
+    setTeamComplete(isComplete);
+    
+    // Check if team is valid (has captain and vice-captain)
+    const hasCaptain = selectedPlayers.some(p => p.isCaptain);
+    const hasViceCaptain = selectedPlayers.some(p => p.isViceCaptain);
+    
+    setTeamValid(isComplete && hasCaptain && hasViceCaptain && teamName.trim().length > 0);
+  }, [selectedPlayers, budget, availablePlayers, teamName]);
+
+  const handleAddPlayer = (playerId: number) => {
+    const player = availablePlayers.find(p => p.id === playerId);
+    
+    if (!player) return;
+    
+    // Check if adding this player would exceed the budget
+    const totalPrice = selectedPlayers.reduce((sum, sp) => {
+      const p = availablePlayers.find(p => p.id === sp.playerId);
+      return sum + (p?.price || 0);
+    }, 0);
+    
+    if (totalPrice + player.price > budget) {
+      toast.error("Adding this player would exceed your budget");
+      return;
+    }
+    
+    // Check if team is already full
+    if (selectedPlayers.length >= MAX_TEAM_SIZE) {
+      toast.error(`You can only select up to ${MAX_TEAM_SIZE} players`);
+      return;
+    }
+    
+    // Add player to selected players
+    setSelectedPlayers([
+      ...selectedPlayers,
+      { playerId, isCaptain: false, isViceCaptain: false }
+    ]);
+    
+    toast.success(`${player.name} added to your team`);
+  };
+
+  const handleRemovePlayer = (playerId: number) => {
+    setSelectedPlayers(selectedPlayers.filter(p => p.playerId !== playerId));
+    
+    const player = availablePlayers.find(p => p.id === playerId);
+    if (player) {
+      toast.info(`${player.name} removed from your team`);
+    }
+  };
+
+  const handleCaptainSelection = (playerId: number, role: 'captain' | 'viceCaptain') => {
+    setSelectedPlayers(selectedPlayers.map(player => {
+      // If setting as captain, remove any existing captains
+      if (role === 'captain') {
+        if (player.playerId === playerId) {
+          return { ...player, isCaptain: true, isViceCaptain: false };
+        }
+        // Remove captain role from other players
+        return { ...player, isCaptain: false };
+      } 
+      // If setting as vice captain, remove any existing vice captains
+      else if (role === 'viceCaptain') {
+        if (player.playerId === playerId) {
+          return { ...player, isViceCaptain: true, isCaptain: false };
+        }
+        // Remove vice captain role from other players
+        return { ...player, isViceCaptain: false };
+      }
+      return player;
+    }));
+  };
+
+  const handleCategorySelect = (tier: string) => {
+    if (selectedCategory === tier) {
+      setSelectedCategory(null); // Toggle off if already selected
+    } else {
+      setSelectedCategory(tier);
+    }
+  };
+
+  const handleCreateTeam = async () => {
+    if (!teamValid) {
+      toast.error("Please complete your team before submitting");
+      return;
+    }
+    
+    try {
+      setSubmitting(true);
+      
+      // Prepare team data for submission
+      const teamData = {
+        name: teamName,
+        contestId,
+        players: selectedPlayers.map(player => ({
+          playerId: player.playerId,
+          isCaptain: player.isCaptain,
+          isViceCaptain: player.isViceCaptain
+        }))
+      };
+      
+      // Submit team data to API
+      const response = await fetch('/api/fantasy-pickleball/create-team', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(teamData),
+      });
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create tournament");
+        throw new Error(errorData.message || "Failed to create team");
       }
-
-      const tournament = await response.json();
-      router.push(`/admin/tournaments/${tournament.id}`);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred"
-      );
+      
+      const result = await response.json();
+      
+      toast.success("Fantasy team created successfully!");
+      
+      // Redirect to team view
+      router.push(`/fantasy/team/${result.id}`);
+    } catch (error) {
+      console.error("Error creating team:", error);
+      setError(error instanceof Error ? error.message : "An error occurred");
+      toast.error(error instanceof Error ? error.message : "Failed to create team");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="animate-spin h-10 w-10 text-primary" />
+        <span className="ml-2">Loading contest data...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive" className="my-4">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!contest) {
+    return (
+      <Alert variant="destructive" className="my-4">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Contest Not Found</AlertTitle>
+        <AlertDescription>The requested contest could not be found.</AlertDescription>
+      </Alert>
+    );
+  }
+
   return (
-    <div className="w-full max-w-4xl mx-auto p-4">
+    <div className="container mx-auto py-6 max-w-7xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Create Tournament</h1>
-        <div className="w-full bg-gray-200 rounded-full h-2.5">
-          <div
-            className="bg-blue-600 h-2.5 rounded-full"
-            style={{ width: `${(step / totalSteps) * 100}%` }}
-          ></div>
-        </div>
-        <div className="flex justify-between text-sm mt-2">
-          <span>Basic Info</span>
-          <span>Players</span>
-          <span>Fantasy Rules</span>
-          <span>Pricing</span>
-          <span>Complete</span>
-        </div>
+        <h1 className="text-3xl font-bold">{contest.name}</h1>
+        <p className="text-muted-foreground">
+          Part of {contest.tournament.name} • Entry Fee: ₹{contest.entryFee}
+        </p>
       </div>
 
-      {step === 1 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tournament Details</CardTitle>
-            <CardDescription>
-              Enter basic information about your tournament
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="name">Tournament Name</Label>
-              <Input
-                id="name"
-                placeholder="Enter tournament name"
-                value={formData.name}
-                onChange={(e) => handleFormChange("name", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <textarea
-                id="description"
-                className="w-full min-h-[100px] p-2 border rounded-md"
-                placeholder="Enter tournament description"
-                value={formData.description}
-                onChange={(e) =>
-                  handleFormChange("description", e.target.value)
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="startDate">Start Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start text-left font-normal"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formData.startDate ? (
-                        format(formData.startDate, "PPP")
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={formData.startDate}
-                      onSelect={(date) => handleDateChange("startDate", date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div>
-                <Label htmlFor="endDate">End Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start text-left font-normal"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formData.endDate ? (
-                        format(formData.endDate, "PPP")
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={formData.endDate}
-                      onSelect={(date) => handleDateChange("endDate", date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="location">Location</Label>
-              <Input
-                id="location"
-                placeholder="Enter tournament location"
-                value={formData.location}
-                onChange={(e) => handleFormChange("location", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="maxParticipants">Maximum Participants</Label>
-              <Input
-                id="maxParticipants"
-                type="number"
-                min="4"
-                value={formData.maxParticipants}
-                onChange={(e) =>
-                  handleFormChange("maxParticipants", parseInt(e.target.value))
-                }
-              />
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <Button onClick={handleNext}>Continue</Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {step === 2 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tournament Format</CardTitle>
-            <CardDescription>
-              Select the format of your tournament
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RadioGroup
-              defaultValue={tournamentType}
-              onValueChange={setTournamentType}
-              className="grid grid-cols-2 gap-4"
-            >
-              <div>
-                <RadioGroupItem
-                  value="individual"
-                  id="individual"
-                  className="sr-only"
-                />
-                <Label
-                  htmlFor="individual"
-                  className={`flex flex-col items-center justify-center rounded-md border-2 p-4 hover:bg-gray-100 ${
-                    tournamentType === "individual"
-                      ? "border-primary"
-                      : "border-gray-200"
-                  }`}
-                >
-                  <span className="text-xl mb-2">👤</span>
-                  <span className="font-medium">Individual Based</span>
-                  <span className="text-xs text-gray-500">
-                    Players compete individually
-                  </span>
-                </Label>
-              </div>
-              <div>
-                <RadioGroupItem value="team" id="team" className="sr-only" />
-                <Label
-                  htmlFor="team"
-                  className={`flex flex-col items-center justify-center rounded-md border-2 p-4 hover:bg-gray-100 ${
-                    tournamentType === "team"
-                      ? "border-primary"
-                      : "border-gray-200"
-                  }`}
-                >
-                  <span className="text-xl mb-2">👥</span>
-                  <span className="font-medium">Team Based</span>
-                  <span className="text-xs text-gray-500">
-                    Players are part of teams
-                  </span>
-                </Label>
-              </div>
-            </RadioGroup>
-
-            <div className="mt-6">
-              <Label>Tournament Type</Label>
-              <select
-                className="w-full mt-2 p-2 border rounded"
-                value={formData.type}
-                onChange={(e) => handleFormChange("type", e.target.value)}
-              >
-                <option value="SINGLES">Singles</option>
-                <option value="DOUBLES">Doubles</option>
-                <option value="MIXED_DOUBLES">Mixed Doubles</option>
-                <option value="ROUND_ROBIN">Round Robin</option>
-                <option value="KNOCKOUT">Knockout</option>
-                <option value="LEAGUE">League</option>
-              </select>
-            </div>
-
-            <div className="mt-6">
-              <Label>Registration Period</Label>
-              <div className="grid grid-cols-2 gap-4 mt-2">
-                <div>
-                  <Label htmlFor="registrationOpenDate">Opens</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal mt-1"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.registrationOpenDate ? (
-                          format(formData.registrationOpenDate, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Tabs 
+            defaultValue="selection" 
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="w-full"
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="selection" className="w-full">Player Selection</TabsTrigger>
+              <TabsTrigger value="rules" className="w-full">Rules & Scoring</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="selection">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Available Players</span>
+                    <div className="flex space-x-2">
+                      <Button variant="ghost" size="sm" onClick={() => setActiveTab("rules")}>
+                        <Info className="h-4 w-4 mr-1" />
+                        Scoring Rules
                       </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={formData.registrationOpenDate}
-                        onSelect={(date) =>
-                          handleDateChange("registrationOpenDate", date)
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <Label htmlFor="registrationCloseDate">Closes</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal mt-1"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.registrationCloseDate ? (
-                          format(formData.registrationCloseDate, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={formData.registrationCloseDate}
-                        onSelect={(date) =>
-                          handleDateChange("registrationCloseDate", date)
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-            <Button onClick={handleNext}>Continue</Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {step === 3 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Add Players</CardTitle>
-            <CardDescription>
-              Add existing players or create new ones
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <Label>Search Players</Label>
-              <Input placeholder="Search players..." className="mb-4" />
-
-              <div className="border rounded-lg p-4 bg-gray-50 mb-4">
-                <p className="text-sm text-gray-500 mb-3">
-                  Selected Players: {selectedPlayers.length} /{" "}
-                  {formData.maxParticipants}
-                </p>
-                {selectedPlayers.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedPlayers.map((id) => (
-                      <span
-                        key={id}
-                        className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded"
-                      >
-                        Player {id}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">
-                    No players selected yet
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                {[1, 2, 3, 4, 5, 6].map((player) => (
-                  <Card
-                    key={player}
-                    className={`border ${
-                      selectedPlayers.includes(player)
-                        ? "border-blue-500"
-                        : "border-gray-200"
-                    }`}
-                  >
-                    <CardContent className="p-4 flex items-center space-x-4">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                        <span className="text-xl">👤</span>
-                      </div>
-                      <div>
-                        <h3 className="font-bold">Player {player}</h3>
-                        <p className="text-sm text-gray-500">
-                          Skill level: Advanced
-                        </p>
-                      </div>
-                      <div className="ml-auto">
-                        <Button
-                          variant={
-                            selectedPlayers.includes(player)
-                              ? "destructive"
-                              : "default"
-                          }
-                          size="sm"
-                          onClick={() => {
-                            if (selectedPlayers.includes(player)) {
-                              setSelectedPlayers(
-                                selectedPlayers.filter((id) => id !== player)
-                              );
-                            } else {
-                              setSelectedPlayers([...selectedPlayers, player]);
-                            }
-                          }}
-                        >
-                          {selectedPlayers.includes(player) ? "Remove" : "Add"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              <Button variant="outline" className="w-full mb-2">
-                Load More Players
-              </Button>
-              <Button variant="secondary" className="w-full">
-                + Create New Player
-              </Button>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-            <Button onClick={handleNext}>Continue</Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {step === 4 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Fantasy Team Configuration</CardTitle>
-            <CardDescription>
-              Set up the fantasy team options for players
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-6">
-              <Label>
-                How many players can be selected for a fantasy team?
-              </Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3">
-                {[4, 7, 9, 11].map((count) => (
-                  <Button
-                    key={count}
-                    variant={
-                      formData.fantasyTeamSize === count ? "default" : "outline"
-                    }
-                    className="h-24 text-center flex flex-col"
-                    onClick={() => handleFormChange("fantasyTeamSize", count)}
-                  >
-                    <span className="text-2xl">{count}</span>
-                    <span className="text-xs">Players</span>
-                  </Button>
-                ))}
-              </div>
-              <div className="mt-4">
-                <Label htmlFor="custom-count">Custom</Label>
-                <Input
-                  id="custom-count"
-                  type="number"
-                  min="1"
-                  placeholder="Enter custom number"
-                  value={
-                    formData.fantasyTeamSize !== 4 &&
-                    formData.fantasyTeamSize !== 7 &&
-                    formData.fantasyTeamSize !== 9 &&
-                    formData.fantasyTeamSize !== 11
-                      ? formData.fantasyTeamSize
-                      : ""
-                  }
-                  onChange={(e) =>
-                    handleFormChange(
-                      "fantasyTeamSize",
-                      parseInt(e.target.value) || 4
-                    )
-                  }
-                />
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-            <Button onClick={handleNext}>Continue</Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {step === 5 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Player Pricing Configuration</CardTitle>
-            <CardDescription>
-              Set base prices for players in different categories
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              <div>
-                <Label>Wallet Size for Fantasy Players</Label>
-                <Input
-                  type="number"
-                  min="10000"
-                  value={formData.walletSize}
-                  onChange={(e) =>
-                    handleFormChange("walletSize", parseInt(e.target.value))
-                  }
-                  className="mt-2"
-                />
-                <p className="text-sm text-gray-500 mt-1">
-                  Maximum points/currency users can spend on their fantasy team
-                </p>
-              </div>
-
-              <div>
-                <Label className="mb-2 block">
-                  Player Categories & Pricing
-                </Label>
-                <div className="space-y-3">
-                  {formData.playerCategories.map((category, index) => (
-                    <div
-                      key={index}
-                      className="grid grid-cols-3 gap-4 items-center"
-                    >
-                      <div>
-                        <Label htmlFor={`category-${index}`}>
-                          Category {category.name}
-                        </Label>
-                      </div>
-                      <div className="col-span-2">
-                        <Input
-                          id={`category-${index}`}
-                          type="number"
-                          value={category.price}
-                          onChange={(e) =>
-                            handleCategoryChange(
-                              index,
-                              "price",
-                              parseInt(e.target.value)
-                            )
-                          }
-                          placeholder="Base price"
-                        />
-                      </div>
                     </div>
-                  ))}
-
-                  <Button
-                    variant="outline"
-                    className="w-full text-sm"
-                    onClick={handleAddCategory}
-                  >
-                    + Add Another Category
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-            <Button onClick={handleNext}>Continue</Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {step === 6 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Team Changes & Windows</CardTitle>
-            <CardDescription>
-              Configure when and how players can edit their teams
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="allow-changes"
-                    className="rounded"
-                    checked={formData.allowTeamChanges}
-                    onChange={(e) =>
-                      handleFormChange("allowTeamChanges", e.target.checked)
-                    }
-                  />
-                  <Label htmlFor="allow-changes">Allow Team Changes</Label>
-                </div>
-                <p className="text-sm text-gray-500 ml-6">
-                  Enable users to modify their fantasy teams during the
-                  tournament
-                </p>
-              </div>
-
-              {formData.allowTeamChanges && (
-                <>
-                  <div className="space-y-3">
-                    <Label>Change Frequency</Label>
-                    <RadioGroup
-                      defaultValue={formData.changeFrequency}
-                      onValueChange={(value) =>
-                        handleFormChange("changeFrequency", value)
-                      }
-                      className="space-y-2"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="daily" id="daily" />
-                        <Label htmlFor="daily">Daily</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="rounds" id="rounds" />
-                        <Label htmlFor="rounds">Between Rounds</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="once" id="once" />
-                        <Label htmlFor="once">Once During Tournament</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  <div>
-                    <Label>Maximum Players to Change</Label>
+                  </CardTitle>
+                  <CardDescription>
+                    Select {MAX_TEAM_SIZE} players to build your fantasy team within the budget.
+                  </CardDescription>
+                  <div className="relative mt-2">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      type="number"
-                      min="1"
-                      max={formData.fantasyTeamSize}
-                      value={formData.maxPlayersToChange}
-                      onChange={(e) =>
-                        handleFormChange(
-                          "maxPlayersToChange",
-                          parseInt(e.target.value)
-                        )
-                      }
-                      className="mt-2"
+                      placeholder="Search players..."
+                      className="pl-8"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                    <p className="text-sm text-gray-500 mt-1">
-                      Maximum number of players that can be swapped per change
-                      window
-                    </p>
                   </div>
-
+                </CardHeader>
+                
+                <CardContent>
+                  <div className="mb-4">
+                    <Label>Filter by category:</Label>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {playerCategories.map((category) => (
+                        <Badge
+                          key={category.tier}
+                          variant={selectedCategory === category.tier ? "default" : "outline"}
+                          className="cursor-pointer py-1 px-3"
+                          onClick={() => handleCategorySelect(category.tier)}
+                        >
+                          {category.tier}: {category.label} (₹{category.priceRange})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="h-[400px] overflow-y-auto border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Player</TableHead>
+                          <TableHead>Skill Level</TableHead>
+                          <TableHead>Price</TableHead>
+                          <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPlayers.length > 0 ? (
+                          filteredPlayers.map((player) => (
+                            <TableRow key={player.id}>
+                              <TableCell className="flex items-center gap-2">
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src={player.imageUrl} alt={player.name} />
+                                  <AvatarFallback>
+                                    {player.name.substring(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium">{player.name}</span>
+                              </TableCell>
+                              <TableCell>{player.skillLevel}</TableCell>
+                              <TableCell>₹{player.price.toLocaleString()}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleAddPlayer(player.id)}
+                                  disabled={remainingBudget < player.price || selectedPlayers.length >= MAX_TEAM_SIZE}
+                                >
+                                  Add
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                              No players match your search or filter criteria
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+            
+            <TabsContent value="rules">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Fantasy Scoring Rules</CardTitle>
+                  <CardDescription>
+                    Understand how points are calculated in this fantasy contest
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div>
-                    <Label>Change Window Duration</Label>
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <div>
-                        <Input
-                          type="time"
-                          value={formData.changeWindowStart}
-                          onChange={(e) =>
-                            handleFormChange(
-                              "changeWindowStart",
-                              e.target.value
-                            )
-                          }
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Start Time</p>
+                    <h3 className="text-lg font-semibold mb-2">Basic Scoring</h3>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Each player receives 1 point for each point they score in a match</li>
+                      <li>Winning a game awards 11 points to each player on the winning team/side</li>
+                      <li>Losing a game awards 10 points to each player on the losing team/side</li>
+                    </ul>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Bonus Points</h3>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>If a player wins a game by 11-0, they get 15 points extra</li>
+                      <li>If a player wins under 5 (e.g., 11-5 or better), they get 10 points extra</li>
+                      <li>In case of a deuce win (12-10, 13-11, etc.), only the standard 11 points are awarded</li>
+                      <li>MVP of Tournament receives 50 points extra (only if you had that player from day 1)</li>
+                    </ul>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Knockout Stages</h3>
+                    <p>Points earned in knockout stages are multiplied by 1.5x</p>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Captain & Vice-Captain</h3>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Captain: Points multiplied by 2x</li>
+                      <li>Vice-Captain: Points multiplied by 1.5x</li>
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+        
+        <div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Fantasy Team</CardTitle>
+              <CardDescription>
+                {selectedPlayers.length}/{MAX_TEAM_SIZE} players selected
+              </CardDescription>
+              <div className="mt-2">
+                <Label htmlFor="team-name">Team Name</Label>
+                <Input
+                  id="team-name"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  placeholder="Enter team name"
+                  className="mt-1"
+                />
+              </div>
+            </CardHeader>
+            
+            <CardContent>
+              <div className="flex justify-between mb-4">
+                <div>
+                  <Label className="text-sm text-muted-foreground">Budget</Label>
+                  <p className="font-semibold">₹{budget.toLocaleString()}</p>
+                </div>
+                <div>
+                  <Label className="text-sm text-muted-foreground">Remaining</Label>
+                  <p className={`font-semibold ${remainingBudget < 0 ? 'text-red-500' : ''}`}>
+                    ₹{remainingBudget.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              
+              <Separator className="my-4" />
+              
+              {selectedPlayers.length > 0 ? (
+                <div className="space-y-4">
+                  {selectedPlayers.map((selectedPlayer) => {
+                    const player = availablePlayers.find(p => p.id === selectedPlayer.playerId);
+                    if (!player) return null;
+                    
+                    return (
+                      <div key={player.id} className="flex items-center justify-between border rounded-md p-3">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={player.imageUrl} alt={player.name} />
+                            <AvatarFallback>
+                              {player.name.substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="flex items-center">
+                              <span className="font-medium">{player.name}</span>
+                              {selectedPlayer.isCaptain && (
+                                <Badge variant="default" className="ml-2">C</Badge>
+                              )}
+                              {selectedPlayer.isViceCaptain && (
+                                <Badge variant="secondary" className="ml-2">VC</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">₹{player.price.toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={selectedPlayer.isCaptain ? 'text-primary' : ''}
+                            onClick={() => handleCaptainSelection(player.id, 'captain')}
+                            title="Set as Captain"
+                          >
+                            <Crown className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={selectedPlayer.isViceCaptain ? 'text-primary' : ''}
+                            onClick={() => handleCaptainSelection(player.id, 'viceCaptain')}
+                            title="Set as Vice Captain"
+                          >
+                            <Star className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleRemovePlayer(player.id)}
+                            title="Remove Player"
+                          >
+                            <AlertCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div>
-                        <Input
-                          type="time"
-                          value={formData.changeWindowEnd}
-                          onChange={(e) =>
-                            handleFormChange("changeWindowEnd", e.target.value)
-                          }
-                        />
-                        <p className="text-xs text-gray-500 mt-1">End Time</p>
-                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>Your team is empty</p>
+                  <p className="text-sm">Add players from the selection panel</p>
+                </div>
+              )}
+              
+              {selectedPlayers.length > 0 && (
+                <>
+                  <Separator className="my-4" />
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Captain selected:</span>
+                      <span>{selectedPlayers.some(p => p.isCaptain) ? '✅' : '❌'}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Vice-Captain selected:</span>
+                      <span>{selectedPlayers.some(p => p.isViceCaptain) ? '✅' : '❌'}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Team complete:</span>
+                      <span>{teamComplete ? '✅' : '❌'}</span>
                     </div>
                   </div>
                 </>
               )}
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-            <Button onClick={handleNext}>Continue</Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {step === 7 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Fantasy Entry Fee & Prize Pool</CardTitle>
-            <CardDescription>
-              Configure the financial aspects of your fantasy tournament
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              <Tabs defaultValue="preset" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="preset">Preset Categories</TabsTrigger>
-                  <TabsTrigger value="custom">Custom Entry Fee</TabsTrigger>
-                </TabsList>
-                <TabsContent value="preset" className="space-y-4 pt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    {formData.contestTypes.slice(0, 2).map((contest, index) => (
-                      <Card
-                        key={index}
-                        className={`border ${
-                          contest.active
-                            ? "border-green-500"
-                            : "border-gray-200"
-                        }`}
-                      >
-                        <CardContent className="p-4 flex flex-col items-center justify-center">
-                          <div className="flex items-center mb-2">
-                            <input
-                              type="checkbox"
-                              id={`contest-${index}`}
-                              checked={contest.active}
-                              onChange={(e) =>
-                                handleContestTypeChange(
-                                  index,
-                                  "active",
-                                  e.target.checked
-                                )
-                              }
-                              className="mr-2"
-                            />
-                            <span className="text-xl font-bold">
-                              {contest.name}
-                            </span>
-                          </div>
-                          <span>₹{contest.entryFee} Entry</span>
-                          <p className="text-xs text-gray-500 mt-2">
-                            {contest.entryFee > 0
-                              ? "80% Prize Pool"
-                              : "For practice only"}
-                          </p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    {formData.contestTypes.slice(2, 4).map((contest, index) => (
-                      <Card
-                        key={index + 2}
-                        className={`border ${
-                          contest.active
-                            ? "border-green-500"
-                            : "border-gray-200"
-                        }`}
-                      >
-                        <CardContent className="p-4 flex flex-col items-center justify-center">
-                          <div className="flex items-center mb-2">
-                            <input
-                              type="checkbox"
-                              id={`contest-${index + 2}`}
-                              checked={contest.active}
-                              onChange={(e) =>
-                                handleContestTypeChange(
-                                  index + 2,
-                                  "active",
-                                  e.target.checked
-                                )
-                              }
-                              className="mr-2"
-                            />
-                            <span className="text-xl font-bold">
-                              {contest.name}
-                            </span>
-                          </div>
-                          <span>₹{contest.entryFee} Entry</span>
-                          <p className="text-xs text-gray-500 mt-2">
-                            80% Prize Pool
-                          </p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </TabsContent>
-                <TabsContent value="custom" className="space-y-4 pt-4">
-                  <div>
-                    <Label htmlFor="entry-fee">Custom Entry Fee (₹)</Label>
-                    <Input
-                      id="entry-fee"
-                      type="number"
-                      min="0"
-                      className="mt-2"
-                      value={formData.entryFee}
-                      onChange={(e) =>
-                        handleFormChange("entryFee", parseInt(e.target.value))
-                      }
-                    />
-                  </div>
-                  <div className="p-4 bg-gray-50 rounded-md">
-                    <h3 className="font-semibold mb-2">Fee Breakdown:</h3>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span>Admin Commission (10%)</span>
-                        <span>₹{(formData.entryFee * 0.1).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Platform Fee (10%)</span>
-                        <span>₹{(formData.entryFee * 0.1).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between font-medium">
-                        <span>Prize Pool (80%)</span>
-                        <span>₹{(formData.entryFee * 0.8).toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-
-              <div>
-                <h3 className="font-semibold mb-2">Prize Distribution:</h3>
-                <div className="p-4 bg-gray-50 rounded-md space-y-2">
-                  <div className="flex justify-between">
-                    <span>1st Place (40%)</span>
-                    <span>₹{(formData.entryFee * 0.8 * 0.4).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>2nd Place (24%)</span>
-                    <span>₹{(formData.entryFee * 0.8 * 0.24).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>3rd Place (16%)</span>
-                    <span>₹{(formData.entryFee * 0.8 * 0.16).toFixed(2)}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    For contests with 30+ participants, positions 4-10 will also
-                    receive prizes.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-            <Button onClick={handleCreateTournament} disabled={loading}>
-              {loading ? "Creating..." : "Create Tournament"}
-            </Button>
-          </CardFooter>
-        </Card>
-      )}
-
-      {error && (
-        <div
-          className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded"
-          role="alert"
-        >
-          <p className="font-bold">Error</p>
-          <p>{error}</p>
+            </CardContent>
+            
+            <CardFooter>
+              <Button
+                className="w-full"
+                size="lg"
+                disabled={!teamValid || submitting}
+                onClick={handleCreateTeam}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating Team...
+                  </>
+                ) : (
+                  <>Create Fantasy Team</>
+                )}
+              </Button>
+            </CardFooter>
+          </Card>
+          
+          {contest.entryFee > 0 && (
+            <Alert className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Entry Fee Required</AlertTitle>
+              <AlertDescription>
+                Creating this team will deduct ₹{contest.entryFee} from your wallet.
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

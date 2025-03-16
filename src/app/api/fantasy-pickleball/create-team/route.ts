@@ -4,6 +4,19 @@ import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 import { FantasyTeamService } from "@/lib/services/fantasy-team-service";
 
+// Contest rules interface
+interface ContestRules {
+  playerCategories?: Array<{name: string, price: number}>;
+  walletSize?: number;
+  fantasyTeamSize?: number;
+  allowTeamChanges?: boolean;
+  changeFrequency?: string;
+  maxPlayersToChange?: number;
+  changeWindowStart?: string;
+  changeWindowEnd?: string;
+  [key: string]: any;
+}
+
 interface CreateTeamRequestBody {
   contestId: number;
   name: string;
@@ -110,14 +123,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Check player selections
-    let rules = {};
+    let rules: ContestRules = {};
     try {
-      rules = JSON.parse(contest.rules || "{}");
+      rules = JSON.parse(contest.rules || "{}") as ContestRules;
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
 
-    const teamSize = (rules as any).fantasyTeamSize || 7;
+    const teamSize = rules.fantasyTeamSize || 7;
 
     if (body.players.length !== teamSize) {
       return NextResponse.json(
@@ -160,7 +173,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if contest requires payment
-    if (contest.entryFee > 0) {
+    if (Number(contest.entryFee) > 0) {
       // Get user wallet
       const wallet = await prisma.wallet.findUnique({
         where: { userId: user.id },
@@ -175,7 +188,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (wallet.balance < contest.entryFee) {
+      if (Number(wallet.balance) < Number(contest.entryFee)) {
         return NextResponse.json(
           {
             message:
@@ -211,16 +224,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Create team using service
-    const fantasyTeamService = new FantasyTeamService();
-    const team = await fantasyTeamService.createTeam({
+    const team = await FantasyTeamService.createTeam({
       userId: user.id,
-      contestId: body.contestId,
-      name: body.name,
-      players: body.players,
+      teamName: body.name,
+      players: body.players.map(p => p.playerId),
+      leagueId: body.contestId
     });
 
     return NextResponse.json(team, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }

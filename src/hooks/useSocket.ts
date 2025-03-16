@@ -1,35 +1,44 @@
 // src/hooks/useSocket.ts
-import { useEffect, useState } from "react";
-import io, { Socket } from "socket.io-client";
+import { useState, useEffect } from 'react';
+import { io, Socket } from 'socket.io-client';
 
-let socket: Socket;
+interface UseSocketReturn {
+  socket: Socket | null;
+  isConnected: boolean;
+}
 
-export const useSocket = (matchId: number) => {
-  const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
+export const useSocket = (): UseSocketReturn => {
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    // Initialize socket only once per client session
-    if (!socket) {
-      socket = io(
-        process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
-      );
-      setSocketInstance(socket);
-    } else {
-      setSocketInstance(socket);
-    }
+    // Create socket connection
+    const socketIo = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001');
 
-    // Join the match room
-    if (socket && matchId) {
-      socket.emit("joinMatch", { matchId });
-    }
+    // Set up event listeners
+    socketIo.on('connect', () => {
+      console.log('Socket connected');
+      setIsConnected(true);
+    });
 
-    // Clean up: leave the room when component unmounts
+    socketIo.on('disconnect', () => {
+      console.log('Socket disconnected');
+      setIsConnected(false);
+    });
+
+    socketIo.on('connect_error', (err) => {
+      console.error('Socket connection error:', err);
+      setIsConnected(false);
+    });
+
+    // Save socket instance
+    setSocket(socketIo);
+
+    // Clean up on unmount
     return () => {
-      if (socket && matchId) {
-        socket.emit("leaveMatch", { matchId });
-      }
+      socketIo.disconnect();
     };
-  }, [matchId]);
+  }, []);
 
-  return socketInstance;
+  return { socket, isConnected };
 };

@@ -92,15 +92,25 @@ enum RefereeJoinStatus {
   REJECTED
 }
 
-// User Model (Base for all user types)
+
 model User {
-  id               Int                @id @default(autoincrement())
-  accounts         Account[]          @relation("AccountToUser")
-  sessions         Session[]          @relation("SessionToUser")
-  username         String             @unique @db.VarChar(100)
-  email            String             @unique @db.VarChar(255)
-  password         String             @db.VarChar(255)
-  role             UserRole           @default(USER)
+  id               Int       @id @default(autoincrement())
+  name             String?
+  username         String?   @unique @db.VarChar(100)
+  email            String?   @unique @db.VarChar(255)
+  password         String?   @db.VarChar(255)
+  role             UserRole  @default(USER)
+  profileImage     String?
+  googleId         String?   @unique
+  emailVerified    DateTime?
+  isVerified       Boolean   @default(false)
+  isApproved       Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations (Account, Session, Player, etc.)
+  accounts         Account[] @relation("AccountToUser")
+  sessions         Session[] @relation("SessionToUser")
   profile          Profile?
   player           Player?
   referee          Referee?
@@ -111,14 +121,8 @@ model User {
   notifications    Notification[]
   paymentMethods   PaymentMethod[]
   fantasyTeams     FantasyTeam[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  isVerified       Boolean            @default(false)
-  isApproved       Boolean            @default(false)
-  profileImage     String?
-  googleId         String?            @unique
-  emailVerified    DateTime?
 }
+ 
 
 // Detailed Profile Model
 model Profile {
@@ -142,7 +146,7 @@ model Profile {
 model Player {
   id                  Int                 @id @default(autoincrement())
   userId              Int?                @unique
-  user                User?               @relation(fields: [userId], references: [id])
+  user                User?               @relation(fields: [userId], references: [id],onDelete: SetNull)
   name                String              @db.VarChar(100)
   imageUrl            String?
   age                 Int?
@@ -446,14 +450,14 @@ model Account {
   type               String
   provider           String
   providerAccountId  String
-  refresh_token      String?
-  access_token       String?
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
   expires_at         Int?
   token_type         String?
   scope              String?
-  id_token           String?
+  id_token           String?  @db.Text
   session_state      String?
-  user               User    @relation("AccountToUser", fields: [userId], references: [id], onDelete: Cascade)
+  user               User     @relation("AccountToUser", fields: [userId], references: [id], onDelete: Cascade)
   @@unique([provider, providerAccountId])
 }
 
@@ -486,4 +490,10 @@ model RefereeJoinRequest {
 
   tournament   Tournament         @relation("TournamentToRefereeJoinRequests", fields: [tournamentId], references: [id])
   referee      Referee            @relation("RefereeToRefereeJoinRequests", fields: [refereeId], references: [id])
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }

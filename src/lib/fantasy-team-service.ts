@@ -40,6 +40,18 @@ interface FantasyTeamWithDetails extends FantasyTeam {
   };
 }
 
+interface ContestRules {
+  playerCategories?: Array<{name: string, price: number}>;
+  walletSize?: number;
+  fantasyTeamSize?: number;
+  allowTeamChanges?: boolean;
+  changeFrequency?: string;
+  maxPlayersToChange?: number;
+  changeWindowStart?: string;
+  changeWindowEnd?: string;
+  [key: string]: any;
+}
+
 class FantasyTeamService {
   /**
    * Create a new fantasy team
@@ -87,9 +99,9 @@ class FantasyTeamService {
     }
 
     // Get contest rules
-    let rules: any = {};
+    let rules: ContestRules = {};
     try {
-      rules = JSON.parse(contest.rules || "{}");
+      rules = JSON.parse(contest.rules || "{}") as ContestRules;
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
@@ -295,9 +307,9 @@ class FantasyTeamService {
     }
 
     // Get contest rules
-    let rules: any = {};
+    let rules: ContestRules = {};
     try {
-      rules = JSON.parse(team.contest.rules || "{}");
+      rules = JSON.parse(team.contest.rules || "{}") as ContestRules;
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
@@ -557,13 +569,14 @@ class FantasyTeamService {
         playerPoints -= performance.faults || 0;
 
         // Add bonus points for winning teams
-        if (match.winnerId) {
+        if (match.winnerId !== null) {
+          const winnerId = match.winnerId as number;
           const isWinner = match.performances.some(
             (p: any) =>
               p.playerId === performance.playerId &&
               (
                 (p.player as any).teamMembershipsIds as number[] | undefined
-              )?.includes(match.winnerId)
+              )?.includes(winnerId)
           );
 
           if (isWinner) {

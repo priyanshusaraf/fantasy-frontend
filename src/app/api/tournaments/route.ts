@@ -4,6 +4,18 @@ import { authMiddleware } from "@/middleware/auth";
 import { validateRegistration } from "@/utils/validation";
 import { errorHandler } from "@/middleware/error-handler";
 
+// Extend NextRequest to include user property
+declare module "next/server" {
+  interface NextRequest {
+    user?: {
+      id: number;
+      role: string;
+      email?: string;
+      username?: string;
+    };
+  }
+}
+
 /**
  * GET /api/tournaments
  * Get all tournaments or filter by query parameters
@@ -30,7 +42,11 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (status) {
-      where.status = status;
+      // Handle multiple status values
+      const statusValues = status.split(",");
+      where.status = {
+        in: statusValues,
+      };
     }
 
     if (searchQuery) {
@@ -93,7 +109,7 @@ export async function GET(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -216,7 +232,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(tournament, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -326,7 +342,7 @@ export async function PUT(request: NextRequest) {
     });
 
     return NextResponse.json(tournament, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -416,7 +432,7 @@ export async function DELETE(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }

@@ -3,6 +3,19 @@ import prisma from "@/lib/db";
 import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 
+// Define type for contest rules
+interface ContestRules {
+  playerCategories?: Array<{name: string, price: number}>;
+  walletSize?: number;
+  fantasyTeamSize?: number;
+  allowTeamChanges?: boolean;
+  changeFrequency?: string;
+  maxPlayersToChange?: number;
+  changeWindowStart?: string;
+  changeWindowEnd?: string;
+  [key: string]: any;
+}
+
 /**
  * GET /api/fantasy-pickleball/contests
  * Get all contests or filter by query parameters
@@ -29,7 +42,11 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (status) {
-      where.status = status;
+      // Handle multiple status values
+      const statusValues = status.split(",");
+      where.status = {
+        in: statusValues,
+      };
     }
 
     if (tournamentId) {
@@ -66,9 +83,9 @@ export async function GET(request: NextRequest) {
 
     // Parse rules for each contest
     const contestsWithParsedRules = contests.map((contest) => {
-      let rules = {};
+      let rules: ContestRules = {};
       try {
-        rules = JSON.parse(contest.rules || "{}");
+        rules = JSON.parse(contest.rules || "{}") as ContestRules;
       } catch (e) {
         console.error("Error parsing contest rules:", e);
       }
@@ -92,7 +109,7 @@ export async function GET(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -213,7 +230,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(contest, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -283,9 +300,9 @@ export async function GET_SPECIFIC(request: NextRequest) {
     }
 
     // Parse rules
-    let rules = {};
+    let rules: ContestRules = {};
     try {
-      rules = JSON.parse(contest.rules || "{}");
+      rules = JSON.parse(contest.rules || "{}") as ContestRules;
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
@@ -341,7 +358,7 @@ export async function GET_SPECIFIC(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -385,9 +402,10 @@ export async function GET_PLAYERS(request: NextRequest) {
     }
 
     // Parse rules
-    let rules = {};
+    let rules: ContestRules = {};
+    
     try {
-      rules = JSON.parse(contest.rules || "{}");
+      rules = JSON.parse(contest.rules || "{}") as ContestRules;
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
@@ -439,7 +457,7 @@ export async function GET_PLAYERS(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
@@ -507,7 +525,7 @@ export async function GET_LEADERBOARD(request: NextRequest) {
 
     // Calculate prize breakdown
     const prizeBreakdown = calculatePrizeBreakdown(
-      contest.prizePool,
+      Number(contest.prizePool),
       contest.currentEntries
     );
 
@@ -530,7 +548,7 @@ export async function GET_LEADERBOARD(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     return errorHandler(error, request);
   }
 }
