@@ -30,6 +30,7 @@ import {
   ShieldAlert,
   Bell as Whistle,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface Match {
   id: number;
@@ -39,7 +40,7 @@ interface Match {
   team2: string;
   court: string;
   startTime: string;
-  status: "upcoming" | "live" | "completed";
+  status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 }
 
 interface Assignment {
@@ -49,7 +50,7 @@ interface Assignment {
   assignedBy: string;
   date: string;
   matchCount: number;
-  status: "pending" | "accepted" | "declined";
+  status: "PENDING" | "APPROVED" | "REJECTED";
 }
 
 interface Stats {
@@ -87,87 +88,36 @@ export default function RefereeDashboard() {
 
   // Fetch referee data
   useEffect(() => {
-    // This would be replaced with actual API calls in production
     const fetchRefereeData = async () => {
       try {
         setLoading(true);
         
-        // Mock data for demonstration
-        const mockUpcomingMatches: Match[] = [
-          { 
-            id: 1, 
-            tournamentName: "Summer Grand Slam", 
-            matchNumber: 23, 
-            team1: "Johnson/Smith", 
-            team2: "Garcia/Rodriguez", 
-            court: "Court 3", 
-            startTime: "2023-10-15T15:30:00Z", 
-            status: "upcoming" 
-          },
-          { 
-            id: 2, 
-            tournamentName: "Summer Grand Slam", 
-            matchNumber: 24, 
-            team1: "Williams/Davis", 
-            team2: "Miller/Wilson", 
-            court: "Court 4", 
-            startTime: "2023-10-15T17:00:00Z", 
-            status: "upcoming" 
-          },
-          { 
-            id: 3, 
-            tournamentName: "City Championships", 
-            matchNumber: 12, 
-            team1: "Brown/Jones", 
-            team2: "Martinez/Lee", 
-            court: "Court 1", 
-            startTime: "2023-10-16T13:00:00Z", 
-            status: "upcoming" 
-          },
-        ];
+        // Real API calls
+        const [matchesResponse, assignmentsResponse, statsResponse] = await Promise.all([
+          fetch('/api/referee/matches?status=SCHEDULED'),
+          fetch('/api/referee/assignments'),
+          fetch('/api/referee/stats')
+        ]);
         
-        const mockAssignments: Assignment[] = [
-          { 
-            id: 1, 
-            tournamentName: "Summer Grand Slam", 
-            tournamentId: 101, 
-            assignedBy: "Sarah Johnson (TD)", 
-            date: "2023-10-15", 
-            matchCount: 8, 
-            status: "accepted" 
-          },
-          { 
-            id: 2, 
-            tournamentName: "City Championships", 
-            tournamentId: 102, 
-            assignedBy: "Michael Davis (TD)", 
-            date: "2023-10-16", 
-            matchCount: 6, 
-            status: "accepted" 
-          },
-          { 
-            id: 3, 
-            tournamentName: "Masters Invitational", 
-            tournamentId: 103, 
-            assignedBy: "Emma Wilson (TD)", 
-            date: "2023-10-20", 
-            matchCount: 12, 
-            status: "pending" 
-          },
-        ];
+        if (!matchesResponse.ok) throw new Error('Failed to fetch matches');
+        if (!assignmentsResponse.ok) throw new Error('Failed to fetch assignments');
+        if (!statsResponse.ok) throw new Error('Failed to fetch stats');
         
-        const mockStats: Stats = {
-          totalMatches: 67,
-          monthlyMatches: 22,
-          averageMatchTime: "1hr 15min",
-          tournamentCount: 8,
-        };
+        const matchesData = await matchesResponse.json();
+        const assignmentsData = await assignmentsResponse.json();
+        const statsData = await statsResponse.json();
         
-        setUpcomingMatches(mockUpcomingMatches);
-        setAssignments(mockAssignments);
-        setRefereeStats(mockStats);
+        setUpcomingMatches(matchesData.matches || []);
+        setAssignments(assignmentsData.assignments || []);
+        setRefereeStats(statsData || {
+          totalMatches: 0,
+          monthlyMatches: 0,
+          averageMatchTime: "0hr 0min",
+          tournamentCount: 0,
+        });
       } catch (error) {
         console.error("Error fetching referee data:", error);
+        toast.error("Failed to load referee data");
       } finally {
         setLoading(false);
       }
@@ -180,45 +130,49 @@ export default function RefereeDashboard() {
 
   const handleAcceptAssignment = async (assignmentId: number) => {
     try {
-      // This would be an actual API call in production
-      console.log(`Accepting assignment: ${assignmentId}`);
+      const response = await fetch(`/api/referee/assignments/${assignmentId}/accept`, {
+        method: 'POST',
+      });
       
-      // Update UI optimistically
+      if (!response.ok) throw new Error('Failed to accept assignment');
+      
+      // Update UI optimistically with the new status mapping
       setAssignments(prevAssignments => 
         prevAssignments.map(assignment => 
           assignment.id === assignmentId 
-            ? { ...assignment, status: "accepted" } 
+            ? { ...assignment, status: "APPROVED" }
             : assignment
         )
       );
       
-      // Show success message
-      alert("Assignment accepted successfully");
+      toast.success("Assignment accepted successfully");
     } catch (error) {
       console.error("Error accepting assignment:", error);
-      alert("Failed to accept assignment. Please try again.");
+      toast.error("Failed to accept assignment");
     }
   };
   
   const handleDeclineAssignment = async (assignmentId: number) => {
     try {
-      // This would be an actual API call in production
-      console.log(`Declining assignment: ${assignmentId}`);
+      const response = await fetch(`/api/referee/assignments/${assignmentId}/decline`, {
+        method: 'POST',
+      });
       
-      // Update UI optimistically
+      if (!response.ok) throw new Error('Failed to decline assignment');
+      
+      // Update UI optimistically with the new status mapping
       setAssignments(prevAssignments => 
         prevAssignments.map(assignment => 
           assignment.id === assignmentId 
-            ? { ...assignment, status: "declined" } 
+            ? { ...assignment, status: "REJECTED" }
             : assignment
         )
       );
       
-      // Show success message
-      alert("Assignment declined successfully");
+      toast.success("Assignment declined successfully");
     } catch (error) {
       console.error("Error declining assignment:", error);
-      alert("Failed to decline assignment. Please try again.");
+      toast.error("Failed to decline assignment");
     }
   };
 
@@ -552,7 +506,7 @@ export default function RefereeDashboard() {
                         <span>{assignment.matchCount} matches to officiate</span>
                       </div>
                       
-                      {assignment.status === "pending" ? (
+                      {assignment.status === "PENDING" ? (
                         <div className="flex gap-2 mt-4">
                           <Button 
                             variant="outline" 
@@ -575,12 +529,12 @@ export default function RefereeDashboard() {
                         <div className="mt-4">
                           <Badge 
                             className={
-                              assignment.status === "accepted" 
+                              assignment.status === "APPROVED" 
                                 ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" 
                                 : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                             }
                           >
-                            {assignment.status === "accepted" ? "Accepted" : "Declined"}
+                            {assignment.status === "APPROVED" ? "Accepted" : "Declined"}
                           </Badge>
                           <Button 
                             variant="ghost" 

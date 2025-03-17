@@ -84,15 +84,15 @@ export default function TournamentContestsPage({
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-[#00a1e0]">
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-500">
             {tournament.name}
           </h1>
-          <p className="text-gray-600 mt-1">{tournament.location}</p>
+          <p className="text-muted-foreground mt-1">{tournament.location}</p>
         </div>
 
-        {isAuthenticated && user?.role === "admin" && (
+        {isAuthenticated && (user?.role === "MASTER_ADMIN" || user?.role === "TOURNAMENT_ADMIN") && (
           <Button
-            className="mt-4 md:mt-0 bg-[#00a1e0] hover:bg-[#0072a3]"
+            className="mt-4 md:mt-0 bg-gradient-to-r from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600"
             onClick={handleCreateContest}
           >
             <Trophy className="mr-2 h-4 w-4" />
@@ -104,7 +104,7 @@ export default function TournamentContestsPage({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card>
           <CardContent className="p-6 flex items-center">
-            <Calendar className="h-8 w-8 text-[#00a1e0] mr-4" />
+            <Calendar className="h-8 w-8 text-blue-500 mr-4" />
             <div>
               <p className="text-sm text-gray-500">Tournament Dates</p>
               <p className="font-medium">
@@ -117,7 +117,7 @@ export default function TournamentContestsPage({
 
         <Card>
           <CardContent className="p-6 flex items-center">
-            <Trophy className="h-8 w-8 text-[#00a1e0] mr-4" />
+            <Trophy className="h-8 w-8 text-blue-500 mr-4" />
             <div>
               <p className="text-sm text-gray-500">Status</p>
               <p className="font-medium">
@@ -129,7 +129,7 @@ export default function TournamentContestsPage({
 
         <Card>
           <CardContent className="p-6 flex items-center">
-            <Users className="h-8 w-8 text-[#00a1e0] mr-4" />
+            <Users className="h-8 w-8 text-blue-500 mr-4" />
             <div>
               <p className="text-sm text-gray-500">Fantasy Contests</p>
               <p className="font-medium">Join Now</p>
@@ -147,11 +147,11 @@ export default function TournamentContestsPage({
         </CardContent>
       </Card>
 
-      <div className="bg-[#fff5fc] rounded-lg p-6 mb-6">
-        <h2 className="text-xl font-bold mb-4 text-[#5b62b3]">
+      <div className="bg-gradient-to-r from-blue-500/5 to-teal-500/5 rounded-lg p-6 mb-6 border border-blue-200 dark:border-blue-800/30">
+        <h2 className="text-xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-500">
           Rules and Scoring
         </h2>
-        <div className="text-[#5b62b3]/70 space-y-3">
+        <div className="text-foreground/90 space-y-3">
           <p>
             <strong>Match Scoring:</strong> If a player wins a game by 11-0 they
             get 15 points extra and if they win under 5 then they get 10 points.

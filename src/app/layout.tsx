@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pickleball Fantasy",
-  description: "Premium fantasy tournament app for pickleball enthusiasts",
-  keywords: ["pickleball", "fantasy sports", "tournaments", "sports", "fantasy leagues"],
-  authors: [{ name: "PickleBall Fantasy Team" }],
+  title: "MatchUp",
+  description: "Play fantasy sports for pickleball tournaments and win prizes",
+  keywords: ["fantasy", "pickleball", "tournaments", "sports"],
+  authors: [{ name: "Priyanshu Saraf", url: "https://priyanshusaraf.com" }],
   category: "Sports",
 };
 

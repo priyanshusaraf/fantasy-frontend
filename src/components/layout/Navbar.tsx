@@ -13,7 +13,8 @@ import {
   Menu, 
   X,
   Bell,
-  LogOut
+  LogOut,
+  Clock
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,12 @@ export default function Navbar() {
               <Button variant="ghost" size="sm" className="flex items-center gap-1.5">
                 <Gamepad2 className="h-4 w-4" />
                 <span>Fantasy</span>
+              </Button>
+            </Link>
+            <Link href="/fantasy/live-scores" passHref>
+              <Button variant="ghost" size="sm" className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4" />
+                <span>Live Scores</span>
               </Button>
             </Link>
             <Link href="/leaderboard" passHref>
@@ -162,6 +169,12 @@ export default function Navbar() {
               <Button variant="ghost" size="sm" className="w-full justify-start">
                 <Gamepad2 className="h-4 w-4 mr-2" />
                 <span>Fantasy</span>
+              </Button>
+            </Link>
+            <Link href="/fantasy/live-scores" passHref>
+              <Button variant="ghost" size="sm" className="w-full justify-start">
+                <Clock className="h-4 w-4 mr-2" />
+                <span>Live Scores</span>
               </Button>
             </Link>
             <Link href="/leaderboard" passHref>

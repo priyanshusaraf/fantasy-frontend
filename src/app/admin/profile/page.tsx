@@ -39,6 +39,19 @@ interface UserProfile {
   createdAt: string;
 }
 
+interface FormData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  bio: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  dateOfBirth?: string | undefined;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -48,7 +61,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     firstName: "",
     lastName: "",
     email: "",
@@ -71,20 +84,22 @@ export default function ProfilePage() {
   // Fetch user profile
   useEffect(() => {
     const fetchProfile = async () => {
-      if (status !== "authenticated" || !session?.user) return;
       
       try {
         setLoading(true);
         
         // Try to fetch from API first
         try {
+          console.log("Fetching user profile from API...");
           const response = await fetch(`/api/users/profile`);
           
           if (!response.ok) {
-            throw new Error("Failed to fetch profile");
+            console.warn(`Failed to fetch profile: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to fetch profile: ${response.status}`);
           }
           
           const data = await response.json();
+          console.log("Profile successfully fetched:", data);
           setProfile(data);
           
           // Initialize form data
@@ -98,47 +113,62 @@ export default function ProfilePage() {
             city: data.city || "",
             state: data.state || "",
             country: data.country || "",
-            dateOfBirth: data.dateOfBirth ? data.dateOfBirth.split('T')[0] : "",
+            dateOfBirth: data.dateOfBirth ? data.dateOfBirth.toString().split('T')[0] : undefined
           });
-        } catch (apiError) {
-          console.error("API error:", apiError);
+        } catch (error) {
+          console.error("Error fetching profile from API:", error);
           
-          // Use mock data if API call fails
-          const mockProfile: UserProfile = {
-            id: "1",
-            username: session.user.name || "admin",
-            email: session.user.email || "admin@example.com",
-            firstName: "Admin",
-            lastName: "User",
-            profilePicture: session.user.image || "",
-            bio: "Tournament administrator with experience in organizing pickleball events.",
-            phone: "+1 (555) 123-4567",
-            address: "123 Main St",
-            city: "San Francisco",
-            state: "CA",
-            country: "USA",
-            role: session.user.role as string || "TOURNAMENT_ADMIN",
-            createdAt: new Date().toISOString(),
-          };
-          
-          setProfile(mockProfile);
-          
-          // Initialize form data
-          setFormData({
-            firstName: mockProfile.firstName || "",
-            lastName: mockProfile.lastName || "",
-            email: mockProfile.email || "",
-            bio: mockProfile.bio || "",
-            phone: mockProfile.phone || "",
-            address: mockProfile.address || "",
-            city: mockProfile.city || "",
-            state: mockProfile.state || "",
-            country: mockProfile.country || "",
-            dateOfBirth: mockProfile.dateOfBirth ? mockProfile.dateOfBirth.split('T')[0] : "",
-          });
+          // Fallback to session data
+          if (session?.user) {
+            console.log("Using session data as fallback for profile");
+            const fallbackProfile: UserProfile = {
+              id: session.user.id || "0",
+              email: session.user.email || "",
+              firstName: session.user.name?.split(' ')[0] || "",
+              lastName: session.user.name?.split(' ').slice(1).join(' ') || "",
+              profilePicture: session.user.image || "",
+              role: session.user.role || "USER",
+              createdAt: new Date().toISOString(),
+              bio: "",
+            };
+            
+            setProfile(fallbackProfile);
+            
+            // Initialize form data from fallback
+            setFormData({
+              firstName: fallbackProfile.firstName || "",
+              lastName: fallbackProfile.lastName || "",
+              email: fallbackProfile.email,
+              bio: fallbackProfile.bio || "",
+              phone: "",
+              address: "",
+              city: "",
+              state: "",
+              country: "",
+              dateOfBirth: undefined
+            });
+            
+            toast({
+              title: "Using limited profile data",
+              description: "We're using your basic account info since we couldn't fetch your full profile.",
+              variant: "default"
+            });
+          } else {
+            // No session data available either
+            toast({
+              title: "Profile error",
+              description: "Could not load your profile information. Please try again later.",
+              variant: "destructive"
+            });
+          }
         }
-      } catch (err: any) {
-        setError(err.message || "Failed to load profile");
+      } catch (error) {
+        console.error("Unexpected error in fetchProfile:", error);
+        toast({
+          title: "Profile Error",
+          description: "An unexpected error occurred while loading your profile.",
+          variant: "destructive"
+        });
       } finally {
         setLoading(false);
       }

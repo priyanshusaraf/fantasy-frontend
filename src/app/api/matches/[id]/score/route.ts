@@ -4,78 +4,78 @@ import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 import prisma from "@/lib/prisma";
 import { ScoringService } from "@/lib/services/scoring-service";
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function POST(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Check authentication
-    const authResult = await authMiddleware(request);
-    if (authResult.status !== 200) {
-      return authResult;
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return new NextResponse('Unauthorized', { status: 401 });
     }
 
     const matchId = parseInt(params.id);
-    const { user } = request as any;
+    if (isNaN(matchId)) {
+      return new NextResponse('Invalid match ID', { status: 400 });
+    }
 
-    // Get request data
-    const { player1Score, player2Score, status } = await request.json();
-
-    // Check if match exists
+    // Get the match and verify the referee
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
-        referee: {
-          include: {
-            user: true,
-          },
-        },
+        tournament: true,
       },
     });
 
     if (!match) {
-      return NextResponse.json(
-        {
-          message: "Match not found",
-        },
-        { status: 404 }
-      );
+      return new NextResponse('Match not found', { status: 404 });
     }
 
-    // src/app/api/matches/[id]/score/route.ts (continued)
-    // Check if user is the referee
-    if (match.referee.user.id !== user.id && user.role !== "MASTER_ADMIN") {
-      return NextResponse.json(
-        {
-          message: "You are not authorized to update this match",
-        },
-        { status: 403 }
-      );
+    // Convert session.user.id to number for comparison
+    const refereeId = typeof session.user.id === 'string' ? parseInt(session.user.id) : session.user.id;
+    if (match.refereeId !== refereeId) {
+      return new NextResponse('Unauthorized: Not the match referee', { status: 403 });
     }
 
-    // Update match
+    if (match.status !== 'IN_PROGRESS') {
+      return new NextResponse('Match is not in progress', { status: 400 });
+    }
+
+    const body = await request.json();
+    const { teamNumber, points } = body;
+
+    if (!teamNumber || !points || ![1, 2].includes(teamNumber)) {
+      return new NextResponse('Invalid request body', { status: 400 });
+    }
+
+    // Update the score
+    const updateData = teamNumber === 1
+      ? { player1Score: { increment: points } }
+      : { player2Score: { increment: points } };
+
     const updatedMatch = await prisma.match.update({
       where: { id: matchId },
       data: {
-        player1Score,
-        player2Score,
-        status,
+        ...updateData,
+        playerPoints: {
+          create: {
+            playerId: teamNumber === 1 ? match.player1Id : match.player2Id,
+            points: points,
+            createdAt: new Date(),
+          },
+        },
+      },
+      include: {
+        playerPoints: true,
       },
     });
 
-    // If match is completed, calculate points
-    if (status === "COMPLETED") {
-      const pointsResult = await ScoringService.calculateMatchPoints(matchId);
-
-      return NextResponse.json({
-        match: updatedMatch,
-        points: pointsResult,
-      });
-    }
-
     return NextResponse.json(updatedMatch);
   } catch (error) {
-    return errorHandler(error as Error, request);
+    console.error('Error updating match score:', error);
+    return new NextResponse('Internal Server Error', { status: 500 });
   }
 }

@@ -3,6 +3,8 @@ import prisma from "@/lib/db";
 import { authMiddleware } from "@/middleware/auth";
 import { validateRegistration } from "@/utils/validation";
 import { errorHandler } from "@/middleware/error-handler";
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 // Extend NextRequest to include user property
 declare module "next/server" {
@@ -80,7 +82,7 @@ export async function GET(request: NextRequest) {
       where: whereConditions,
       take: limit,
       orderBy: {
-        startDate: "asc",
+        startDate: "desc",
       },
       include: {
         tournamentAdmin: {
@@ -88,7 +90,7 @@ export async function GET(request: NextRequest) {
             user: {
               select: {
                 username: true,
-                email: true,
+                name: true,
               },
             },
           },
@@ -145,120 +147,103 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication and authorization
-    const authResult = await authMiddleware(request);
-    if (authResult.status !== 200) {
-      return authResult;
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user || !['TOURNAMENT_ADMIN', 'MASTER_ADMIN'].includes(session.user.role as string)) {
+      return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    // Get current user from auth middleware
-    const { user } = request;
+    // Get request body
+    const body = await request.json();
+    const { 
+      name, 
+      description, 
+      type, 
+      isTeamBased, 
+      startDate, 
+      endDate, 
+      registrationOpenDate, 
+      registrationCloseDate, 
+      location, 
+      maxParticipants, 
+      entryFee, 
+      prizeMoney, 
+      rules, 
+      players, 
+      teams,
+      fantasySettings 
+    } = body;
 
-    // Only admin, tournament_admin and master_admin can create tournaments
-    if (!user || !["TOURNAMENT_ADMIN", "MASTER_ADMIN"].includes(user.role)) {
-      return NextResponse.json(
-        {
-          message: "Not authorized to create tournaments",
+    // Get tournament admin ID
+    const adminUser = await prisma.tournamentAdmin.findFirst({
+      where: {
+        user: {
+          id: session.user.id,
         },
-        { status: 403 }
-      );
-    }
-
-    // Parse request body
-    const tournamentData = await request.json();
-
-    // Basic validation
-    if (
-      !tournamentData.name ||
-      !tournamentData.startDate ||
-      !tournamentData.endDate ||
-      !tournamentData.location
-    ) {
-      return NextResponse.json(
-        {
-          message: "Missing required fields",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Find the tournament admin record for the current user
-    const adminRecord = await prisma.tournamentAdmin.findUnique({
-      where: { userId: user.id },
-    });
-
-    if (!adminRecord) {
-      return NextResponse.json(
-        {
-          message: "Tournament admin record not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Create the tournament
-    const tournament = await prisma.tournament.create({
-      data: {
-        name: tournamentData.name,
-        description: tournamentData.description || "",
-        type: tournamentData.type,
-        status: "DRAFT",
-        startDate: new Date(tournamentData.startDate),
-        endDate: new Date(tournamentData.endDate),
-        registrationOpenDate: new Date(tournamentData.registrationOpenDate),
-        registrationCloseDate: new Date(tournamentData.registrationCloseDate),
-        location: tournamentData.location,
-        imageUrl: tournamentData.imageUrl,
-        maxParticipants: tournamentData.maxParticipants || 32,
-        entryFee: tournamentData.entryFee || 0,
-        prizeMoney: tournamentData.prizeMoney || 0,
-        organizerId: adminRecord.id,
-        rules: tournamentData.rules || "",
       },
     });
 
-    // Create fantasy contests if provided
-    if (
-      tournamentData.contestTypes &&
-      Array.isArray(tournamentData.contestTypes)
-    ) {
-      const activeContests = tournamentData.contestTypes.filter(
-        (contest: any) => contest.active
-      );
-
-      await Promise.all(
-        activeContests.map((contest: any) => {
-          return prisma.fantasyContest.create({
-            data: {
-              name: contest.name,
-              tournamentId: tournament.id,
-              entryFee: contest.entryFee || 0,
-              prizePool: contest.entryFee * 0.8 || 0, // 80% of entry fee goes to prize pool
-              maxEntries: tournamentData.maxParticipants || 100,
-              currentEntries: 0,
-              startDate: new Date(tournamentData.startDate),
-              endDate: new Date(tournamentData.endDate),
-              status: "UPCOMING",
-              description: `${contest.name} fantasy contest for ${tournamentData.name}`,
-              rules: JSON.stringify({
-                walletSize: tournamentData.walletSize || 100000,
-                fantasyTeamSize: tournamentData.fantasyTeamSize || 7,
-                allowTeamChanges: tournamentData.allowTeamChanges || false,
-                changeFrequency: tournamentData.changeFrequency || "daily",
-                maxPlayersToChange: tournamentData.maxPlayersToChange || 2,
-                changeWindowStart: tournamentData.changeWindowStart || "18:00",
-                changeWindowEnd: tournamentData.changeWindowEnd || "22:00",
-                playerCategories: tournamentData.playerCategories || [],
-              }),
-            },
-          });
-        })
-      );
+    if (!adminUser) {
+      return new NextResponse('Tournament admin not found', { status: 404 });
     }
 
-    return NextResponse.json(tournament, { status: 201 });
-  } catch (error: any) {
-    return errorHandler(error, request);
+    // Create tournament
+    const tournament = await prisma.tournament.create({
+      data: {
+        name,
+        description,
+        type,
+        isTeamBased: isTeamBased || false,
+        status: 'DRAFT',
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        registrationOpenDate: new Date(registrationOpenDate),
+        registrationCloseDate: new Date(registrationCloseDate),
+        location,
+        maxParticipants: Number(maxParticipants),
+        entryFee: Number(entryFee),
+        prizeMoney: prizeMoney ? Number(prizeMoney) : null,
+        rules,
+        fantasySettings: fantasySettings ? JSON.stringify(fantasySettings) : null,
+        organizerId: adminUser.id,
+      },
+    });
+
+    // Add players to tournament
+    if (players && players.length > 0) {
+      for (const player of players) {
+        await prisma.tournamentEntry.create({
+          data: {
+            tournamentId: tournament.id,
+            playerId: player.id,
+            paymentStatus: 'PAID', // Auto-approve entries created by admin
+          },
+        });
+      }
+    }
+
+    // Create teams if team-based tournament
+    if (isTeamBased && teams && teams.length > 0) {
+      for (const team of teams) {
+        await prisma.team.create({
+          data: {
+            name: team.name,
+            tournament: {
+              connect: { id: tournament.id }
+            },
+            players: {
+              connect: team.players.map((player: any) => ({ id: player.id }))
+            }
+          },
+        });
+      }
+    }
+
+    // Return the created tournament
+    return NextResponse.json(tournament);
+  } catch (error) {
+    console.error('Error creating tournament:', error);
+    return new NextResponse('Error creating tournament', { status: 500 });
   }
 }
 

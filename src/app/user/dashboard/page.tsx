@@ -27,7 +27,11 @@ import {
   ArrowUpRight,
   BarChart,
   DollarSign,
+  ActivityIcon,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 
 interface FantasyGame {
   id: number;
@@ -42,20 +46,38 @@ interface FantasyGame {
   endDate: string;
 }
 
-interface StatsItem {
-  label: string;
-  value: string | number;
-  change?: number;
-  icon: React.ReactNode;
-  color: string;
+interface LiveMatch {
+  id: number;
+  teamA: {
+    name: string;
+    score: number;
+  };
+  teamB: {
+    name: string;
+    score: number;
+  };
+  status: "upcoming" | "live" | "completed";
+  tournamentName: string;
+  round: string;
 }
 
 export default function UserDashboard() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const { theme, setTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [activeContests, setActiveContests] = useState<FantasyGame[]>([]);
   const [upcomingContests, setUpcomingContests] = useState<FantasyGame[]>([]);
+  const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [earnings, setEarnings] = useState(0);
+  const [fantasyTier, setFantasyTier] = useState("Bronze");
+  const [mounted, setMounted] = useState(false);
+  
+  // Wait for theme to mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   // Check if user has the correct role
   useEffect(() => {
@@ -72,7 +94,7 @@ export default function UserDashboard() {
 
   // Fetch user data
   useEffect(() => {
-    // This would be replaced with actual API calls in production
+    // Fetch all required data
     const fetchUserData = async () => {
       try {
         setLoading(true);
@@ -92,9 +114,9 @@ export default function UserDashboard() {
         const mapContestToFantasyGame = (contest: any): FantasyGame => ({
           id: contest.id,
           name: contest.name,
-          tournamentName: contest.tournament.name,
-          entryFee: contest.entryFee,
-          totalPrize: contest.prizePool,
+          tournamentName: contest.tournament?.name || "Tournament",
+          entryFee: contest.entryFee || 0,
+          totalPrize: contest.prizePool || 0,
           myTeamRank: contest.myRank || undefined,
           totalParticipants: contest.currentEntries || 0,
           status: contest.status === "IN_PROGRESS" ? "live" : 
@@ -108,6 +130,19 @@ export default function UserDashboard() {
         
         setActiveContests(activeContests);
         setUpcomingContests(upcomingContests);
+
+        // Fetch live matches
+        const liveMatchesResponse = await fetch('/api/matches/live');
+        if (liveMatchesResponse.ok) {
+          const liveMatchesData = await liveMatchesResponse.json();
+          setLiveMatches(liveMatchesData.matches || []);
+        }
+
+        // For a real app, fetch the user's wallet, earnings, and tier from an API
+        // For now, we'll set them to 0 instead of using mock data
+        setWalletBalance(0);
+        setEarnings(0);
+        setFantasyTier("Bronze");
       } catch (error) {
         console.error("Error fetching user data:", error);
       } finally {
@@ -124,7 +159,7 @@ export default function UserDashboard() {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <h2 className="text-2xl font-bold">Loading your dashboard...</h2>
           <p>Please wait while we fetch your information</p>
         </div>
@@ -132,42 +167,13 @@ export default function UserDashboard() {
     );
   }
 
-  const statsData: StatsItem[] = [
-    {
-      label: "Wallet Balance",
-      value: "$425",
-      change: 12.5,
-      icon: <Wallet className="h-5 w-5" />,
-      color: "text-blue-600 dark:text-blue-400",
-    },
-    {
-      label: "Active Contests",
-      value: activeContests.length,
-      icon: <Trophy className="h-5 w-5" />,
-      color: "text-teal-600 dark:text-teal-400",
-    },
-    {
-      label: "Current Earnings",
-      value: "$275",
-      change: 8.3,
-      icon: <DollarSign className="h-5 w-5" />,
-      color: "text-green-600 dark:text-green-400",
-    },
-    {
-      label: "Fantasy Tier",
-      value: "Silver",
-      icon: <Star className="h-5 w-5" />,
-      color: "text-purple-600 dark:text-purple-400",
-    },
-  ];
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-background/80">
       {/* Top navigation bar */}
       <header className="border-b sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-500">
-            Fantasy Dashboard
+            MatchUp
           </h1>
           <div className="flex items-center gap-4">
             <Button 
@@ -197,6 +203,20 @@ export default function UserDashboard() {
               <User className="h-4 w-4" />
               Profile
             </Button>
+            {mounted && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-[1.2rem] w-[1.2rem]" />
+                ) : (
+                  <Moon className="h-[1.2rem] w-[1.2rem]" />
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -204,7 +224,7 @@ export default function UserDashboard() {
       <main className="container mx-auto px-4 py-8">
         {/* Welcome section */}
         <section className="mb-8">
-          <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg p-6 border border-blue-500/20">
+          <div className="bg-gradient-to-r from-blue-500/10 to-teal-400/10 rounded-lg p-6 border border-blue-500/20">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h2 className="text-2xl font-bold">
@@ -225,7 +245,7 @@ export default function UserDashboard() {
                 </Button>
                 <Button
                   onClick={() => router.push("/fantasy/contests")}
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
+                  className="bg-gradient-to-r from-blue-500 to-teal-400 hover:from-blue-600 hover:to-teal-500 text-white"
                 >
                   <Star className="h-4 w-4 mr-2" />
                   Join Contest
@@ -239,27 +259,61 @@ export default function UserDashboard() {
         <section className="mb-8">
           <h3 className="text-lg font-medium mb-4">Your Stats</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {statsData.map((stat, index) => (
-              <Card key={index} className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-950/20 dark:to-slate-900/20 border-slate-200/50 dark:border-slate-800/30">
-                <CardContent className="p-6">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
-                      <h3 className={`text-2xl font-bold ${stat.color} mt-1`}>{stat.value}</h3>
-                      {stat.change !== undefined && (
-                        <p className="text-xs flex items-center mt-1 text-green-600 dark:text-green-400">
-                          <ArrowUpRight className="h-3 w-3 mr-1" />
-                          {stat.change}% from last month
-                        </p>
-                      )}
-                    </div>
-                    <div className={`bg-slate-100 dark:bg-slate-900/30 p-2 rounded-full ${stat.color}`}>
-                      {stat.icon}
-                    </div>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Wallet Balance</p>
+                    <h3 className="text-2xl font-bold text-blue-500 mt-1">${walletBalance}</h3>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <div className="bg-slate-100 dark:bg-slate-900/30 p-2 rounded-full text-blue-500">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Active Contests</p>
+                    <h3 className="text-2xl font-bold text-[#27D3C3] mt-1">{activeContests.length}</h3>
+                  </div>
+                  <div className="bg-slate-100 dark:bg-slate-900/30 p-2 rounded-full text-[#27D3C3]">
+                    <Trophy className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Current Earnings</p>
+                    <h3 className="text-2xl font-bold text-blue-500 mt-1">${earnings}</h3>
+                  </div>
+                  <div className="bg-slate-100 dark:bg-slate-900/30 p-2 rounded-full text-blue-500">
+                    <DollarSign className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Fantasy Tier</p>
+                    <h3 className="text-2xl font-bold text-[#27D3C3] mt-1">{fantasyTier}</h3>
+                  </div>
+                  <div className="bg-slate-100 dark:bg-slate-900/30 p-2 rounded-full text-[#27D3C3]">
+                    <Star className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </section>
 
@@ -273,7 +327,7 @@ export default function UserDashboard() {
                   <CardTitle>Active Fantasy Contests</CardTitle>
                   <Button 
                     variant="link" 
-                    className="text-sm gap-1"
+                    className="text-sm gap-1 text-blue-500"
                     onClick={() => router.push("/fantasy/contests")}
                   >
                     View All
@@ -289,7 +343,7 @@ export default function UserDashboard() {
                     <p>No active contests found</p>
                     <Button 
                       variant="link" 
-                      className="mt-2"
+                      className="mt-2 text-blue-500"
                       onClick={() => router.push("/fantasy/contests")}
                     >
                       Join a fantasy contest
@@ -300,7 +354,7 @@ export default function UserDashboard() {
                     {activeContests.map((contest) => (
                       <div 
                         key={contest.id} 
-                        className="p-4 rounded-lg border border-blue-200/40 dark:border-blue-800/30 hover:bg-blue-50/50 dark:hover:bg-blue-950/10 transition-colors cursor-pointer"
+                        className="p-4 rounded-lg border border-blue-500/20 hover:bg-blue-500/5 transition-colors cursor-pointer"
                         onClick={() => router.push(`/fantasy/contests/${contest.id}`)}
                       >
                         <div className="flex justify-between items-start mb-2">
@@ -308,7 +362,7 @@ export default function UserDashboard() {
                             <h4 className="font-medium text-lg">{contest.name}</h4>
                             <p className="text-sm text-muted-foreground">{contest.tournamentName}</p>
                           </div>
-                          <Badge variant={contest.status === "live" ? "default" : "outline"} className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                          <Badge className="bg-[#27D3C3] text-black">
                             LIVE
                           </Badge>
                         </div>
@@ -324,7 +378,7 @@ export default function UserDashboard() {
                           </div>
                           <div>
                             <p className="text-muted-foreground">Your Rank</p>
-                            <p className="font-medium">{contest.myTeamRank} of {contest.totalParticipants}</p>
+                            <p className="font-medium">{contest.myTeamRank || '-'} of {contest.totalParticipants}</p>
                           </div>
                         </div>
                         
@@ -353,23 +407,20 @@ export default function UserDashboard() {
             {/* Fantasy Performance Chart */}
             <Card>
               <CardHeader>
-                <CardTitle>Fantasy Performance</CardTitle>
+                <CardTitle className="flex items-center">
+                  <BarChart className="h-5 w-5 mr-2 text-blue-500" />
+                  Fantasy Performance
+                </CardTitle>
                 <CardDescription>Your performance across all fantasy contests</CardDescription>
               </CardHeader>
               <CardContent>
-                {/* This would be a real chart in production */}
-                <div className="aspect-[16/9] bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/10 dark:to-purple-950/10 rounded-lg flex flex-col items-center justify-center p-6 border border-blue-200/30 dark:border-blue-800/20">
-                  <BarChart className="h-16 w-16 text-blue-500/40 dark:text-blue-400/40 mb-4" />
-                  <p className="text-center text-muted-foreground max-w-md">
-                    Your fantasy performance chart would appear here, showing points earned over time and contest placement history.
-                  </p>
-                  <Button 
-                    variant="outline" 
-                    className="mt-4"
-                    onClick={() => router.push("/fantasy/stats")}
-                  >
-                    View Detailed Stats
-                  </Button>
+                <div className="flex items-center justify-center p-12 border border-dashed border-gray-700 rounded-md">
+                  <div className="text-center">
+                    <p className="text-gray-400 mb-2">No performance data yet</p>
+                    <p className="text-sm text-gray-500">
+                      Join a fantasy contest to start tracking your performance
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -381,11 +432,14 @@ export default function UserDashboard() {
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-center">
-                  <CardTitle>Live Scores</CardTitle>
+                  <CardTitle className="flex items-center">
+                    <ActivityIcon className="h-5 w-5 mr-2 text-[#27D3C3]" />
+                    Live Scores
+                  </CardTitle>
                   <Button 
                     variant="link" 
-                    className="text-sm gap-1"
-                    onClick={() => router.push("/live-scores")}
+                    className="text-sm gap-1 text-[#27D3C3]"
+                    onClick={() => router.push("/fantasy/live-scores")}
                   >
                     View All
                     <ChevronRight className="h-4 w-4" />
@@ -394,116 +448,117 @@ export default function UserDashboard() {
                 <CardDescription>Current tournament matches</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="p-4 rounded-lg border border-blue-200/40 dark:border-blue-800/30 hover:bg-blue-50/50 dark:hover:bg-blue-950/10">
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className="font-medium">Smith vs. Johnson</h4>
-                      <Badge variant="outline" className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                        LIVE
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">Summer Grand Slam - Quarter Finals</p>
-                    <div className="flex justify-between items-center font-medium">
-                      <span>Smith</span>
-                      <span className="text-xl">11-8, 9-11, 6-5</span>
-                      <span>Johnson</span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="w-full mt-2"
-                      onClick={() => router.push("/live-scores/match/1")}
-                    >
-                      <Tv className="h-4 w-4 mr-2" />
-                      Watch Live
-                    </Button>
+                {liveMatches.length > 0 ? (
+                  <div className="space-y-4">
+                    {liveMatches.map((match) => (
+                      <div 
+                        key={match.id} 
+                        className="p-4 rounded-lg border border-[#27D3C3]/20 hover:bg-[#27D3C3]/5"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-medium">{match.teamA.name} vs. {match.teamB.name}</h4>
+                          <Badge className="bg-[#27D3C3] text-black">
+                            LIVE
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">{match.tournamentName} - {match.round}</p>
+                        <div className="flex justify-between items-center font-medium">
+                          <span>{match.teamA.name}</span>
+                          <span className="text-xl">{match.teamA.score} - {match.teamB.score}</span>
+                          <span>{match.teamB.name}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-
-                  <div className="p-4 rounded-lg border border-blue-200/40 dark:border-blue-800/30 hover:bg-blue-50/50 dark:hover:bg-blue-950/10">
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className="font-medium">Garcia/Lopez vs. Kim/Park</h4>
-                      <Badge variant="outline" className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                        LIVE
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">Masters Invitational - Doubles Semi-Finals</p>
-                    <div className="flex justify-between items-center font-medium">
-                      <span>Garcia/Lopez</span>
-                      <span className="text-xl">11-7, 11-9</span>
-                      <span>Kim/Park</span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="w-full mt-2"
-                      onClick={() => router.push("/live-scores/match/2")}
-                    >
-                      <Tv className="h-4 w-4 mr-2" />
-                      Watch Live
-                    </Button>
+                ) : (
+                  <div className="text-center py-6">
+                    <ActivityIcon className="h-10 w-10 text-gray-500 mx-auto mb-2" />
+                    <p className="text-gray-300 font-medium">No live matches</p>
+                    <p className="text-gray-400 text-sm mt-1">Check back later for live scores</p>
                   </div>
-                </div>
+                )}
               </CardContent>
+              <CardFooter className="pt-0">
+                <Button 
+                  variant="outline"
+                  className="w-full text-[#27D3C3] hover:text-[#27D3C3]/90 border-[#27D3C3]/20 hover:bg-[#27D3C3]/10"
+                  onClick={() => router.push("/fantasy/live-scores")}
+                >
+                  View All Scores
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </CardFooter>
             </Card>
 
             {/* Upcoming Contests */}
             <Card>
               <CardHeader>
-                <CardTitle>Upcoming Contests</CardTitle>
+                <CardTitle className="flex items-center">
+                  <Calendar className="h-5 w-5 mr-2 text-blue-500" />
+                  Upcoming Contests
+                </CardTitle>
                 <CardDescription>Fantasy contests open for entry</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {upcomingContests.map((contest) => (
-                    <div 
-                      key={contest.id} 
-                      className="p-4 rounded-lg border border-purple-200/40 dark:border-purple-800/30 hover:bg-purple-50/50 dark:hover:bg-purple-950/10 transition-colors cursor-pointer"
-                      onClick={() => router.push(`/fantasy/contests/${contest.id}`)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <h4 className="font-medium">{contest.name}</h4>
-                        <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                          Upcoming
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1 mb-3">{contest.tournamentName}</p>
-                      
-                      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                        <div>
-                          <p className="text-muted-foreground">Entry Fee</p>
-                          <p className="font-medium">${contest.entryFee}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Prize Pool</p>
-                          <p className="font-medium">${contest.totalPrize.toLocaleString()}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                        <Calendar className="h-3 w-3" />
-                        <span>
-                          {new Date(contest.startDate).toLocaleDateString()} - {new Date(contest.endDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                      
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="w-full"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/fantasy/contests/${contest.id}/join`);
-                        }}
+                {upcomingContests.length > 0 ? (
+                  <div className="space-y-4">
+                    {upcomingContests.map((contest) => (
+                      <div 
+                        key={contest.id} 
+                        className="p-4 rounded-lg border border-blue-500/20 hover:bg-blue-500/5 transition-colors cursor-pointer"
+                        onClick={() => router.push(`/fantasy/contests/${contest.id}`)}
                       >
-                        Join Contest
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                        <div className="flex justify-between items-start">
+                          <h4 className="font-medium">{contest.name}</h4>
+                          <Badge variant="outline" className="border-blue-500 text-blue-500">
+                            Upcoming
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1 mb-3">{contest.tournamentName}</p>
+                        
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                          <div>
+                            <p className="text-muted-foreground">Entry Fee</p>
+                            <p className="font-medium">${contest.entryFee}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Prize Pool</p>
+                            <p className="font-medium">${contest.totalPrize.toLocaleString()}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                          <Calendar className="h-3 w-3" />
+                          <span>
+                            {new Date(contest.startDate).toLocaleDateString()} - {new Date(contest.endDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                        
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/fantasy/contests/${contest.id}/join`);
+                          }}
+                        >
+                          Join Contest
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <Calendar className="h-10 w-10 text-gray-500 mx-auto mb-2" />
+                    <p className="text-gray-300 font-medium">No upcoming contests</p>
+                    <p className="text-gray-400 text-sm mt-1">Check back later for new contests</p>
+                  </div>
+                )}
               </CardContent>
               <CardFooter className="pt-0">
                 <Button 
-                  className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
+                  className="w-full bg-gradient-to-r from-blue-500 to-teal-400 hover:from-blue-600 hover:to-teal-500 text-white"
                   onClick={() => router.push("/fantasy/contests")}
                 >
                   Browse All Contests
@@ -515,4 +570,4 @@ export default function UserDashboard() {
       </main>
     </div>
   );
-} 
+}

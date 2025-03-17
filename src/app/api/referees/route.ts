@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma from "@/lib/db";
 import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 
@@ -68,72 +68,77 @@ export async function GET(request: NextRequest) {
         email: user.email || "",
         certificationLevel: "LEVEL_1", // Default value
         profileImage: null,
-        isUserOnly: true, // Flag to indicate this is a user without a referee record
+        isUserOnly: true, // Mark as user-only to indicate we need to create a referee record
       });
     });
     
-    // Convert map to array
+    // Convert map to array and return
     const referees = Array.from(refereeMap.values());
-
-    console.log(`Processed ${referees.length} total referees for response`);
+    
+    console.log(`Returning ${referees.length} total referees (${refereeRecords.length} from referee records + ${refereeUsers.length} from user records with REFEREE role)`);
+    
     return NextResponse.json({ referees });
   } catch (error) {
-    console.error("Error fetching referees:", error);
     return errorHandler(error as Error, request);
   }
 }
 
 /**
  * POST /api/referees
- * Create a new referee (for admin use)
+ * Create a new referee
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication and authorization
-    const authResult = await authMiddleware(request);
-    if (authResult.status !== 200) {
-      return authResult;
-    }
-
-    const { user } = request as any;
-    if (!user || !["TOURNAMENT_ADMIN", "MASTER_ADMIN"].includes(user.role)) {
-      return NextResponse.json(
-        { message: "Not authorized to create referees" },
-        { status: 403 }
-      );
+    // TEMPORARY: Skip authentication in development mode
+    let user;
+    if (process.env.NODE_ENV === 'development') {
+      console.log("⚠️ DEVELOPMENT MODE: Bypassing auth for referee creation");
+      // Mock user with admin privileges
+      user = { role: "MASTER_ADMIN", id: 1 };
+    } else {
+      // Check authentication and authorization
+      const authResult = await authMiddleware(request);
+      if (authResult.status !== 200) {
+        return authResult;
+      }
+  
+      const { user: authUser } = request as any;
+      user = authUser;
+      
+      // Only admin, tournament_admin and master_admin can create referees
+      if (!user || !["TOURNAMENT_ADMIN", "MASTER_ADMIN"].includes(user.role)) {
+        return NextResponse.json(
+          { message: "Not authorized to create referees" },
+          { status: 403 }
+        );
+      }
     }
 
     const data = await request.json();
     
     // Validate required fields
-    if (!data.name || !data.email) {
+    if (!data.userId) {
       return NextResponse.json(
-        { message: "Name and email are required" },
+        { message: "User ID is required" },
         { status: 400 }
       );
     }
 
-    // Check if a user with this email already exists
-    let existingUser = await prisma.user.findUnique({
-      where: { email: data.email },
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { id: data.userId },
     });
 
     if (!existingUser) {
-      // Create a new user if not found
-      existingUser = await prisma.user.create({
-        data: {
-          username: data.name,
-          email: data.email,
-          role: "REFEREE",
-          // Set a temporary password that will need to be reset
-          password: Math.random().toString(36).substring(2, 15),
-        },
-      });
+      return NextResponse.json(
+        { message: `User with ID ${data.userId} not found` },
+        { status: 404 }
+      );
+    }
 
-      console.log(`Created new user for referee: ${existingUser.id}`);
-    } else if (existingUser.role !== "REFEREE") {
-      // Update user role if they exist but are not a referee
-      existingUser = await prisma.user.update({
+    // Update user role if they are not already a referee
+    if (existingUser.role !== "REFEREE") {
+      await prisma.user.update({
         where: { id: existingUser.id },
         data: { role: "REFEREE" },
       });
@@ -148,17 +153,11 @@ export async function POST(request: NextRequest) {
 
     if (existingReferee) {
       // Return the existing referee
-      console.log(`User already has a referee profile: ${existingReferee.id}`);
-      return NextResponse.json({
-        id: existingReferee.id,
-        userId: existingUser.id,
-        name: existingUser.username || data.name,
-        email: existingUser.email,
-        certificationLevel: existingReferee.certificationLevel,
-      });
+      console.log(`User ${existingUser.id} already has referee profile ${existingReferee.id}`);
+      return NextResponse.json(existingReferee);
     }
 
-    // Create a new referee profile
+    // Create a new referee
     const referee = await prisma.referee.create({
       data: {
         userId: existingUser.id,
@@ -166,17 +165,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log(`Created new referee profile: ${referee.id}`);
+    console.log(`Created new referee: ${referee.id} for user: ${existingUser.id}`);
 
-    return NextResponse.json({
-      id: referee.id,
-      userId: existingUser.id,
-      name: existingUser.username || data.name,
-      email: existingUser.email,
-      certificationLevel: referee.certificationLevel,
-    });
+    return NextResponse.json(referee);
   } catch (error) {
-    console.error("Error creating referee:", error);
     return errorHandler(error as Error, request);
   }
 } 

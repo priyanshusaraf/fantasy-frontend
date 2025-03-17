@@ -1,7 +1,6 @@
 "use client";
 
-import React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
@@ -9,12 +8,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Calendar, Users, Shield, Trophy, Settings, MapPin, Clock } from "lucide-react";
+import { ArrowLeft, Calendar, Users, Shield, Trophy, Settings, MapPin, Clock, UserPlus, User } from "lucide-react";
 import TournamentPlayerManager from "@/components/tournaments/TournamentPlayerManager";
 import TournamentRefereeManager from "@/components/tournaments/TournamentRefereeManager";
 import { useToast } from "@/components/ui/use-toast";
 import FantasySetup from "@/components/admin/tournament-creation/FantasySetup";
 import { FormProvider, useForm } from "react-hook-form";
+import TeamDisplay from "@/components/admin/TeamDisplay";
 
 interface TournamentDetailProps {
   params: {
@@ -52,14 +52,12 @@ interface Tournament {
 }
 
 export default function TournamentDetailPage({ params }: TournamentDetailProps) {
-  // Handling params access safely for Next.js 15 warning
-  // Using direct access which is still supported in this version of Next.js
-  // This approach avoids TypeScript errors with React.use()
+  // While Next.js suggests using React.use() for params,
+  // we'll use direct access with a comment acknowledging the warning
+  // This approach works while avoiding TypeScript errors in this codebase
   const tournamentId = params.id;
   
-  // We acknowledge the warning from Next.js about direct params access
-  // but we're keeping this approach until TypeScript support for React.use improves
-  // In a future update, we'll migrate to: const { id } = React.use(params);
+  // Note: In a future update, we'll migrate to React.use() once TypeScript support improves
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -71,49 +69,16 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  
+  // Create a ref to store fetch function
+  const fetchTournamentRef = useRef<() => Promise<void>>();
   
   // Helper function to get auth token
-  const getAuthToken = () => {
-    // We need to check if we're in a browser environment
-    if (typeof window === 'undefined') {
-      // We're on the server, can't access localStorage
-      return '';
-    }
-    
-    // Try to get from localStorage first (most reliable in this app)
-    const localToken = localStorage.getItem('auth_token');
-    if (localToken) {
-      console.log("Using token from localStorage");
-      return `Bearer ${localToken}`;
-    }
-    
-    // Fall back to checking session if available
-    if (session?.user) {
-      console.log("Trying to use token from session");
-      // For debugging
-      console.log("Session structure:", JSON.stringify(session, null, 2));
-      
-      // The token might be in different places depending on how NextAuth is configured
-      // Try common locations
-      let token = null;
-      
-      // @ts-ignore - Check different potential token locations
-      if (session.token) token = session.token;
-      // @ts-ignore 
-      else if (session.accessToken) token = session.accessToken;
-      // @ts-ignore
-      else if (session.user && session.user.token) token = session.user.token;
-      
-      if (token) {
-        // Store this token in localStorage for future use
-        localStorage.setItem('auth_token', token);
-        console.log("Found token in session, stored in localStorage");
-        return `Bearer ${token}`;
-      }
-    }
-    
-    console.warn("No authentication token found - this might cause authorization issues");
-    return '';
+  const getAuthToken = (): string => {
+    // If session is available, get the JWT token if it's been stored
+    // Otherwise, return an empty string
+    return session?.accessToken || '';
   };
   
   // Store token in localStorage when session is available
@@ -165,103 +130,43 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
     }
   });
 
-  // Fetch tournament details
+  // Setup effect for data fetching
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-      return;
-    }
-    
-    if (!tournamentId) {
-      setError("Tournament ID is required");
-      setLoading(false);
-      return;
-    }
-    
-    const fetchTournament = async () => {
-      if (!tournamentId) return;
-      console.log("Fetching tournament ID:", tournamentId);
-      
-      try {
-        setLoading(true);
-        
-        // Try the direct tournament fetch endpoint if it exists
-        const response = await fetch(`/api/admin/direct-tournament-fetch?id=${tournamentId}&t=${Date.now()}`, {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'Authorization': getAuthToken(),
-          },
-          cache: 'no-store'
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setTournament(data);
-          
-          // If fantasy data exists, update form values
-          const formValues = {
-            fantasy: {
-              enableFantasy: false,
-              fantasyPoints: "STANDARD",
-              autoPublish: true,
-              contests: []
-            }
-          };
-          
-          // First check if there's fantasy data from API
-          if (data.fantasy) {
-            formValues.fantasy = {
-              ...formValues.fantasy,
-              enableFantasy: data.fantasy.enableFantasy || false,
-              fantasyPoints: data.fantasy.fantasyPoints || "STANDARD",
-              autoPublish: data.fantasy.autoPublish || true,
-              contests: data.fantasy.contests || [],
-              ...data.fantasy // Spread any other fantasy properties
-            };
-          }
-          
-          // Then check if there are fantasy settings in the tournament
-          if ('fantasySettings' in data && data.fantasySettings) {
-            try {
-              const parsedSettings = JSON.parse(data.fantasySettings);
-              // Merge with precedence to parsed settings
-              formValues.fantasy = {
-                ...formValues.fantasy,
-                ...parsedSettings,
-              };
-            } catch (e) {
-              console.error("Error parsing fantasy settings:", e);
-            }
-          }
-          
-          // Reset form with the combined values
-          console.log("Setting form values:", formValues);
-          methods.reset(formValues);
-        } else {
-          // Fallback to regular tournament endpoint
-          const fallbackResponse = await fetch(`/api/tournaments/${tournamentId}`);
-          
-          if (!fallbackResponse.ok) {
-            throw new Error("Failed to fetch tournament details");
-          }
-          
-          const fallbackData = await fallbackResponse.json();
-          setTournament(fallbackData);
-        }
-      } catch (error) {
-        console.error("Error fetching tournament:", error);
-        setError(error instanceof Error ? error.message : "Failed to load tournament");
-      } finally {
-        setLoading(false);
-      }
-    };
-    
     if (status === "authenticated") {
+      const fetchTournament = async () => {
+        setLoading(true);
+        setError(null);
+        
+        try {
+          console.log(`Fetching tournament data for ID: ${tournamentId}`);
+          const response = await fetch(`/api/tournaments/${tournamentId}`);
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch tournament: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          console.log("Tournament data received:", data);
+          setTournament(data);
+        } catch (err: any) {
+          console.error("Error fetching tournament:", err);
+          setError(err.message || "Failed to load tournament data");
+          toast({
+            title: "Error",
+            description: "Failed to load tournament data. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      // Store the fetch function in the ref
+      fetchTournamentRef.current = fetchTournament;
+      
       fetchTournament();
     }
-  }, [tournamentId, status, router]);
+  }, [tournamentId, status, toast]);
 
   // Format date for display
   const formatDate = (date: string | Date): string => {
@@ -296,11 +201,13 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
 
   // Update tournament status
   const handleUpdateStatus = async (newStatus: string) => {
-    if (!tournamentId || !tournament) return;
+    if (!tournamentId) return;
     
     setIsUpdatingStatus(true);
     
     try {
+      console.log(`Updating tournament ${tournamentId} status to ${newStatus}`);
+      
       const response = await fetch(`/api/tournaments/${tournamentId}`, {
         method: "PATCH",
         headers: {
@@ -310,22 +217,74 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
         body: JSON.stringify({ status: newStatus }),
       });
       
+      // Log response details for debugging
+      console.log(`Status update response status: ${response.status}`);
+      
+      let errorMessage = "Failed to update tournament status";
+      
       if (!response.ok) {
-        throw new Error("Failed to update tournament status");
+        // Clone the response before attempting to read it
+        const responseClone = response.clone();
+        
+        // Try to get detailed error message
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.error || errorMessage;
+          console.error("Error response data:", errorData);
+        } catch (e) {
+          // If can't parse JSON, try to get text from the cloned response
+          try {
+            const errorText = await responseClone.text();
+            if (errorText) {
+              errorMessage = `${errorMessage}: ${errorText}`;
+              console.error("Error response text:", errorText);
+            }
+          } catch (textError) {
+            console.error("Couldn't get error details", textError);
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
       
       const updatedTournament = await response.json();
-      setTournament(updatedTournament);
+      console.log("Tournament status updated successfully:", updatedTournament);
+      
+      // Update local tournament data with the complete response
+      if (tournament) {
+        setTournament({
+          ...tournament,
+          ...updatedTournament,
+          status: newStatus
+        });
+      }
       
       toast({
         title: "Status Updated",
         description: `Tournament status updated to ${newStatus}`,
       });
+      
+      // Refresh the data from server to ensure consistency
+      setTimeout(() => {
+        if (fetchTournamentRef.current) {
+          fetchTournamentRef.current();
+        }
+      }, 500);
     } catch (error) {
       console.error("Error updating status:", error);
+      
+      // Optimistic update fallback - if API fails but the operation is simple
+      // Show a warning but still update the UI
+      if (tournament) {
+        setTournament({
+          ...tournament,
+          status: newStatus
+        });
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to update tournament status",
+        title: "Warning",
+        description: "Status visually updated but there was an error syncing with the server. Changes may not persist after reload.",
         variant: "destructive",
       });
     } finally {
@@ -846,8 +805,63 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
           </div>
         </TabsContent>
         
-        <TabsContent value="players">
-          <TournamentPlayerManager tournamentId={tournamentId} />
+        <TabsContent value="players" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6">
+            {tournament?.isTeamBased ? (
+              <TeamDisplay tournamentId={parseInt(tournamentId)} />
+            ) : (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xl">Tournament Players</CardTitle>
+                    <CardDescription>Manage players in this tournament</CardDescription>
+                  </div>
+                  
+                  <Button 
+                    onClick={() => router.push(`/admin/tournaments/${tournamentId}/players/add`)}
+                    variant="outline"
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Add Players
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-lg font-semibold">Registered Players</h3>
+                      <div className="text-sm text-muted-foreground">
+                        {tournament?.playerCount || 0} / {tournament?.maxParticipants || 0} players
+                      </div>
+                    </div>
+                    
+                    {tournament?.playerCount === 0 ? (
+                      <div className="text-center p-8 bg-muted/20 border border-dashed rounded-lg">
+                        <User className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No players registered</h3>
+                        <p className="text-muted-foreground mb-4">
+                          Add players to start building your tournament roster.
+                        </p>
+                        <Button 
+                          onClick={() => router.push(`/admin/tournaments/${tournamentId}/players/add`)}
+                          variant="default"
+                        >
+                          <UserPlus className="mr-2 h-4 w-4" />
+                          Add First Player
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="border rounded-md divide-y">
+                        {/* Player list would go here */}
+                        <div className="p-4 text-center text-muted-foreground">
+                          <p>List of registered players would appear here</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
         
         <TabsContent value="referees">

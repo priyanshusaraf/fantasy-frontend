@@ -38,89 +38,12 @@ export default function TournamentsPage() {
       try {
         setLoading(true);
         
-        // In a real application, this would be an actual API call
-        // const response = await fetch("/api/tournaments");
-        // if (!response.ok) throw new Error("Failed to fetch tournaments");
-        // const data = await response.json();
+        // Fetch from the actual API
+        const response = await fetch("/api/tournaments");
+        if (!response.ok) throw new Error("Failed to fetch tournaments");
+        const data = await response.json();
         
-        // Example data for demonstration
-        const mockData: Tournament[] = [
-          {
-            id: 1,
-            name: "Summer Grand Slam",
-            description: "The premiere pickleball tournament of the summer season",
-            location: "Miami, FL",
-            startDate: "2023-10-05",
-            endDate: "2023-10-10",
-            status: "UPCOMING",
-            maxPlayers: 64,
-            registeredPlayers: 42,
-            totalContests: 3,
-            registrationFee: 75,
-            imageUrl: "/tournaments/summer-slam.jpg"
-          },
-          {
-            id: 2,
-            name: "Masters Invitational",
-            description: "An exclusive tournament for the highest skilled players",
-            location: "Las Vegas, NV",
-            startDate: "2023-11-12",
-            endDate: "2023-11-18",
-            status: "UPCOMING",
-            maxPlayers: 32,
-            registeredPlayers: 28,
-            totalContests: 2,
-            registrationFee: 125,
-            imageUrl: "/tournaments/masters.jpg"
-          },
-          {
-            id: 3,
-            name: "Winter Classic",
-            description: "The annual winter pickleball championship",
-            location: "Orlando, FL",
-            startDate: "2023-12-08",
-            endDate: "2023-12-12",
-            status: "UPCOMING",
-            maxPlayers: 48,
-            registeredPlayers: 31,
-            totalContests: 2,
-            registrationFee: 85,
-            imageUrl: "/tournaments/winter-classic.jpg"
-          },
-          {
-            id: 4,
-            name: "Regional Championships",
-            description: "The best players from each region competing for the title",
-            location: "Chicago, IL",
-            startDate: "2023-09-15",
-            endDate: "2023-09-20",
-            status: "IN_PROGRESS",
-            maxPlayers: 56,
-            registeredPlayers: 56,
-            totalContests: 4,
-            registrationFee: 95,
-            imageUrl: "/tournaments/regional.jpg"
-          },
-          {
-            id: 5,
-            name: "City Open",
-            description: "Open tournament for all skill levels",
-            location: "Austin, TX",
-            startDate: "2023-08-05",
-            endDate: "2023-08-10",
-            status: "COMPLETED",
-            maxPlayers: 80,
-            registeredPlayers: 72,
-            totalContests: 5,
-            registrationFee: 65,
-            imageUrl: "/tournaments/city-open.jpg"
-          }
-        ];
-        
-        // Add a small delay to simulate network latency
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        setTournaments(mockData);
+        setTournaments(data.tournaments || []);
       } catch (error) {
         console.error("Error fetching tournaments:", error);
         setError(error instanceof Error ? error.message : "An unknown error occurred");
@@ -212,8 +135,8 @@ export default function TournamentsPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">
-          Pickleball Tournaments
+        <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-500">
+          MatchUp Tournaments
         </h1>
         <p className="text-muted-foreground max-w-3xl">
           Browse and register for upcoming tournaments, or participate in fantasy contests for tournaments in progress.

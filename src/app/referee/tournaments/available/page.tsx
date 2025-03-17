@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/badge";
 import {
   Calendar,
@@ -22,7 +22,7 @@ import {
   Filter,
   CalendarCheck,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/Input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import JoinTournamentButton from "@/components/tournaments/invitations/JoinTournamentButton";
@@ -34,8 +34,14 @@ interface Tournament {
   endDate: string;
   location: string;
   registeredPlayers: number;
-  status: "upcoming" | "active" | "completed";
-  registrationMode?: "OPEN" | "INVITATION" | "APPROVAL";
+  description?: string;
+  imageUrl?: string;
+  status: string;
+  registrationStatus: string;
+  refereeCount: number;
+  refereeNeeded: number;
+  playerCount: number;
+  applicationStatus: string;
 }
 
 export default function AvailableTournamentsPage() {
@@ -67,71 +73,19 @@ export default function AvailableTournamentsPage() {
       try {
         setLoading(true);
         
-        // In a real implementation, this would be an API call
-        // const response = await fetch("/api/tournaments/available");
-        // if (!response.ok) {
-        //   throw new Error("Failed to fetch tournaments");
-        // }
-        // const data = await response.json();
-        // setTournaments(data);
+        // Real API call to fetch tournaments
+        const response = await fetch("/api/referee/tournaments");
+        if (!response.ok) {
+          throw new Error("Failed to fetch tournaments");
+        }
+        const data = await response.json();
         
-        // Mock data for demonstration
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const mockTournaments: Tournament[] = [
-          {
-            id: 1,
-            name: "Summer Grand Slam",
-            startDate: "2023-07-15",
-            endDate: "2023-07-20",
-            location: "Central Sports Arena, New York",
-            registeredPlayers: 64,
-            status: "upcoming",
-            registrationMode: "OPEN",
-          },
-          {
-            id: 2,
-            name: "City Championships",
-            startDate: "2023-08-05",
-            endDate: "2023-08-10",
-            location: "City Sports Complex, Chicago",
-            registeredPlayers: 32,
-            status: "upcoming",
-            registrationMode: "APPROVAL",
-          },
-          {
-            id: 3,
-            name: "Pro Circuit Tournament",
-            startDate: "2023-06-20",
-            endDate: "2023-06-25",
-            location: "International Stadium, Los Angeles",
-            registeredPlayers: 128,
-            status: "upcoming",
-            registrationMode: "INVITATION",
-          },
-          {
-            id: 4,
-            name: "Regional Qualifiers",
-            startDate: "2023-05-10",
-            endDate: "2023-05-15",
-            location: "Regional Sports Center, Dallas",
-            registeredPlayers: 48,
-            status: "active",
-            registrationMode: "OPEN",
-          },
-          {
-            id: 5,
-            name: "Masters Invitational",
-            startDate: "2023-09-01",
-            endDate: "2023-09-10",
-            location: "Elite Club, Miami",
-            registeredPlayers: 16,
-            status: "upcoming",
-            registrationMode: "INVITATION",
-          },
-        ];
+        console.log("API Response:", data);
         
-        setTournaments(mockTournaments);
-        setFilteredTournaments(mockTournaments);
+        setTournaments(data.tournaments || []);
+        setFilteredTournaments(data.tournaments || []);
+        
+        console.log("Setting tournaments:", data.tournaments?.length || 0);
       } catch (error) {
         console.error("Error fetching tournaments:", error);
         toast({
@@ -163,19 +117,66 @@ export default function AvailableTournamentsPage() {
     
     // Filter by tab
     if (activeTab !== "all") {
-      filtered = filtered.filter(tournament => tournament.status === activeTab);
+      filtered = filtered.filter(tournament => {
+        // Map database status values to UI tab values
+        const statusMap: Record<string, string> = {
+          "DRAFT": "upcoming",
+          "REGISTRATION_OPEN": "upcoming",
+          "REGISTRATION_CLOSED": "upcoming",
+          "IN_PROGRESS": "active",
+          "COMPLETED": "completed",
+          "CANCELLED": "completed"
+        };
+        
+        const mappedStatus = statusMap[tournament.status] || "upcoming";
+        return mappedStatus === activeTab;
+      });
     }
     
     setFilteredTournaments(filtered);
   }, [tournaments, searchTerm, activeTab]);
 
   // Handle request to join a tournament
-  const handleJoinRequested = () => {
-    // In a real implementation, you would refresh the tournaments list or update UI
-    toast({
-      title: "Request Submitted",
-      description: "Your request to join the tournament has been submitted. You'll be notified when it's approved.",
-    });
+  const handleJoinRequested = async (tournamentId: number) => {
+    try {
+      const response = await fetch(`/api/referee/tournaments/${tournamentId}/join`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) throw new Error('Failed to join tournament');
+      
+      toast({
+        title: "Request Submitted",
+        description: "Your request to join the tournament has been submitted. You'll be notified when it's approved.",
+      });
+      
+      // Refresh tournaments list
+      const refreshResponse = await fetch("/api/referee/tournaments");
+      if (refreshResponse.ok) {
+        const data = await refreshResponse.json();
+        setTournaments(data.tournaments || []);
+      }
+    } catch (error) {
+      console.error("Error joining tournament:", error);
+      toast({
+        title: "Error",
+        description: "Failed to submit join request. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Also update the status display in the tournament card to show more friendly values
+  const getDisplayStatus = (status: string): string => {
+    switch(status) {
+      case "DRAFT": return "Upcoming";
+      case "REGISTRATION_OPEN": return "Registration Open";
+      case "REGISTRATION_CLOSED": return "Registration Closed";
+      case "IN_PROGRESS": return "Active";
+      case "COMPLETED": return "Completed";
+      case "CANCELLED": return "Cancelled";
+      default: return status;
+    }
   };
 
   return (
@@ -237,93 +238,130 @@ export default function AvailableTournamentsPage() {
               <p className="text-muted-foreground">Please wait while we fetch available tournaments.</p>
             </div>
           ) : filteredTournaments.length === 0 ? (
-            <div className="text-center py-12 border rounded-lg">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-                <Calendar className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="text-lg font-semibold">No tournaments found</h3>
-              <p className="text-muted-foreground mt-2 max-w-md mx-auto">
-                We couldn't find any tournaments matching your criteria. Try adjusting your search or check back later.
-              </p>
-            </div>
+            <Card className="text-center py-12">
+              <CardContent>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
+                  <Calendar className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold">No tournaments found</h3>
+                <p className="text-muted-foreground mt-2 max-w-md mx-auto">
+                  {activeTab !== "all" 
+                    ? `No ${activeTab.toLowerCase()} tournaments found. Try changing the filter or clearing your search.` 
+                    : "No tournaments found matching your criteria. Try adjusting your search or check back later."}
+                </p>
+                <div className="mt-4 p-4 bg-muted/30 rounded-md text-left">
+                  <p className="text-sm">Debug Info:</p>
+                  <p className="text-xs">Total tournaments from API: {tournaments.length}</p>
+                  <p className="text-xs">Filtered tournaments: {filteredTournaments.length}</p>
+                  <p className="text-xs">Active tab: {activeTab}</p>
+                  <p className="text-xs">Search term: {searchTerm || '(none)'}</p>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             filteredTournaments.map((tournament) => (
-              <Card key={tournament.id} className="overflow-hidden">
-                <CardHeader className="pb-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle className="text-xl">{tournament.name}</CardTitle>
-                      <CardDescription className="flex items-center mt-1">
-                        <MapPin className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                        {tournament.location}
-                      </CardDescription>
-                    </div>
-                    <Badge
-                      variant={
-                        tournament.status === "upcoming" 
-                          ? "outline" 
-                          : tournament.status === "active" 
-                          ? "default" 
-                          : "secondary"
-                      }
-                      className={
-                        tournament.status === "active" 
-                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" 
-                          : ""
-                      }
-                    >
-                      {tournament.status === "upcoming" ? "Upcoming" : tournament.status === "active" ? "Active" : "Completed"}
-                    </Badge>
+              <Card key={tournament.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                <div className="md:flex">
+                  <div className="md:w-1/3 h-48 md:h-auto relative">
+                    <div 
+                      className="h-full bg-cover bg-center" 
+                      style={{ 
+                        backgroundImage: `url(${tournament.imageUrl || "https://placehold.co/600x400?text=Tournament+Banner"})`,
+                      }}
+                    />
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-6 py-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Date</p>
-                      <div className="flex items-center">
-                        <Calendar className="h-4 w-4 mr-2 text-teal-500" />
-                        <p className="font-medium">
-                          {new Date(tournament.startDate).toLocaleDateString()} - {new Date(tournament.endDate).toLocaleDateString()}
+                  <div className="md:w-2/3 p-6">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="text-xl font-bold">{tournament.name}</h3>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          {tournament.description?.substring(0, 120)}{tournament.description && tournament.description.length > 120 ? "..." : ""}
                         </p>
                       </div>
+                      <Badge 
+                        className="capitalize"
+                        variant={
+                          tournament.status.toLowerCase() === "upcoming" ? "outline" : 
+                          tournament.status.toLowerCase() === "active" ? "default" : 
+                          "secondary"
+                        }
+                      >
+                        {getDisplayStatus(tournament.status)}
+                      </Badge>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Registered Players</p>
-                      <div className="flex items-center">
-                        <Users className="h-4 w-4 mr-2 text-blue-500" />
-                        <p className="font-medium">{tournament.registeredPlayers}</p>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 my-4">
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        <div>
+                          <p>From: {new Date(tournament.startDate).toLocaleDateString()}</p>
+                          <p>To: {new Date(tournament.endDate).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <MapPin className="h-4 w-4 mr-2" />
+                        <span>{tournament.location}</span>
+                      </div>
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Users className="h-4 w-4 mr-2" />
+                        <span>
+                          Referees: {tournament.refereeCount}/{tournament.refereeNeeded}
+                        </span>
                       </div>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Registration</p>
-                      <div className="flex items-center">
-                        <CalendarCheck className="h-4 w-4 mr-2 text-purple-500" />
-                        <p className="font-medium">
-                          {tournament.registrationMode === "OPEN" 
-                            ? "Open Registration" 
-                            : tournament.registrationMode === "INVITATION" 
-                            ? "By Invitation Only" 
-                            : "Requires Approval"}
-                        </p>
+                    
+                    <div className="flex flex-wrap items-center justify-between mt-4 pt-4 border-t">
+                      <div>
+                        <Badge 
+                          variant="outline"
+                          className={
+                            tournament.registrationStatus === "OPEN" 
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" 
+                              : "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
+                          }
+                        >
+                          Registration {tournament.registrationStatus}
+                        </Badge>
+                      </div>
+                      <div className="flex gap-2 mt-2 sm:mt-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push(`/referee/tournaments/${tournament.id}`)}
+                        >
+                          View Details
+                        </Button>
+                        
+                        {tournament.applicationStatus === "NOT_APPLIED" && tournament.registrationStatus === "OPEN" && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleJoinRequested(tournament.id)}
+                          >
+                            Apply as Referee
+                          </Button>
+                        )}
+                        
+                        {tournament.applicationStatus === "PENDING" && (
+                          <Badge variant="outline" className="ml-2 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                            Application Pending
+                          </Badge>
+                        )}
+                        
+                        {tournament.applicationStatus === "APPROVED" && (
+                          <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                            Approved Referee
+                          </Badge>
+                        )}
+                        
+                        {tournament.applicationStatus === "REJECTED" && (
+                          <Badge variant="outline" className="ml-2 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                            Application Rejected
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
-                </CardContent>
-                <CardFooter className="flex justify-between">
-                  <Button
-                    variant="outline"
-                    onClick={() => router.push(`/tournaments/${tournament.id}`)}
-                  >
-                    View Details
-                  </Button>
-                  
-                  <JoinTournamentButton
-                    tournamentId={tournament.id}
-                    tournamentName={tournament.name}
-                    registrationMode={tournament.registrationMode}
-                    onJoinRequested={handleJoinRequested}
-                  />
-                </CardFooter>
+                </div>
               </Card>
             ))
           )}

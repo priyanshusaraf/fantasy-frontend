@@ -228,49 +228,79 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
 
   // Handle adding selected referees to tournament
   const handleAddRefereesToTournament = async () => {
-    if (!tournamentId || selectedReferees.length === 0) {
+    if (selectedReferees.length === 0) {
       toast({
         title: "No referees selected",
-        description: "Please select at least one referee to add to the tournament.",
-        variant: "secondary",
+        description: "Please select at least one referee to add to the tournament",
+        variant: "destructive"
       });
       return;
     }
 
     setIsAddingReferees(true);
-    console.log(`Adding referees to tournament ${tournamentId}: `, selectedReferees);
 
     try {
-      // Group referees into regular referees and user-only referees
+      // Split selected referees into two groups:
+      // 1. Regular referees (already have referee records)
+      // 2. User-only referees (need to create referee records first)
       const regularReferees = selectedReferees.filter(r => !r.isUserOnly);
       const userOnlyReferees = selectedReferees.filter(r => r.isUserOnly);
 
       console.log(`Adding ${regularReferees.length} regular referees and ${userOnlyReferees.length} user-only referees`);
-
+      
       // Handle regular referees
       let successCount = 0;
       
       if (regularReferees.length > 0) {
-        const response = await fetch(`/api/tournaments/${tournamentId}/referees`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ refereeIds: regularReferees.map(r => r.id) }),
-        });
-
-        console.log("Add regular referees response status:", response.status);
-        
-        if (response.ok) {
-          const data = await response.json();
-          console.log("Add regular referees response data:", data);
+        try {
+          console.log("Regular referee IDs:", regularReferees.map(r => r.id));
           
-          // Count successful additions
-          successCount += data.results?.filter((r: any) => r.status === "added").length || 0;
-        } else {
-          const errorText = await response.text();
-          console.error("Failed to add regular referees:", errorText);
-          throw new Error(`Failed to add regular referees: ${errorText}`);
+          const response = await fetch(`/api/tournaments/${tournamentId}/referees`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ refereeIds: regularReferees.map(r => r.id) }),
+          });
+
+          console.log("Add regular referees response status:", response.status);
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log("Add regular referees response data:", data);
+            
+            // Count successful additions
+            successCount += data.results?.filter((r: any) => r.status === "added").length || 0;
+          } else {
+            let errorText = "";
+            try {
+              const errorData = await response.json();
+              errorText = JSON.stringify(errorData);
+              console.error("Error response data:", errorData);
+            } catch (e) {
+              try {
+                errorText = await response.text();
+              } catch (textError) {
+                errorText = `Status code: ${response.status}`;
+              }
+            }
+            
+            console.error("Failed to add regular referees:", errorText);
+            toast({
+              title: "Warning",
+              description: `Some referees couldn't be added. ${errorText}`,
+              variant: "destructive",
+            });
+            // Continue with user-only referees instead of throwing
+          }
+        } catch (error) {
+          console.error("Exception adding regular referees:", error);
+          toast({
+            title: "Error",
+            description: "Failed to add regular referees due to a network error. Try again later.",
+            variant: "destructive",
+          });
+          // Continue with user-only referees
         }
       }
 
@@ -280,76 +310,104 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         const createdRefereeIds = [];
         
         for (const userReferee of userOnlyReferees) {
-          // The ID is negative, so the actual userId is the absolute value
-          const userId = Math.abs(userReferee.userId || userReferee.id);
-          
-          // Create a referee record for this user
-          const createResponse = await fetch("/api/referees", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              name: userReferee.name,
-              email: userReferee.email || "",
-              certificationLevel: userReferee.certificationLevel || "LEVEL_1",
-            }),
-          });
-          
-          if (createResponse.ok) {
-            const newReferee = await createResponse.json();
-            createdRefereeIds.push(newReferee.id);
-            successCount++;
-          } else {
-            console.error(`Failed to create referee for user ${userId}`);
+          try {
+            // The ID is negative, so the actual userId is the absolute value
+            const userId = Math.abs(userReferee.userId || userReferee.id);
+            
+            console.log(`Creating referee record for user ${userId}: ${userReferee.name}`);
+            
+            // Create a referee record for this user
+            const createResponse = await fetch("/api/referees", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                userId: userId,
+                name: userReferee.name,
+                email: userReferee.email || "",
+                certificationLevel: userReferee.certificationLevel || "LEVEL_1",
+              }),
+            });
+            
+            if (createResponse.ok) {
+              const newReferee = await createResponse.json();
+              console.log(`Successfully created referee record ${newReferee.id} for user ${userId}`);
+              createdRefereeIds.push(newReferee.id);
+              successCount++;
+            } else {
+              let errorText = "";
+              try {
+                const errorData = await createResponse.json();
+                errorText = JSON.stringify(errorData);
+              } catch (e) {
+                try {
+                  errorText = await createResponse.text();
+                } catch (textError) {
+                  errorText = `Status code: ${createResponse.status}`;
+                }
+              }
+              
+              console.error(`Failed to create referee for user ${userId}: ${errorText}`);
+              toast({
+                title: "Warning",
+                description: `Could not create referee for ${userReferee.name}. This user may already have a referee record.`,
+                variant: "destructive",
+              });
+            }
+          } catch (userError) {
+            console.error(`Exception creating referee for ${userReferee.name}:`, userError);
           }
         }
         
         // Now add these newly created referees to the tournament
         if (createdRefereeIds.length > 0) {
-          const addResponse = await fetch(`/api/tournaments/${tournamentId}/referees`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              refereeIds: createdRefereeIds,
-            }),
-          });
-          
-          if (!addResponse.ok) {
-            const errorText = await addResponse.text();
-            console.error("Error adding created referees:", errorText);
+          try {
+            console.log(`Adding ${createdRefereeIds.length} newly created referees to tournament`);
+            
+            const addResponse = await fetch(`/api/tournaments/${tournamentId}/referees`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ refereeIds: createdRefereeIds }),
+            });
+            
+            if (addResponse.ok) {
+              const addData = await addResponse.json();
+              console.log("Add new referees response data:", addData);
+              successCount += addData.results?.filter((r: any) => r.status === "added").length || 0;
+            } else {
+              const errorText = await addResponse.text();
+              console.error("Failed to add newly created referees to tournament:", errorText);
+            }
+          } catch (error) {
+            console.error("Exception adding newly created referees:", error);
           }
         }
       }
 
-      if (successCount > 0) {
-        toast({
-          title: "Referees added",
-          description: `Successfully added ${successCount} referee(s) to the tournament.`,
-          variant: "success",
-        });
-        
-        // Clear selection and close dialog
-        setSelectedReferees([]);
-        setIsAddRefereeDialogOpen(false);
-        
-        // Refresh tournament referees
-        fetchTournamentReferees();
-      } else {
-        toast({
-          title: "No referees added",
-          description: "No referees were added. They may already be assigned to this tournament.",
-          variant: "secondary",
-        });
-      }
+      // Refresh the list of tournament referees
+      await fetchTournamentReferees();
+      
+      // Clear selection
+      setSelectedReferees([]);
+      
+      // Show success message
+      toast({
+        title: `${successCount} Referee${successCount !== 1 ? 's' : ''} Added`,
+        description: `Successfully added ${successCount} referee${successCount !== 1 ? 's' : ''} to the tournament.`,
+        variant: successCount > 0 ? "default" : "destructive"
+      });
+      
+      // Close the dialog
+      setIsAddRefereeDialogOpen(false);
     } catch (error) {
-      console.error("Error adding referees:", error);
+      console.error("Error adding referees to tournament:", error);
       toast({
         title: "Error",
-        description: "Failed to add referees. Please try again.",
-        variant: "destructive",
+        description: "Failed to add referees to tournament. Please try again.",
+        variant: "destructive"
       });
     } finally {
       setIsAddingReferees(false);

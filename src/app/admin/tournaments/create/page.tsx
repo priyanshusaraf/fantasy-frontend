@@ -16,15 +16,39 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import TournamentRegistration from "@/components/admin/TournamentRegistration";
+import { Team } from "@/components/admin/TeamManagement";
+import { Player } from "@/components/admin/PlayerManagement";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// Add proper TypeScript interfaces
+interface BasicPlayer {
+  id?: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  skillLevel?: string;
+  country?: string;
+  teamId?: string;
+}
+
+interface BasicTeam {
+  id?: string;
+  name: string;
+  players: BasicPlayer[];
+}
 
 // Direct tournament creation function
 // This is a fallback in case the API approach doesn't work
 async function createTournamentDirectly(tournamentData: any, userEmail: string) {
-  console.log("Attempting direct tournament creation via prisma...");
+  console.log("DIRECT CREATION FUNCTION CALLED at", new Date().toISOString());
+  console.log("Tournament data:", JSON.stringify(tournamentData));
+  console.log("User email:", userEmail);
   
   try {
     // This is a client-side function to directly create a tournament
     // It will bypass the API authentication by using a special endpoint
+    console.log("Sending fetch request to /api/admin/direct-tournament-create");
     const response = await fetch("/api/admin/direct-tournament-create", {
       method: "POST",
       headers: {
@@ -35,14 +59,31 @@ async function createTournamentDirectly(tournamentData: any, userEmail: string) 
         userEmail,
         // Include a special key for security
         secretKey: "tournament-direct-creation"
-      })
+      }),
+      cache: "no-store"
     });
     
+    console.log("Fetch response status:", response.status);
+    
     if (!response.ok) {
-      throw new Error(`Direct creation failed: ${response.status}`);
+      try {
+        const errorText = await response.text();
+        console.error(`Direct creation failed: ${response.status}`, errorText);
+        throw new Error(`Direct creation failed: ${response.status} - ${errorText}`);
+      } catch (parseError) {
+        console.error("Error parsing error response:", parseError);
+        throw new Error(`Direct creation failed with status: ${response.status}`);
+      }
     }
     
-    return await response.json();
+    try {
+      const result = await response.json();
+      console.log("Direct creation response data:", result);
+      return result;
+    } catch (jsonError) {
+      console.error("Error parsing JSON response:", jsonError);
+      throw new Error("Failed to parse response from server");
+    }
   } catch (error) {
     console.error("Error in direct tournament creation:", error);
     throw error;
@@ -122,6 +163,34 @@ function GoogleAuthButton({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+// Update the functions with proper types
+function removeDuplicatePlayers(players: BasicPlayer[]): BasicPlayer[] {
+  const uniquePlayers: Record<string, boolean> = {};
+  const result: BasicPlayer[] = [];
+  
+  // Use a map to track unique players by ID or name
+  for (const player of players) {
+    const key = player.id ? `id-${player.id}` : `name-${player.name}`;
+    
+    if (!uniquePlayers[key]) {
+      uniquePlayers[key] = true;
+      result.push(player);
+    }
+  }
+  
+  return result;
+}
+
+function removeDuplicatePlayersInTeams(teams: BasicTeam[]): BasicTeam[] {
+  return teams.map(team => {
+    // Remove duplicate players in each team
+    return {
+      ...team,
+      players: removeDuplicatePlayers(team.players || [])
+    };
+  });
+}
+
 export default function CreateTournamentPage() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
@@ -137,9 +206,20 @@ export default function CreateTournamentPage() {
   const [registrationFee, setRegistrationFee] = useState("");
   const [tournamentType, setTournamentType] = useState("");
   const [formatType, setFormatType] = useState("");
+  const [isTeamBased, setIsTeamBased] = useState(false);
   const [enableLiveScoring, setEnableLiveScoring] = useState(false);
   const [enableFantasy, setEnableFantasy] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState("details");
+  
+  // Registration data
+  const [registrationData, setRegistrationData] = useState<{
+    teams: Team[];
+    players: Player[];
+  }>({
+    teams: [],
+    players: []
+  });
   
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -236,6 +316,7 @@ export default function CreateTournamentPage() {
     );
   }
 
+  // Update handleSubmit to include team and player data
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Form submit initiated");
@@ -266,9 +347,20 @@ export default function CreateTournamentPage() {
       return;
     }
     
+    // For team-based tournaments, validate that there are teams
+    if (isTeamBased && registrationData.teams.length === 0) {
+      toast({
+        title: "Missing teams",
+        description: "Please add at least one team to your team-based tournament",
+        variant: "destructive",
+      });
+      setIsSubmitting(false);
+      return;
+    }
+    
     console.log("Form validation passed, preparing tournament data");
 
-    // Prepare registration dates - default to 7 days before tournament start and 1 day before for close
+    // Prepare registration dates
     const registrationOpenDate = new Date(startDate);
     registrationOpenDate.setDate(registrationOpenDate.getDate() - 7);
     
@@ -287,297 +379,50 @@ export default function CreateTournamentPage() {
       maxParticipants: maxPlayers ? parseInt(maxPlayers) : 32,
       entryFee: registrationFee ? parseFloat(registrationFee) : 0,
       type: tournamentType,
-      status: "REGISTRATION_OPEN",
-      formatDetails: {
-        formatType,
-        liveScoring: enableLiveScoring
+      isTeamBased,
+      settings: {
+        enableLiveScoring,
+        enableFantasy,
+        formatType: formatType  // Store format as a custom setting
       },
-      fantasy: {
-        enableFantasy: enableFantasy,
-        fantasyPoints: "STANDARD",
-        autoPublish: true,
-        contests: enableFantasy ? [
-          {
-            name: "Standard Contest",
-            entryFee: 0,
-            maxEntries: 100,
-            totalPrize: 0,
-            prizeBreakdown: [
-              { position: 1, percentage: 50 },
-              { position: 2, percentage: 30 },
-              { position: 3, percentage: 20 }
-            ],
-            rules: {
-              captainMultiplier: 2,
-              viceCaptainMultiplier: 1.5,
-              teamSize: 5
-            }
-          }
-        ] : []
-      }
+      players: isTeamBased ? [] : registrationData.players,
+      teams: isTeamBased ? registrationData.teams : []
     };
 
     try {
-      // First, we need to get a JWT token for API access
-      console.log("Getting JWT token for API access...");
+      setIsSubmitting(true);
       
-      // Get the user email from the session
-      const userEmail = session?.user?.email;
-      
-      if (!userEmail) {
-        console.error("No user email found in session");
-        toast({
-          title: "Authentication Error",
-          description: "Could not get user email from session",
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
+      if (!session?.user?.email) {
+        throw new Error("User email not found in session");
       }
       
-      // Request a JWT token from our backend
-      const tokenResponse = await fetch("/api/auth/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ 
-          email: userEmail,
-          provider: "google" 
-        }),
-        credentials: "include"
-      });
+      const userEmail = session.user.email;
       
-      if (!tokenResponse.ok) {
-        console.error("Failed to get API token:", tokenResponse.status);
-        toast({
-          title: "Authentication Error",
-          description: "Could not get API token. Please try logging in again.",
-          variant: "destructive",
-        });
-        setShowLoginForm(true);
-        setIsSubmitting(false);
-        return;
-      }
+      // Clean up data - remove duplicates
+      const teamsWithoutDuplicates = removeDuplicatePlayersInTeams(tournamentData.teams);
+      const playersWithoutDuplicates = removeDuplicatePlayers(tournamentData.players);
+      const cleanedTournamentData = {
+        ...tournamentData,
+        teams: teamsWithoutDuplicates,
+        players: playersWithoutDuplicates
+      };
       
-      const tokenData = await tokenResponse.json();
-      const apiToken = tokenData.token;
-      
-      if (!apiToken) {
-        console.error("No token returned from API");
-        toast({
-          title: "Authentication Error",
-          description: "Could not get API token. Please try logging in again.",
-          variant: "destructive",
-        });
-        setShowLoginForm(true);
-        setIsSubmitting(false);
-        return;
-      }
-      
-      console.log("Successfully got JWT token for API access");
-      
-      // Now use the token to create the tournament
-      console.log("Sending API request to create tournament...");
-      console.log("Using token:", apiToken.substring(0, 20) + "...");
-      
-      const response = await fetch("/api/tournaments", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiToken}`
-        },
-        body: JSON.stringify(tournamentData)
-      });
-      
-      console.log("API response status:", response.status);
-      console.log("API response headers:", Object.fromEntries([...response.headers.entries()]));
-      
-      // Check if the response was redirected (usually to login)
-      if (response.redirected) {
-        console.error("Request was redirected to:", response.url);
-        
-        // Try one more time with a different request format
-        console.log("Trying with a different request format...");
-        
-        const directResponse = await fetch("/api/tournaments", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiToken}`,
-            "X-Requested-With": "XMLHttpRequest" // Prevent redirection
-          },
-          body: JSON.stringify({
-            ...tournamentData,
-            // Add any additional fields that might be required
-            createdBy: session?.user?.email,
-            adminToken: apiToken
-          }),
-          redirect: "manual" // Prevent automatic redirects
-        });
-        
-        console.log("Direct API response status:", directResponse.status);
-        
-        if (directResponse.ok) {
-          // This worked! Process the response
-          const directResult = await directResponse.json();
-          console.log("Tournament created with direct approach:", directResult);
-          
-          toast({
-            title: "Tournament created",
-            description: `${name} has been created successfully.`,
-          });
-          
-          // Redirect to tournament management
-          const tournamentId = directResult.id || directResult.tournamentId || directResult._id;
-          if (tournamentId) {
-            router.push(`/admin/tournaments/${tournamentId}`);
-            return;
-          }
-        }
-        
-        // If we get here, the direct approach failed too
-        // Show login form instead of redirecting
-        setShowLoginForm(true);
-        toast({
-          title: "Authentication Failed",
-          description: "Your Google authentication has expired. Please log in again.",
-          variant: "destructive", 
-        });
-        setIsSubmitting(false);
-        return;
-      }
-      
-      // Handle response status
-      if (response.status === 401 || response.status === 403) {
-        console.error("Authentication error:", response.status);
-        
-        // Try alternative approach for Next.js
-        console.log("Trying alternative API approach for Next.js...");
-        
-        try {
-          // Try a different API endpoint format for Next.js
-          const nextApiUrl = "/api/v1/tournaments";
-          console.log("Trying alternative endpoint:", nextApiUrl);
-          
-          const nextResponse = await fetch(nextApiUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(tournamentData),
-            credentials: "include" // This is important for Next.js session cookies
-          });
-          
-          if (nextResponse.ok) {
-            console.log("Alternative API call succeeded!");
-            const nextResult = await nextResponse.json();
-            console.log("Tournament creation result:", nextResult);
-            
-            toast({
-              title: "Tournament created",
-              description: `${name} has been created successfully.`,
-            });
-            
-            // Get the id from the result, with fallbacks
-            const tournamentId = nextResult.id || nextResult.tournamentId || nextResult._id;
-            
-            if (!tournamentId) {
-              console.error("No tournament ID found in response");
-              router.push(`/admin/tournaments`);
-              return;
-            }
-            
-            // Redirect to tournament management
-            console.log("Redirecting to:", `/admin/tournaments/${tournamentId}`);
-            router.push(`/admin/tournaments/${tournamentId}`);
-            return;
-          } else {
-            console.error("Alternative API call failed:", nextResponse.status);
-          }
-        } catch (altError) {
-          console.error("Error in alternative API call:", altError);
-        }
-        
-        // If we get here, both approaches failed
-        // Try direct database approach as a last resort
-        try {
-          console.log("API approaches failed, trying direct database creation...");
-          
-          const directResult = await createTournamentDirectly(
-            tournamentData, 
-            userEmail
-          );
-          
-          console.log("Tournament created with direct approach:", directResult);
-          
-          toast({
-            title: "Tournament Created",
-            description: `${name} has been created successfully.`,
-          });
-          
-          // Redirect to tournament management
-          if (directResult.id) {
-            router.push(`/admin/tournaments/${directResult.id}`);
-            return;
-          }
-        } catch (directError) {
-          console.error("Direct creation failed:", directError);
-        }
-        
-        // If ALL approaches have failed, show login form
-        setShowLoginForm(true);
-        toast({
-          title: "Authentication Error",
-          description: "Your session may have expired. Please log in again to create a tournament.",
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-      
-      if (!response.ok) {
-        // Try to parse the error response
-        let errorMessage = "Failed to create tournament";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
-        } catch (parseError) {
-          console.error("Error parsing error response:", parseError);
-        }
-        throw new Error(errorMessage);
-      }
-      
-      // If we got here, the request was successful
-      console.log("Tournament created successfully");
-      const result = await response.json();
-      console.log("Tournament creation result:", result);
+      // Create the tournament
+      const result = await createTournamentDirectly(cleanedTournamentData, userEmail);
       
       toast({
-        title: "Tournament created",
+        title: "Tournament Created",
         description: `${name} has been created successfully.`,
       });
       
-      // Get the id from the result, with fallbacks
-      const tournamentId = result.id || result.tournamentId || result._id;
-      
-      if (!tournamentId) {
-        console.error("No tournament ID found in response:", result);
-        toast({
-          title: "Warning",
-          description: "Tournament created but couldn't get ID for redirection",
-          variant: "destructive",
-        });
-        // Go to tournaments list instead
-        router.push(`/admin/tournaments`);
-        return;
-      }
-      
       // Redirect to tournament management
-      console.log("Redirecting to:", `/admin/tournaments/${tournamentId}`);
-      router.push(`/admin/tournaments/${tournamentId}`);
+      if (result.id) {
+        router.push(`/admin/tournaments/${result.id}`);
+      } else {
+        router.push('/admin/tournaments');
+      }
     } catch (error) {
-      console.error("Error creating tournament:", error);
+      console.error("Tournament creation failed:", error);
       toast({
         title: "Error",
         description: "Failed to create tournament. Please try again.",
@@ -588,173 +433,17 @@ export default function CreateTournamentPage() {
     }
   };
 
-  return (
-    <div className="container mx-auto py-8 px-4 max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <Button 
-            variant="ghost" 
-            className="mr-4"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          <h1 className="text-3xl font-bold">Create Tournament</h1>
-        </div>
-      </div>
-      
-      <form onSubmit={handleSubmit}>
-        {/* Authentication Status Indicator */}
-        <div className="mb-6">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>Authentication Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center mb-2">
-                <div className={`w-3 h-3 rounded-full mr-2 ${status === "authenticated" ? "bg-green-500" : "bg-red-500"}`}></div>
-                <span className="font-medium">
-                  {status === "authenticated" ? "Authenticated with Google" : "Not Authenticated"}
-                </span>
-              </div>
-              
-              {status === "authenticated" && (
-                <div className="text-sm mt-2">
-                  <p>Logged in as: {session?.user?.name || 'Unknown'}</p>
-                  <p>Email: {session?.user?.email || 'No email'}</p>
-                  
-                  <div className="flex space-x-2 mt-2">
-                    <Button 
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        updateSession();
-                        toast({
-                          title: "Session refreshed",
-                          description: "Your authentication session has been refreshed"
-                        });
-                      }}
-                    >
-                      Refresh Session
-                    </Button>
-                    
-                    <Button 
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        if (!startDate || !endDate || !name || !location || !description || !tournamentType || !formatType) {
-                          toast({
-                            title: "Missing information",
-                            description: "Please fill all the required fields",
-                            variant: "destructive",
-                          });
-                          return;
-                        }
-                        
-                        try {
-                          setIsSubmitting(true);
-                          
-                          // Prepare registration dates
-                          const registrationOpenDate = new Date(startDate);
-                          registrationOpenDate.setDate(registrationOpenDate.getDate() - 7);
-                          
-                          const registrationCloseDate = new Date(startDate);
-                          registrationCloseDate.setDate(registrationCloseDate.getDate() - 1);
-                          
-                          // Create tournament data object
-                          const tournamentData = {
-                            name,
-                            location,
-                            description,
-                            startDate,
-                            endDate,
-                            registrationOpenDate,
-                            registrationCloseDate,
-                            maxParticipants: maxPlayers ? parseInt(maxPlayers) : 32,
-                            entryFee: registrationFee ? parseFloat(registrationFee) : 0,
-                            type: tournamentType,
-                            status: "DRAFT",
-                            formatDetails: {
-                              formatType,
-                              liveScoring: enableLiveScoring
-                            }
-                          };
-                          
-                          // Use direct creation endpoint
-                          try {
-                            // Validate required fields
-                            if (!name || !location || !description || !startDate || !endDate || !tournamentType) {
-                              toast({
-                                title: "Incomplete Form",
-                                description: "Please fill in all required fields.",
-                                variant: "destructive"
-                              });
-                              return;
-                            }
-                            
-                            const result = await createTournamentDirectly(
-                              tournamentData,
-                              session?.user?.email || ""
-                            );
-                            
-                            toast({
-                              title: "Tournament Created",
-                              description: `${name} has been created successfully using direct method.`,
-                            });
-                            
-                            // Navigate to the tournament page
-                            router.push(`/admin/tournaments/${result.id}`);
-                          } catch (error) {
-                            console.error("Error creating tournament:", error);
-                            toast({
-                              title: "Error",
-                              description: "Failed to create tournament. Please try again.",
-                              variant: "destructive"
-                            });
-                          }
-                        } catch (error) {
-                          console.error("Error creating tournament:", error);
-                          toast({
-                            title: "Error",
-                            description: "Failed to create tournament. Please try again.",
-                            variant: "destructive"
-                          });
-                        } finally {
-                          setIsSubmitting(false);
-                        }
-                      }}
-                    >
-                      Create Directly (Bypass API)
-                    </Button>
-                  </div>
-                </div>
-              )}
-              
-              {status !== "authenticated" && (
-                <Button 
-                  type="button"
-                  className="mt-2 gap-2"
-                  onClick={() => signIn("google", { callbackUrl: window.location.href })}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 0 24 24" width="16">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                  </svg>
-                  Sign in with Google
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+  // Handler for registration data changes
+  const handleRegistrationDataChange = (data: { teams: Team[]; players: Player[] }) => {
+    setRegistrationData(data);
+  };
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Main Information Card */}
-          <div className="md:col-span-2 space-y-6">
+  // Render different content based on the active tab
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case "details":
+        return (
+          <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Tournament Information</CardTitle>
@@ -808,11 +497,16 @@ export default function CreateTournamentPage() {
                           {startDate ? format(startDate, "PPP") : "Select date"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
+                      <PopoverContent className="w-auto p-0 z-[100]">
                         <Calendar
                           mode="single"
                           selected={startDate}
-                          onSelect={setStartDate}
+                          onSelect={(date) => {
+                            setStartDate(date);
+                            // Force close the popover after selection
+                            const popoverTrigger = document.activeElement as HTMLElement;
+                            if (popoverTrigger) popoverTrigger.blur();
+                          }}
                           initialFocus
                         />
                       </PopoverContent>
@@ -834,49 +528,56 @@ export default function CreateTournamentPage() {
                           {endDate ? format(endDate, "PPP") : "Select date"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
+                      <PopoverContent className="w-auto p-0 z-[100]">
                         <Calendar
                           mode="single"
                           selected={endDate}
-                          onSelect={setEndDate}
+                          onSelect={(date) => {
+                            setEndDate(date);
+                            // Force close the popover after selection
+                            const popoverTrigger = document.activeElement as HTMLElement;
+                            if (popoverTrigger) popoverTrigger.blur();
+                          }}
                           initialFocus
                         />
                       </PopoverContent>
                     </Popover>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Tournament Format</CardTitle>
-                <CardDescription>Specify how the tournament will be structured</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                {/* Tournament type section */}
+                <div className="grid md:grid-cols-2 gap-6 mb-6">
+                  <div>
                     <Label htmlFor="tournamentType">Tournament Type *</Label>
-                    <Select value={tournamentType} onValueChange={setTournamentType}>
+                    <Select
+                      value={tournamentType}
+                      onValueChange={setTournamentType}
+                    >
                       <SelectTrigger id="tournamentType">
-                        <SelectValue placeholder="Select type" />
+                        <SelectValue placeholder="Select tournament type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="SINGLES">Singles</SelectItem>
                         <SelectItem value="DOUBLES">Doubles</SelectItem>
-                        <SelectItem value="MIXED_DOUBLES">Mixed Doubles</SelectItem>
+                        <SelectItem value="MIXED">Mixed Doubles</SelectItem>
                         <SelectItem value="ROUND_ROBIN">Round Robin</SelectItem>
                         <SelectItem value="KNOCKOUT">Knockout</SelectItem>
                         <SelectItem value="LEAGUE">League</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Select the type of tournament you want to organize
+                    </p>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="formatType">Format *</Label>
-                    <Select value={formatType} onValueChange={setFormatType}>
+                  
+                  <div>
+                    <Label htmlFor="formatType">Format Type *</Label>
+                    <Select
+                      value={formatType}
+                      onValueChange={setFormatType}
+                    >
                       <SelectTrigger id="formatType">
-                        <SelectValue placeholder="Select format" />
+                        <SelectValue placeholder="Select format type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ROUND_ROBIN">Round Robin</SelectItem>
@@ -885,14 +586,82 @@ export default function CreateTournamentPage() {
                         <SelectItem value="GROUP_STAGE">Group Stage + Knockout</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Choose how matches will be structured
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tournament organization section */}
+                <div className="space-y-4 mb-6 border rounded-lg p-4 bg-muted/10">
+                  <h3 className="text-lg font-medium">Tournament Organization</h3>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="isTeamBased" className="font-medium">Team-Based Tournament</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Enable if players will participate as teams rather than individually
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={isTeamBased}
+                          onChange={() => setIsTeamBased(!isTeamBased)}
+                          id="isTeamBased"
+                        />
+                        <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="enableLiveScoring" className="font-medium">Live Scoring</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Enable real-time score updates during matches
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={enableLiveScoring}
+                          onChange={() => setEnableLiveScoring(!enableLiveScoring)}
+                          id="enableLiveScoring"
+                        />
+                        <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="enableFantasy" className="font-medium">Enable Fantasy Games</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Allow players to create fantasy teams for this tournament
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={enableFantasy}
+                          onChange={() => setEnableFantasy(!enableFantasy)}
+                          id="enableFantasy"
+                        />
+                        <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                      </label>
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          </div>
 
-          {/* Side Information Card */}
-          <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Player Settings</CardTitle>
@@ -922,154 +691,104 @@ export default function CreateTournamentPage() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+        );
+      case "registration":
+        return (
+          <TournamentRegistration 
+            isTeamBased={isTeamBased} 
+            onRegistrationDataChange={handleRegistrationDataChange} 
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Tournament Options</CardTitle>
-                <CardDescription>Additional configuration options</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium">Enable Live Scoring</h3>
-                    <p className="text-sm text-muted-foreground">Allow referees to score matches in real-time</p>
-                  </div>
-                  <div>
-                    <input 
-                      type="checkbox" 
-                      id="enableLiveScoring" 
-                      className="h-5 w-5 rounded text-primary border-gray-300"
-                      checked={enableLiveScoring}
-                      onChange={(e) => setEnableLiveScoring(e.target.checked)}
-                    />
-                  </div>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium">Enable Fantasy Games</h3>
-                    <p className="text-sm text-muted-foreground">Allow players to create fantasy teams for this tournament</p>
-                  </div>
-                  <div>
-                    <input 
-                      type="checkbox" 
-                      id="enableFantasy" 
-                      className="h-5 w-5 rounded text-primary border-gray-300"
-                      checked={enableFantasy}
-                      onChange={(e) => setEnableFantasy(e.target.checked)}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+  return (
+    <div className="container mx-auto py-8 px-4 max-w-5xl relative isolate">
+      {/* isolate creates a new stacking context to prevent z-index issues */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center">
+          <Button 
+            variant="ghost" 
+            className="mr-4"
+            onClick={() => router.back()}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <h1 className="text-3xl font-bold">Create Tournament</h1>
+        </div>
+      </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Tips</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-start space-x-2 text-sm text-muted-foreground mb-2">
-                  <Info className="h-4 w-4 mt-0.5 text-blue-500" />
-                  <p>Create a tournament first, then you can add brackets, matches, and fantasy contests.</p>
-                </div>
-                <div className="flex items-start space-x-2 text-sm text-muted-foreground">
-                  <Info className="h-4 w-4 mt-0.5 text-blue-500" />
-                  <p>Required fields are marked with an asterisk (*).</p>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Authentication Status Indicator */}
+      {justAuthenticated && (
+        <Alert className="mb-6 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+          <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+          <AlertTitle className="text-green-800 dark:text-green-400">Authentication Successful</AlertTitle>
+          <AlertDescription className="text-green-700 dark:text-green-500">
+            You are now logged in and can create a tournament.
+          </AlertDescription>
+        </Alert>
+      )}
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Creating Tournament..." : "Create Tournament"}
-            </Button>
-            
-            {/* Direct creation fallback button */}
-            <Button 
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="details">Tournament Details</TabsTrigger>
+            <TabsTrigger 
+              value="registration"
+              disabled={!name || !tournamentType} // Disable until basic details are filled
+            >
+              {isTeamBased ? "Teams & Players" : "Players"}
+            </TabsTrigger>
+          </TabsList>
+          
+          <div className="mt-6">
+            {renderTabContent()}
+          </div>
+        </Tabs>
+
+        <div className="flex justify-between mt-8 pt-4 border-t">
+          {activeTab === "details" ? (
+            <div></div>
+          ) : (
+            <Button
               type="button"
-              variant="outline" 
-              className="w-full mt-2"
-              disabled={isSubmitting}
-              onClick={async () => {
-                if (!startDate || !endDate || !name || !location || !description || !tournamentType || !formatType) {
+              variant="outline"
+              onClick={() => setActiveTab("details")}
+            >
+              Back to Details
+            </Button>
+          )}
+          
+          {activeTab === "details" ? (
+            <Button
+              type="button"
+              onClick={() => {
+                if (name && tournamentType) {
+                  setActiveTab("registration");
+                } else {
                   toast({
-                    title: "Missing information",
-                    description: "Please fill all the required fields",
+                    title: "Required fields missing",
+                    description: "Please fill out the tournament name and type before proceeding to registration",
                     variant: "destructive",
                   });
-                  return;
-                }
-                
-                setIsSubmitting(true);
-                toast({
-                  title: "Creating Tournament",
-                  description: "Using direct database access method..."
-                });
-                
-                // Validate required fields
-                if (!name || !location || !description || !startDate || !endDate || !tournamentType) {
-                  setIsSubmitting(false);
-                  toast({
-                    title: "Incomplete Form",
-                    description: "Please fill in all required fields.",
-                    variant: "destructive"
-                  });
-                  return;
-                }
-                
-                // Prepare registration dates
-                const registrationOpenDate = new Date(startDate);
-                registrationOpenDate.setDate(registrationOpenDate.getDate() - 7);
-                
-                const registrationCloseDate = new Date(startDate);
-                registrationCloseDate.setDate(registrationCloseDate.getDate() - 1);
-                
-                // Create tournament data object
-                const tournamentData = {
-                  name,
-                  location,
-                  description,
-                  startDate,
-                  endDate,
-                  registrationOpenDate,
-                  registrationCloseDate,
-                  maxParticipants: maxPlayers ? parseInt(maxPlayers) : 32,
-                  entryFee: registrationFee ? parseFloat(registrationFee) : 0,
-                  type: tournamentType,
-                  formatDetails: {
-                    formatType,
-                    liveScoring: enableLiveScoring
-                  }
-                };
-                
-                try {
-                  // Use direct creation endpoint  
-                  const result = await createTournamentDirectly(
-                    tournamentData,
-                    session?.user?.email || ""
-                  );
-                  
-                  toast({
-                    title: "Tournament Created",
-                    description: `${name} has been created successfully.`,
-                  });
-                  
-                  // Navigate to the tournament page
-                  router.push(`/admin/tournaments/${result.id}`);
-                } catch (error) {
-                  console.error("Error creating tournament:", error);
-                  toast({
-                    title: "Error",
-                    description: "Failed to create tournament. Please try again.",
-                    variant: "destructive"
-                  });
-                } finally {
-                  setIsSubmitting(false);
                 }
               }}
             >
-              Create Directly (Bypass API)
+              Continue to {isTeamBased ? "Teams & Players" : "Players"}
             </Button>
-          </div>
+          ) : (
+            <Button 
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-primary text-primary-foreground"
+            >
+              {isSubmitting ? "Creating Tournament..." : "Create Tournament"}
+            </Button>
+          )}
         </div>
       </form>
     </div>

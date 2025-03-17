@@ -79,11 +79,11 @@ export function MainLayout({ children }: MainLayoutProps) {
       <header className="sticky top-0 z-50 w-full border-b backdrop-blur-md bg-background/80 dark:bg-background/70 border-border">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-600 flex items-center justify-center">
               <Trophy className="h-5 w-5 text-white" />
             </div>
-            <span className="font-bold text-lg hidden md:block bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">
-              PickleBall Fantasy
+            <span className="font-bold text-lg hidden md:block bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-600">
+              MatchUp
             </span>
           </Link>
 
@@ -237,7 +237,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <div className="flex flex-col items-center justify-between space-y-4 md:flex-row md:space-y-0">
             <div className="text-center md:text-left">
               <p className="text-sm text-muted-foreground">
-                &copy; {new Date().getFullYear()} PickleBall Fantasy. All rights
+                &copy; {new Date().getFullYear()} MatchUp. All rights
                 reserved.
               </p>
             </div>

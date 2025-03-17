@@ -47,7 +47,7 @@
 :root {
   --radius: 0.625rem;
   
-  /* Light mode beautiful color scheme */
+  /* Light mode MatchUp color scheme */
   --background: oklch(0.995 0 0);
   --foreground: oklch(0.145 0 0);
   
@@ -57,89 +57,91 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
   
-  --primary: oklch(0.5 0.2 270); /* Rich indigo */
+  /* MatchUp teal-blue colors */
+  --primary: oklch(0.65 0.18 200); /* Blue */
   --primary-foreground: oklch(0.985 0 0);
   
   --secondary: oklch(0.98 0 0);
-  --secondary-foreground: oklch(0.211 0.178 270);
+  --secondary-foreground: oklch(0.211 0.18 200);
   
   --muted: oklch(0.95 0 0);
   --muted-foreground: oklch(0.556 0 0);
   
-  --accent: oklch(0.96 0.035 270);
-  --accent-foreground: oklch(0.256 0.192 270);
+  --accent: oklch(0.7 0.16 170); /* Teal */
+  --accent-foreground: oklch(0.256 0.17 170);
   
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   
   --border: oklch(0.92 0 0);
   --input: oklch(0.92 0 0);
-  --ring: oklch(0.6 0.15 270);
+  --ring: oklch(0.6 0.16 190);
   
-  /* Chart colors - vibrant and accessible */
-  --chart-1: oklch(0.656 0.222 270); /* Purple */
-  --chart-2: oklch(0.6 0.16 222);    /* Blue */
-  --chart-3: oklch(0.7 0.15 170);    /* Teal */
-  --chart-4: oklch(0.68 0.2 90);     /* Green */
-  --chart-5: oklch(0.789 0.21 70);   /* Yellow-Green */
+  /* Chart colors - teal-blue palette */
+  --chart-1: oklch(0.65 0.18 200); /* Blue */
+  --chart-2: oklch(0.7 0.16 170);  /* Teal */
+  --chart-3: oklch(0.6 0.15 190);  /* Blue-Teal */
+  --chart-4: oklch(0.75 0.14 180); /* Light Teal */
+  --chart-5: oklch(0.55 0.19 210); /* Dark Blue */
   
   /* Sidebar styles */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.5 0.2 270);
+  --sidebar-primary: oklch(0.65 0.18 200);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.96 0.035 270);
-  --sidebar-accent-foreground: oklch(0.256 0.192 270);
+  --sidebar-accent: oklch(0.7 0.16 170);
+  --sidebar-accent-foreground: oklch(0.256 0.17 170);
   --sidebar-border: oklch(0.92 0 0);
-  --sidebar-ring: oklch(0.6 0.15 270);
+  --sidebar-ring: oklch(0.6 0.16 190);
 }
 
 .dark {
-  /* Dark mode beautiful color scheme */
-  --background: oklch(0.12 0.02 250); /* Deep blue-black */
+  /* Dark mode MatchUp color scheme */
+  --background: oklch(0.12 0.02 200); /* Deep blue-black */
   --foreground: oklch(0.985 0 0);
   
-  --card: oklch(0.15 0.02 250);
+  --card: oklch(0.15 0.02 200);
   --card-foreground: oklch(0.985 0 0);
   
-  --popover: oklch(0.15 0.02 250);
+  --popover: oklch(0.15 0.02 200);
   --popover-foreground: oklch(0.985 0 0);
   
-  --primary: oklch(0.65 0.24 270); /* Glowing purple */
+  /* MatchUp teal-blue dark mode */
+  --primary: oklch(0.65 0.22 200); /* Glowing blue */
   --primary-foreground: oklch(0.105 0 0);
   
-  --secondary: oklch(0.22 0.02 250);
+  --secondary: oklch(0.22 0.02 200);
   --secondary-foreground: oklch(0.985 0 0);
   
-  --muted: oklch(0.22 0.02 250);
+  --muted: oklch(0.22 0.02 200);
   --muted-foreground: oklch(0.708 0 0);
   
-  --accent: oklch(0.25 0.05 270);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.7 0.20 170); /* Glowing teal */
+  --accent-foreground: oklch(0.105 0 0);
   
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.1 0 0);
   
   --border: oklch(1 0 0 / 15%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.6 0.24 270);
+  --ring: oklch(0.6 0.18 190);
   
   /* Chart colors - vibrant against dark */
-  --chart-1: oklch(0.62 0.26 270);   /* Bright purple */
-  --chart-2: oklch(0.65 0.22 222);   /* Bright blue */
-  --chart-3: oklch(0.69 0.18 170);   /* Bright teal */
-  --chart-4: oklch(0.71 0.2 90);     /* Bright green */
-  --chart-5: oklch(0.74 0.18 40);    /* Bright gold */
+  --chart-1: oklch(0.7 0.22 200);   /* Bright blue */
+  --chart-2: oklch(0.75 0.20 170);  /* Bright teal */
+  --chart-3: oklch(0.65 0.18 190);  /* Bright blue-teal */
+  --chart-4: oklch(0.8 0.16 180);   /* Light teal */
+  --chart-5: oklch(0.6 0.24 210);   /* Vivid deep blue */
   
   /* Sidebar styles */
-  --sidebar: oklch(0.15 0.02 250);
+  --sidebar: oklch(0.15 0.02 200);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.65 0.24 270);
+  --sidebar-primary: oklch(0.65 0.22 200);
   --sidebar-primary-foreground: oklch(0.105 0 0);
-  --sidebar-accent: oklch(0.25 0.05 270);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.7 0.20 170);
+  --sidebar-accent-foreground: oklch(0.105 0 0);
   --sidebar-border: oklch(1 0 0 / 15%);
-  --sidebar-ring: oklch(0.6 0.24 270);
+  --sidebar-ring: oklch(0.6 0.18 190);
 }
 
 @layer base {
@@ -208,5 +210,32 @@
   
   .dark .glow-effect {
     box-shadow: 0 0 15px -2px var(--primary);
+  }
+  
+  /* Fix for calendar popover z-index issues */
+  .rdp {
+    position: relative;
+    z-index: 50;
+  }
+  
+  .rdp-months {
+    z-index: 50;
+  }
+  
+  /* Ensure all popovers have proper z-index */
+  div[data-radix-popper-content-wrapper] {
+    z-index: 100 !important;
+  }
+  
+  /* Add a higher z-index to calendar elements */
+  .rdp-day, .rdp-head_cell {
+    z-index: 60;
+    position: relative;
+  }
+  
+  /* Ensure background elements don't leak through */
+  .rdp-button:focus {
+    z-index: 70;
+    position: relative;
   }
 }

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, addDays } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
+import { Steps, Step } from '@/components/ui/steps';
 
 // UI Components
 import { Button } from "@/components/ui/Button";
@@ -66,12 +67,14 @@ import TournamentTeamsSetup from "./tournament-creation/TournamentTeamsSetup";
 import TournamentPlayersSetup from "./tournament-creation/TournamentPlayersSetup";
 import TournamentFantasySetup from "./tournament-creation/TournamentFantasySetup";
 import TournamentReview from "./tournament-creation/TournamentReview";
+import TeamManagement from './tournament-creation/TeamManagement';
 
 // Define the tournament creation steps
 const STEPS = [
   { id: "basic", title: "Basic Details", description: "Tournament information" },
   { id: "format", title: "Tournament Format", description: "Teams and structure" },
   { id: "players", title: "Players", description: "Add players to the tournament" },
+  { id: "teams", title: "Teams", description: "Manage teams" },
   { id: "fantasy", title: "Fantasy Setup", description: "Configure fantasy contests" },
   { id: "review", title: "Review & Create", description: "Finalize tournament creation" },
 ];
@@ -153,70 +156,69 @@ const tournamentCreationSchema = z.object({
 
 type TournamentCreationInput = z.infer<typeof tournamentCreationSchema>;
 
-export default function TournamentCreationFlow() {
+interface TournamentCreationFlowProps {
+  onComplete?: (tournamentId: number) => void;
+}
+
+const TournamentCreationFlow: React.FC<TournamentCreationFlowProps> = ({ onComplete }) => {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [allPlayers, setAllPlayers] = useState<any[]>([]);
-
-  // Initialize form with react-hook-form and zod resolver
-  const methods = useForm<TournamentCreationInput>({
-    resolver: zodResolver(tournamentCreationSchema),
-    defaultValues: {
-      basicDetails: {
-        type: "SINGLES",
-        maxParticipants: 16,
-        entryFee: 0,
-        startDate: new Date(),
-        endDate: addDays(new Date(), 2),
-        registrationOpenDate: new Date(),
-        registrationCloseDate: addDays(new Date(), 1),
-      },
-      formatDetails: {
-        isTeamBased: false,
-        teamsEnabled: false,
-        scoringType: "STANDARD",
-        pointsToWin: 11,
-        numberOfSets: 1,
-        winByTwo: true,
-        liveScoring: true,
-      },
-      players: [],
-      teams: [],
-      fantasySetup: {
-        fantasyEnabled: true,
-        contestTypes: [
-          {
-            name: "Free Entry",
-            entryFee: 0,
-            maxEntries: 100,
-            walletSize: 100000,
-            playerCategories: [
-              { name: "A Tier", price: 10000 },
-              { name: "B Tier", price: 7500 },
-              { name: "C Tier", price: 5000 },
-              { name: "D Tier", price: 2500 },
-            ],
-            allowTeamChanges: false,
-          },
-          {
-            name: "Paid Entry",
-            entryFee: 500,
-            maxEntries: 50,
-            walletSize: 150000,
-            playerCategories: [
-              { name: "A Tier", price: 15000 },
-              { name: "B Tier", price: 10000 },
-              { name: "C Tier", price: 7500 },
-              { name: "D Tier", price: 5000 },
-            ],
-            allowTeamChanges: true,
-            changeFrequency: "DAILY",
-            maxPlayersToChange: 2,
-          },
-        ],
-      },
+  const [formData, setFormData] = useState<TournamentCreationInput>({
+    basicDetails: {
+      type: "SINGLES",
+      maxParticipants: 16,
+      entryFee: 0,
+      startDate: new Date(),
+      endDate: addDays(new Date(), 2),
+      registrationOpenDate: new Date(),
+      registrationCloseDate: addDays(new Date(), 1),
+    },
+    formatDetails: {
+      isTeamBased: false,
+      teamsEnabled: false,
+      scoringType: "STANDARD",
+      pointsToWin: 11,
+      numberOfSets: 1,
+      winByTwo: true,
+      liveScoring: true,
+    },
+    players: [],
+    teams: [],
+    fantasySetup: {
+      fantasyEnabled: true,
+      contestTypes: [
+        {
+          name: "Free Entry",
+          entryFee: 0,
+          maxEntries: 100,
+          walletSize: 100000,
+          playerCategories: [
+            { name: "A Tier", price: 10000 },
+            { name: "B Tier", price: 7500 },
+            { name: "C Tier", price: 5000 },
+            { name: "D Tier", price: 2500 },
+          ],
+          allowTeamChanges: false,
+        },
+        {
+          name: "Paid Entry",
+          entryFee: 500,
+          maxEntries: 50,
+          walletSize: 150000,
+          playerCategories: [
+            { name: "A Tier", price: 15000 },
+            { name: "B Tier", price: 10000 },
+            { name: "C Tier", price: 7500 },
+            { name: "D Tier", price: 5000 },
+          ],
+          allowTeamChanges: true,
+          changeFrequency: "DAILY",
+          maxPlayersToChange: 2,
+        },
+      ],
     },
   });
 
@@ -252,6 +254,12 @@ export default function TournamentCreationFlow() {
       const isValid = await methods.trigger("players");
       if (!isValid) return;
     } else if (currentStep === 3) {
+      // Validate teams
+      if (formData.formatDetails.isTeamBased && formData.teams.length === 0) {
+        toast.error("Please create at least one team");
+        return;
+      }
+    } else if (currentStep === 4) {
       // Validate fantasy setup
       const isValid = await methods.trigger("fantasySetup");
       if (!isValid) return;
@@ -368,6 +376,10 @@ export default function TournamentCreationFlow() {
 
       // Redirect to the tournament management page
       router.push(`/admin/tournaments/${tournamentId}`);
+
+      if (onComplete) {
+        onComplete(tournamentId);
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -381,6 +393,24 @@ export default function TournamentCreationFlow() {
 
   // Determine progress percentage
   const progress = Math.round(((currentStep + 1) / STEPS.length) * 100);
+
+  // Determine steps based on whether it's team-based
+  const steps = [
+    { title: 'Basic Info', component: <TournamentBasicDetails /> },
+    { title: 'Format', component: <TournamentTeamsSetup /> },
+    { title: 'Players', component: <TournamentPlayersSetup allPlayers={allPlayers} /> },
+    ...(formData.formatDetails.isTeamBased ? [{ 
+      title: 'Teams', 
+      component: <TeamManagement 
+        tournamentId={0} // Will be set after tournament creation
+        initialTeams={formData.teams} 
+        onTeamsUpdated={(teams) => setFormData({ ...formData, teams })}
+        existingPlayers={formData.players} 
+      /> 
+    }] : []),
+    { title: 'Fantasy', component: <TournamentFantasySetup /> },
+    { title: 'Review', component: <TournamentReview /> },
+  ];
 
   return (
     <FormProvider {...methods}>
@@ -438,11 +468,7 @@ export default function TournamentCreationFlow() {
           <CardContent>
             <form onSubmit={methods.handleSubmit(onSubmit)}>
               {/* Step content */}
-              {currentStep === 0 && <TournamentBasicDetails />}
-              {currentStep === 1 && <TournamentTeamsSetup />}
-              {currentStep === 2 && <TournamentPlayersSetup allPlayers={allPlayers} />}
-              {currentStep === 3 && <TournamentFantasySetup />}
-              {currentStep === 4 && <TournamentReview />}
+              {steps[currentStep].component}
             </form>
           </CardContent>
           <CardFooter className="flex justify-between">
@@ -491,3 +517,5 @@ export default function TournamentCreationFlow() {
     </FormProvider>
   );
 }
+
+export default TournamentCreationFlow;

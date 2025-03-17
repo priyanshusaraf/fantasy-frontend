@@ -7,14 +7,522 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enum Definitions
-enum UserRole {
-  PLAYER
-  REFEREE
-  TOURNAMENT_ADMIN
-  MASTER_ADMIN
-  ORGANIZER
-  USER // Regular user for fantasy games
+model User {
+  id                     Int                     @id @default(autoincrement())
+  username               String?                 @unique
+  email                  String                  @unique
+  password               String?
+  role                   String                  @default("USER")
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  address                String?
+  bio                    String?                 @db.Text
+  city                   String?
+  country                String?
+  dateOfBirth            DateTime?
+  firstName              String?
+  lastName               String?
+  phone                  String?
+  postalCode             String?
+  profilePicture         String?
+  state                  String?
+  status                 String                  @default("ACTIVE")
+  name                   String?
+  accounts               Account[]               @relation("AccountToUser")
+  fantasyTeams           FantasyTeam[]
+  masterAdmin            MasterAdmin?
+  notifications          Notification[]
+  paymentMethods         PaymentMethod[]
+  player                 Player?
+  profile                Profile?
+  referee                Referee?
+  sessions               Session[]               @relation("SessionToUser")
+  tournamentAdmin        TournamentAdmin?
+  tournamentInvitations  TournamentInvitation[]
+  tournamentJoinRequests TournamentJoinRequest[]
+  transactions           Transaction[]
+  wallet                 Wallet?
+  prizeDisbursements    PrizeDisbursement[]
+  bankAccount            BankAccount?
+  organizedTournaments    TournamentOrganizer[]
+}
+
+model Profile {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique
+  firstName      String    @db.VarChar(100)
+  lastName       String    @db.VarChar(100)
+  dateOfBirth    DateTime?
+  phone          String?   @db.VarChar(20)
+  address        String?   @db.Text
+  city           String?   @db.VarChar(100)
+  country        String?   @db.VarChar(100)
+  profilePicture String?   @db.VarChar(255)
+  bio            String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Player {
+  id                 Int                 @id @default(autoincrement())
+  userId             Int?                @unique
+  name               String              @db.VarChar(100)
+  imageUrl           String?
+  age                Int?
+  country            String?
+  skillLevel         PlayerSkillLevel?
+  dominantHand       DominantHand?
+  rank               Int?
+  tournamentWins     Int                 @default(0)
+  careerWinRate      Float               @default(0)
+  bio                String?             @db.Text
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  fantasyTeamPlayers FantasyTeamPlayer[]
+  matchesAsPlayer1   Match[]             @relation("Player1")
+  matchesAsPlayer2   Match[]             @relation("Player2")
+  matchPerformances  MatchPerformance[]
+  user               User?               @relation(fields: [userId], references: [id])
+  matchPoints        PlayerMatchPoints[]
+  stats              PlayerStats[]
+  tournamentEntries  TournamentEntry[]
+  teamMemberships    Team[]              @relation("PlayerToTeam")
+}
+
+model Referee {
+  id                  Int                  @id @default(autoincrement())
+  userId              Int                  @unique
+  certificationLevel  String               @db.VarChar(100)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  assignedMatches     Match[]
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refereeJoinRequests RefereeJoinRequest[] @relation("RefereeToRefereeJoinRequests")
+}
+
+model TournamentAdmin {
+  id                 Int          @id @default(autoincrement())
+  userId             Int          @unique
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  managedTournaments Tournament[]
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MasterAdmin {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Tournament {
+  id                    Int                     @id @default(autoincrement())
+  name                  String                  @db.VarChar(255)
+  description           String?                 @db.Text
+  type                  TournamentType
+  status                TournamentStatus
+  startDate             DateTime
+  endDate               DateTime
+  registrationOpenDate  DateTime
+  registrationCloseDate DateTime
+  location              String                  @db.VarChar(255)
+  imageUrl              String?                 @default("https://placehold.co/600x400?text=Tournament+Banner")
+  maxParticipants       Int
+  entryFee              Decimal                 @db.Decimal(10, 2)
+  prizeMoney            Decimal?                @db.Decimal(10, 2)
+  organizerId           Int
+  rules                 String?                 @db.Text
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  fantasySettings       String?                 @db.Text
+  isTeamBased           Boolean                 @default(false)
+  fantasyContests       FantasyContest[]
+  matches               Match[]
+  playerStats           PlayerStats[]
+  refereeJoinRequests   RefereeJoinRequest[]    @relation("TournamentToRefereeJoinRequests")
+  teams                 Team[]
+  tournamentAdmin       TournamentAdmin         @relation(fields: [organizerId], references: [id])
+  entries               TournamentEntry[]
+  invitations           TournamentInvitation[]  @relation("TournamentToInvitations")
+  joinRequests          TournamentJoinRequest[] @relation("TournamentToJoinRequests")
+  isCompleted           Boolean                 @default(false)
+  isPrizesDistributed   Boolean                 @default(false)
+  prizesDistributedAt   DateTime?
+  prizeDisbursements    PrizeDisbursement[]
+  prizeDistributionRules PrizeDistributionRule[]
+  contestPrizeRules      ContestPrizeRule[]
+  organizers             TournamentOrganizer[]
+
+  @@index([organizerId])
+}
+
+model TournamentEntry {
+  id            Int           @id @default(autoincrement())
+  tournamentId  Int
+  playerId      Int
+  registeredAt  DateTime      @default(now())
+  paymentStatus PaymentStatus @default(PENDING)
+  player        Player        @relation(fields: [playerId], references: [id])
+  tournament    Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, playerId])
+  @@index([playerId], map: "TournamentEntry_playerId_fkey")
+}
+
+model Team {
+  id             Int         @id @default(autoincrement())
+  name           String      @db.VarChar(255)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  tournamentId   Int?
+  asTeam1Matches Match[]     @relation("Team1Matches")
+  asTeam2Matches Match[]     @relation("Team2Matches")
+  wonMatches     Match[]     @relation("WinnerMatches")
+  tournament     Tournament? @relation(fields: [tournamentId], references: [id])
+  players        Player[]    @relation("PlayerToTeam")
+
+  @@index([tournamentId], map: "Team_tournamentId_fkey")
+}
+
+model Match {
+  id            Int                 @id @default(autoincrement())
+  tournamentId  Int
+  refereeId     Int
+  player1Id     Int
+  player2Id     Int
+  player1Score  Int?
+  player2Score  Int?
+  startTime     DateTime
+  endTime       DateTime?
+  round         String
+  status        MatchStatus
+  team1Id       Int?
+  team2Id       Int?
+  score         String?             @db.VarChar(100)
+  winnerId      Int?
+  scheduledTime DateTime?
+  courtNumber   Int?
+  matchDuration Int?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  player1       Player              @relation("Player1", fields: [player1Id], references: [id])
+  player2       Player              @relation("Player2", fields: [player2Id], references: [id])
+  referee       Referee             @relation(fields: [refereeId], references: [id])
+  team1         Team?               @relation("Team1Matches", fields: [team1Id], references: [id])
+  team2         Team?               @relation("Team2Matches", fields: [team2Id], references: [id])
+  tournament    Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  winner        Team?               @relation("WinnerMatches", fields: [winnerId], references: [id])
+  performances  MatchPerformance[]
+  playerPoints  PlayerMatchPoints[]
+
+  @@index([player1Id], map: "Match_player1Id_fkey")
+  @@index([player2Id], map: "Match_player2Id_fkey")
+  @@index([refereeId], map: "Match_refereeId_fkey")
+  @@index([team1Id], map: "Match_team1Id_fkey")
+  @@index([team2Id], map: "Match_team2Id_fkey")
+  @@index([tournamentId], map: "Match_tournamentId_fkey")
+  @@index([winnerId], map: "Match_winnerId_fkey")
+}
+
+model MatchPerformance {
+  id           Int      @id @default(autoincrement())
+  matchId      Int
+  playerId     Int
+  points       Int
+  aces         Int
+  faults       Int
+  winningShots Int
+  otherStats   Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  match        Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player       Player   @relation(fields: [playerId], references: [id])
+
+  @@unique([matchId, playerId])
+  @@index([playerId], map: "MatchPerformance_playerId_fkey")
+}
+
+model PlayerStats {
+  id                Int         @id @default(autoincrement())
+  playerId          Int
+  tournamentId      Int?
+  wins              Int         @default(0)
+  losses            Int         @default(0)
+  aces              Int?
+  winPercentage     Float?
+  pointsScored      Int?
+  pointsAgainst     Int?
+  tournamentsPlayed Int?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  player            Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  tournament        Tournament? @relation(fields: [tournamentId], references: [id])
+
+  @@index([playerId], map: "PlayerStats_playerId_fkey")
+  @@index([tournamentId], map: "PlayerStats_tournamentId_fkey")
+}
+
+model FantasyContest {
+  id                Int                    @id @default(autoincrement())
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  name              String
+  description       String?
+  tournamentId      Int
+  tournament        Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  status            FantasyContestStatus   @default(OPEN)
+  entryFee          Float                  @default(0)
+  maxEntries        Int                    @default(100)
+  startDate         DateTime
+  endDate           DateTime
+  entryDeadline     DateTime?
+  fantasyTeams      FantasyTeam[]
+  payments          Payment[]
+  prizePool         Float                  @default(0)
+  feePercentage     Float                  @default(0) // Platform fee percentage
+  adminFee          Float                  @default(0) // Fixed admin fee
+  platformFee       Float                  @default(0) // Fixed platform fee
+  isPrizesDistributed Boolean              @default(false)
+  isPrizesProcessing Boolean               @default(false)
+  prizeDisbursements PrizeDisbursement[]
+  contestPrizeRule  ContestPrizeRule?
+}
+
+model FantasyTeam {
+  id          Int                 @id @default(autoincrement())
+  userId      Int
+  contestId   Int
+  name        String
+  totalPoints Decimal             @default(0.00) @db.Decimal(10, 2)
+  rank        Int?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  contest     FantasyContest      @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  players     FantasyTeamPlayer[]
+  prizeDisbursements PrizeDisbursement[]
+
+  @@index([contestId], map: "FantasyTeam_contestId_fkey")
+  @@index([userId], map: "FantasyTeam_userId_fkey")
+}
+
+model FantasyTeamPlayer {
+  id            Int         @id @default(autoincrement())
+  teamId        Int
+  playerId      Int
+  isCaptain     Boolean     @default(false)
+  isViceCaptain Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  player        Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  team          FantasyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, playerId])
+  @@index([playerId], map: "FantasyTeamPlayer_playerId_fkey")
+}
+
+model PointsSystem {
+  id          Int      @id @default(autoincrement())
+  action      String
+  points      Decimal  @db.Decimal(10, 2)
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PlayerMatchPoints {
+  id        Int      @id @default(autoincrement())
+  playerId  Int
+  matchId   Int
+  points    Decimal  @default(0.00) @db.Decimal(10, 2)
+  breakdown Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, matchId])
+  @@index([matchId], map: "PlayerMatchPoints_matchId_fkey")
+}
+
+model Wallet {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  balance   Decimal  @default(0.00) @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id          Int               @id @default(autoincrement())
+  userId      Int
+  type        TransactionType
+  amount      Decimal           @db.Decimal(10, 2)
+  status      TransactionStatus
+  referenceId String?
+  description String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "Transaction_userId_fkey")
+}
+
+model PaymentMethod {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  provider         String
+  accountReference String
+  isDefault        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "PaymentMethod_userId_fkey")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String   @db.Text
+  type      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "Notification_userId_fkey")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            Int
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation("AccountToUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId], map: "Account_userId_fkey")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+  user         User     @relation("SessionToUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "Session_userId_fkey")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model RefereeJoinRequest {
+  id           Int               @id @default(autoincrement())
+  tournamentId Int
+  refereeId    Int
+  status       RefereeJoinStatus @default(PENDING)
+  message      String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  referee      Referee           @relation("RefereeToRefereeJoinRequests", fields: [refereeId], references: [id])
+  tournament   Tournament        @relation("TournamentToRefereeJoinRequests", fields: [tournamentId], references: [id])
+
+  @@index([refereeId], map: "RefereeJoinRequest_refereeId_fkey")
+  @@index([tournamentId], map: "RefereeJoinRequest_tournamentId_fkey")
+}
+
+model TournamentInvitation {
+  id             Int        @id @default(autoincrement())
+  tournamentId   Int
+  invitedEmail   String
+  invitedUserId  Int?
+  role           String
+  status         String
+  invitationCode String     @unique
+  message        String?    @db.Text
+  expiresAt      DateTime
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  invitedUser    User?      @relation(fields: [invitedUserId], references: [id])
+  tournament     Tournament @relation("TournamentToInvitations", fields: [tournamentId], references: [id])
+
+  @@index([tournamentId])
+  @@index([invitedUserId])
+  @@index([invitationCode])
+}
+
+model TournamentJoinRequest {
+  id           Int        @id @default(autoincrement())
+  tournamentId Int
+  userId       Int
+  role         String
+  status       String
+  message      String?    @db.Text
+  feedback     String?    @db.Text
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation("TournamentToJoinRequests", fields: [tournamentId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@index([tournamentId])
+  @@index([userId])
+}
+
+model PrizeDisbursement {
+  id              Int              @id @default(autoincrement())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  contestId       Int
+  contest         FantasyContest   @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  fantasyTeamId   Int
+  fantasyTeam     FantasyTeam      @relation(fields: [fantasyTeamId], references: [id], onDelete: Cascade)
+  userId          Int
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount          Float            // Total prize amount
+  netAmount       Float            // Amount after fees
+  rank            Int              // Final rank in contest
+  status          PayoutStatus     @default(PENDING)
+  transactionId   String?          // Razorpay transaction ID
+  accountId       String?          // Razorpay account ID for fund transfer
+  paymentDetails  Json?            // Additional payment details (metadata)
+  processingFee   Float            @default(0) // Payment processing fee
+  notes           String?
+}
+
+model BankAccount {
+  id                   Int      @id @default(autoincrement())
+  userId               Int      
+  accountHolderName    String
+  accountNumber        String   // Masked account number for security
+  ifsc                 String
+  accountType          String   @default("savings")
+  isVerified           Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  razorpayFundAccountId String?
+  razorpayContactId    String?
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 enum TournamentType {
@@ -85,468 +593,123 @@ enum DominantHand {
   AMBIDEXTROUS
 }
 
-// New enum for referee join requests
 enum RefereeJoinStatus {
   PENDING
   APPROVED
   REJECTED
 }
 
+// Payment Models for Razorpay Integration
+model Payment {
+  id              Int       @id @default(autoincrement())
+  userId          String
+  amount          Decimal   @db.Decimal(10, 2)
+  currency        String    @default("INR")
+  status          String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  description     String?
+  razorpayOrderId String?   @unique
+  razorpayPaymentId String? @unique
+  razorpaySignature String?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-model User {
-  id                  Int                @id @default(autoincrement())
-  username            String?            @unique
-  email               String             @unique
-  password            String?
-  name                String?            // Adding the missing name field
-  role                String             @default("USER") // USER, PLAYER, REFEREE, TOURNAMENT_ADMIN, MASTER_ADMIN
-  status              String             @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED
-  firstName           String?
-  lastName            String?
-  profilePicture      String?
-  bio                 String?            @db.Text
-  phone               String?
-  address             String?
-  city                String?
-  state               String?
-  country             String?
-  postalCode          String?
-  dateOfBirth         DateTime?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  
-  // Relations
-  accounts            Account[]          @relation("AccountToUser")
-  sessions            Session[]          @relation("SessionToUser")
-  profile             Profile?
-  player              Player?
-  referee             Referee?
-  tournamentAdmin     TournamentAdmin?
-  masterAdmin         MasterAdmin?
-  wallet              Wallet?
-  transactions        Transaction[]
-  notifications       Notification[]
-  paymentMethods      PaymentMethod[]
-  fantasyTeams        FantasyTeam[]
-  
-  // New relations for tournament invitations and join requests
-  tournamentInvitations TournamentInvitation[] @relation
-  tournamentJoinRequests TournamentJoinRequest[] @relation
-}
- 
+  // Relationships
+  user            User      @relation(fields: [userId], references: [id])
+  fantasyPayment  FantasyPayment?
 
-// Detailed Profile Model
-model Profile {
-  id             Int       @id @default(autoincrement())
-  userId         Int       @unique
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstName      String    @db.VarChar(100)
-  lastName       String    @db.VarChar(100)
-  dateOfBirth    DateTime?
-  phone          String?   @db.VarChar(20)
-  address        String?   @db.Text
-  city           String?   @db.VarChar(100)
-  country        String?   @db.VarChar(100)
-  profilePicture String?   @db.VarChar(255)
-  bio            String?   @db.Text
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-}
-
-// Player Model
-model Player {
-  id                  Int                 @id @default(autoincrement())
-  userId              Int?                @unique
-  user                User?               @relation(fields: [userId], references: [id],onDelete: SetNull)
-  name                String              @db.VarChar(100)
-  imageUrl            String?
-  age                 Int?
-  country             String?
-  skillLevel          PlayerSkillLevel?
-  dominantHand        DominantHand?
-  rank                Int?
-  tournamentWins      Int                 @default(0)
-  careerWinRate       Float               @default(0)
-  bio                 String?             @db.Text
-  isActive            Boolean             @default(true)
-  stats               PlayerStats[]
-  tournamentEntries   TournamentEntry[]
-  matchPerformances   MatchPerformance[]
-  matchesAsPlayer1    Match[]             @relation("Player1")
-  matchesAsPlayer2    Match[]             @relation("Player2")
-  teamMemberships     Team[]
-  fantasyTeamPlayers  FantasyTeamPlayer[]
-  matchPoints         PlayerMatchPoints[]
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-}
-
-// Referee Model
-model Referee {
-  id                      Int                    @id @default(autoincrement())
-  userId                  Int                    @unique
-  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  certificationLevel      String                 @db.VarChar(100)
-  assignedMatches         Match[]
-  // New relation field for join requests
-  refereeJoinRequests     RefereeJoinRequest[]   @relation("RefereeToRefereeJoinRequests")
-  createdAt               DateTime               @default(now())
-  updatedAt               DateTime               @updatedAt
-}
-
-// Tournament Admin Model
-model TournamentAdmin {
-  id                 Int          @id @default(autoincrement())
-  userId             Int          @unique
-  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  managedTournaments Tournament[]
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-}
-
-// Master Admin Model
-model MasterAdmin {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// Tournament Model
-model Tournament {
-  id                     Int                @id @default(autoincrement())
-  name                   String             @db.VarChar(255)
-  description            String?            @db.Text
-  type                   TournamentType
-  status                 TournamentStatus
-  startDate              DateTime
-  endDate                DateTime
-  registrationOpenDate   DateTime
-  registrationCloseDate  DateTime
-  location               String             @db.VarChar(255)
-  imageUrl               String?            @default("https://placehold.co/600x400?text=Tournament+Banner")
-  maxParticipants        Int
-  entryFee               Decimal            @db.Decimal(10, 2)
-  prizeMoney             Decimal?           @db.Decimal(10, 2)
-  organizerId            Int
-  tournamentAdmin        TournamentAdmin    @relation(fields: [organizerId], references: [id])
-  entries                TournamentEntry[]
-  matches                Match[]
-  fantasyContests        FantasyContest[]
-  playerStats            PlayerStats[]
-  rules                  String?            @db.Text
-  fantasySettings        String?            @db.Text
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
-  // New relation fields for invitations and join requests
-  refereeJoinRequests    RefereeJoinRequest[] @relation("TournamentToRefereeJoinRequests")
-  invitations            TournamentInvitation[] @relation("TournamentToInvitations")
-  joinRequests           TournamentJoinRequest[] @relation("TournamentToJoinRequests")
-
-  @@index([organizerId])
-}
-
-// Tournament Entry Model
-model TournamentEntry {
-  id             Int            @id @default(autoincrement())
-  tournamentId   Int
-  tournament     Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  playerId       Int
-  player         Player         @relation(fields: [playerId], references: [id])
-  registeredAt   DateTime       @default(now())
-  paymentStatus  PaymentStatus  @default(PENDING)
-
-  @@unique([tournamentId, playerId])
-}
-
-// Team Model
-model Team {
-  id                 Int       @id @default(autoincrement())
-  name               String    @db.VarChar(255)
-  players            Player[]
-  asTeam1Matches     Match[]   @relation("Team1Matches")
-  asTeam2Matches     Match[]   @relation("Team2Matches")
-  wonMatches         Match[]   @relation("WinnerMatches")
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-}
-
-// Match Model
-model Match {
-  id             Int                @id @default(autoincrement())
-  tournamentId   Int
-  tournament     Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  refereeId      Int
-  referee        Referee            @relation(fields: [refereeId], references: [id])
-  player1Id      Int
-  player1        Player             @relation("Player1", fields: [player1Id], references: [id])
-  player2Id      Int
-  player2        Player             @relation("Player2", fields: [player2Id], references: [id])
-  player1Score   Int?
-  player2Score   Int?
-  startTime      DateTime
-  endTime        DateTime?
-  round          String
-  status         MatchStatus
-  team1          Team?              @relation("Team1Matches", fields: [team1Id], references: [id])
-  team2          Team?              @relation("Team2Matches", fields: [team2Id], references: [id])
-  team1Id        Int?
-  team2Id        Int?
-  score          String?            @db.VarChar(100)
-  winner         Team?              @relation("WinnerMatches", fields: [winnerId], references: [id])
-  winnerId       Int?
-  performances   MatchPerformance[]
-  playerPoints   PlayerMatchPoints[]
-  scheduledTime  DateTime?
-  courtNumber    Int?
-  matchDuration  Int?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-}
-
-// Match Performance Model
-model MatchPerformance {
-  id             Int       @id @default(autoincrement())
-  matchId        Int
-  match          Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  playerId       Int
-  player         Player    @relation(fields: [playerId], references: [id])
-  points         Int
-  aces           Int
-  faults         Int
-  winningShots   Int
-  otherStats     Json?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@unique([matchId, playerId])
-}
-
-// Player stats table
-model PlayerStats {
-  id                Int         @id @default(autoincrement())
-  player            Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  playerId          Int
-  tournament        Tournament? @relation(fields: [tournamentId], references: [id])
-  tournamentId      Int?
-  wins              Int         @default(0)
-  losses            Int         @default(0)
-  aces              Int?
-  winPercentage     Float?
-  pointsScored      Int?
-  pointsAgainst     Int?
-  tournamentsPlayed Int?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-}
-
-// Fantasy game models
-model FantasyContest {
-  id              Int               @id @default(autoincrement())
-  name            String
-  tournament      Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  tournamentId    Int
-  entryFee        Decimal           @db.Decimal(10, 2) @default(0)
-  prizePool       Decimal           @db.Decimal(10, 2) @default(0)
-  maxEntries      Int
-  currentEntries  Int               @default(0)
-  startDate       DateTime
-  endDate         DateTime
-  status          ContestStatus     @default(UPCOMING)
-  description     String?           @db.Text
-  rules           String?           @db.Text
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  teams           FantasyTeam[]
-}
-
-model FantasyTeam {
-  id            Int                 @id @default(autoincrement())
-  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        Int
-  contest       FantasyContest      @relation(fields: [contestId], references: [id], onDelete: Cascade)
-  contestId     Int
-  name          String
-  totalPoints   Decimal             @db.Decimal(10, 2) @default(0)
-  rank          Int?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  players       FantasyTeamPlayer[]
-}
-
-model FantasyTeamPlayer {
-  id             Int         @id @default(autoincrement())
-  team           FantasyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  teamId         Int
-  player         Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  playerId       Int
-  isCaptain      Boolean     @default(false)
-  isViceCaptain  Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-
-  @@unique([teamId, playerId])
-}
-
-model PointsSystem {
-  id          Int       @id @default(autoincrement())
-  action      String
-  points      Decimal   @db.Decimal(10, 2)
-  description String?   @db.Text
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
-
-model PlayerMatchPoints {
-  id          Int             @id @default(autoincrement())
-  player      Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  playerId    Int
-  match       Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  matchId     Int
-  points      Decimal         @db.Decimal(10, 2) @default(0)
-  breakdown   Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  @@unique([playerId, matchId])
-}
-
-// Payment and wallet models
-model Wallet {
-  id        Int       @id @default(autoincrement())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int       @unique
-  balance   Decimal   @db.Decimal(10, 2) @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-}
-
-model Transaction {
-  id          Int               @id @default(autoincrement())
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId      Int
-  type        TransactionType
-  amount      Decimal           @db.Decimal(10, 2)
-  status      TransactionStatus
-  referenceId String?
-  description String?           @db.Text
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-}
-
-model PaymentMethod {
-  id               Int       @id @default(autoincrement())
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId           Int
-  provider         String
-  accountReference String
-  isDefault        Boolean   @default(false)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-}
-
-// User experience models
-model Notification {
-  id        Int       @id @default(autoincrement())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  title     String
-  message   String    @db.Text
-  type      String
-  isRead    Boolean   @default(false)
-  createdAt DateTime  @default(now())
-}
-
-// Account Model
-model Account {
-  id                 String  @id @default(cuid())
-  userId             Int
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?  @db.Text
-  access_token       String?  @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?  @db.Text
-  session_state      String?
-  user               User     @relation("AccountToUser", fields: [userId], references: [id], onDelete: Cascade)
-  @@unique([provider, providerAccountId])
-}
-
-// Session Model
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       Int
-  expires      DateTime
-  user         User     @relation("SessionToUser", fields: [userId], references: [id], onDelete: Cascade)
-}
-
-// VerificationToken Model
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-  @@unique([identifier, token])
-}
-
-// Referee Join Request Model
-model RefereeJoinRequest {
-  id           Int                @id @default(autoincrement())
-  tournamentId Int
-  refereeId    Int
-  status       RefereeJoinStatus  @default(PENDING)
-  message      String?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-
-  tournament   Tournament         @relation("TournamentToRefereeJoinRequests", fields: [tournamentId], references: [id])
-  referee      Referee            @relation("RefereeToRefereeJoinRequests", fields: [refereeId], references: [id])
-}
-
-// Tournament Invitation Model
-model TournamentInvitation {
-  id             Int       @id @default(autoincrement())
-  tournamentId   Int
-  tournament     Tournament @relation("TournamentToInvitations", fields: [tournamentId], references: [id])
-  invitedEmail   String
-  invitedUserId  Int?
-  invitedUser    User?     @relation(fields: [invitedUserId], references: [id])
-  role           String    // PLAYER, REFEREE, TEAM_CAPTAIN
-  status         String    // PENDING, ACCEPTED, REJECTED, EXPIRED
-  invitationCode String    @unique
-  message        String?   @db.Text
-  expiresAt      DateTime
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@index([tournamentId])
-  @@index([invitedUserId])
-  @@index([invitationCode])
-}
-
-// Tournament Join Request Model
-model TournamentJoinRequest {
-  id           Int       @id @default(autoincrement())
-  tournamentId Int
-  tournament   Tournament @relation("TournamentToJoinRequests", fields: [tournamentId], references: [id])
-  userId       Int
-  user         User      @relation(fields: [userId], references: [id])
-  role         String    // PLAYER, REFEREE, TEAM_CAPTAIN
-  status       String    // PENDING, APPROVED, REJECTED
-  message      String?   @db.Text
-  feedback     String?   @db.Text
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  @@index([tournamentId])
   @@index([userId])
+  @@index([status])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
 }
 
-enum RequestStatus {
+model FantasyPayment {
+  id              Int       @id @default(autoincrement())
+  paymentId       Int       @unique
+  fantasyTeamId   Int?
+  tournamentId    Int
+  entryFee        Decimal   @db.Decimal(10, 2)
+  isProcessed     Boolean   @default(false)
+  adminSharePaid  Boolean   @default(false)
+  prizePoolAdded  Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relationships
+  payment         Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  fantasyTeam     FantasyTeam? @relation(fields: [fantasyTeamId], references: [id])
+  tournament      Tournament @relation(fields: [tournamentId], references: [id])
+
+  @@index([fantasyTeamId])
+  @@index([tournamentId])
+}
+
+model PaymentSplit {
+  id                  Int       @id @default(autoincrement())
+  paymentId           Int
+  tournamentAdminId   Int
+  masterAdminId       String
+  tournamentAdminShare Decimal  @db.Decimal(10, 2)
+  masterAdminShare    Decimal   @db.Decimal(10, 2)
+  prizePoolShare      Decimal   @db.Decimal(10, 2)
+  status              String    @default("PENDING") // PENDING, PROCESSED
+  processedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relationships
+  payment             Payment    @relation(fields: [paymentId], references: [id])
+  tournamentAdmin     TournamentAdmin @relation(fields: [tournamentAdminId], references: [id])
+  masterAdmin         User       @relation(fields: [masterAdminId], references: [id])
+
+  @@index([paymentId])
+  @@index([tournamentAdminId])
+  @@index([masterAdminId])
+}
+
+model PrizeDistributionRule {
+  id                 Int               @id @default(autoincrement())
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  tournamentId       Int?
+  tournament         Tournament?       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  contestPrizeRuleId Int?
+  contestPrizeRule   ContestPrizeRule? @relation(fields: [contestPrizeRuleId], references: [id], onDelete: Cascade)
+  rank               Int               // Position in leaderboard (1st, 2nd, 3rd, etc.)
+  percentage         Float             // Percentage of prize pool
+  minPlayers         Int               @default(1) // Minimum number of players required for this prize
+}
+
+model ContestPrizeRule {
+  id                     Int                     @id @default(autoincrement())
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  tournamentId           Int
+  tournament             Tournament              @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  contestId              Int                     @unique
+  contest                FantasyContest          @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  prizeDistributionRules PrizeDistributionRule[]
+}
+
+model TournamentOrganizer {
+  id           Int        @id @default(autoincrement())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournamentId Int
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       Int
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         String     @default("ORGANIZER") // ORGANIZER, ADMIN, etc.
+  
+  @@unique([tournamentId, userId])
+}
+
+enum PayoutStatus {
   PENDING
-  APPROVED
-  REJECTED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
 }

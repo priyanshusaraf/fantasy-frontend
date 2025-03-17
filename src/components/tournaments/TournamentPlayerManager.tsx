@@ -149,10 +149,48 @@ export default function TournamentPlayerManager({ tournamentId }: TournamentPlay
     }
   };
 
+  // Handle selection of a player
+  const handleSelectPlayer = (player: Player) => {
+    setSelectedPlayers(prev => {
+      // Check if player is already selected
+      const isSelected = prev.some(p => p.id === player.id);
+      
+      if (isSelected) {
+        // If selected, remove from the array
+        return prev.filter(p => p.id !== player.id);
+      } else {
+        // If not selected, add to the array
+        return [...prev, player];
+      }
+    });
+  };
+
+  // Filter players based on search and skill level
+  const filteredPlayers = players.filter(player => {
+    const matchesSearch = player.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (player.country && player.country.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesSkill = skillLevelFilter === "ALL" || player.skillLevel === skillLevelFilter;
+    
+    // Filter out players already in the tournament
+    const notInTournament = !tournamentPlayers.some(tp => tp.id === player.id);
+    
+    return matchesSearch && matchesSkill && notInTournament;
+  });
+
   // Add selected players to the tournament
   const handleAddPlayersToTournament = async () => {
-    if (!tournamentId || selectedPlayers.length === 0) return;
+    if (!tournamentId || selectedPlayers.length === 0) {
+      toast({
+        title: "No players selected",
+        description: "Please select at least one player to add to the tournament",
+        variant: "destructive"
+      });
+      return;
+    }
 
+    setLoading(true);
+    
     try {
       // Group players into regular players and user-only players
       const regularPlayers = selectedPlayers.filter(p => !p.isUserOnly);
@@ -172,80 +210,117 @@ export default function TournamentPlayerManager({ tournamentId }: TournamentPlay
           }),
         });
 
+        let responseData;
+        try {
+          responseData = await response.json();
+        } catch (e) {
+          const textResponse = await response.text();
+          console.error("Failed to parse response:", textResponse);
+          throw new Error(`Failed to add players: ${response.statusText}`);
+        }
+        
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error("Error adding regular players:", errorText);
-          throw new Error(`Failed to add regular players: ${errorText}`);
+          console.error("Error adding regular players:", responseData);
+          throw new Error(`Failed to add players: ${responseData.message || response.statusText}`);
+        }
+        
+        console.log("Player addition response:", responseData);
+        
+        // Check if there were any errors in the results
+        const errors = responseData.results?.filter((r: any) => r.status === "error") || [];
+        if (errors.length > 0) {
+          console.warn("Some players couldn't be added:", errors);
+          toast({
+            title: "Warning",
+            description: `${errors.length} players couldn't be added. See console for details.`,
+            variant: "destructive",
+          });
+        }
+        
+        // Show success message
+        const addedCount = responseData.summary?.added || 0;
+        if (addedCount > 0) {
+          toast({
+            title: "Success",
+            description: `Added ${addedCount} players to the tournament.`,
+          });
         }
       }
 
       // Handle user-only players (these need to be created as player records first)
       if (userOnlyPlayers.length > 0) {
-        // First, create player records for each user
-        const createdPlayerIds = [];
+        let successCount = 0;
         
-        for (const userPlayer of userOnlyPlayers) {
-          // The ID is negative, so the actual userId is the absolute value
-          const userId = Math.abs(userPlayer.userId || userPlayer.id);
-          
-          // Create a player record for this user
-          const createResponse = await fetch("/api/players", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              name: userPlayer.name,
-              userId: userId,
-              skillLevel: userPlayer.skillLevel || "INTERMEDIATE",
-              country: userPlayer.country,
-              dominantHand: userPlayer.dominantHand || "RIGHT",
-            }),
-          });
-          
-          if (createResponse.ok) {
+        for (const player of userOnlyPlayers) {
+          try {
+            // Create a player record first
+            const userId = player.userId ? Math.abs(player.userId) : undefined;
+            
+            const createResponse = await fetch("/api/players", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                name: player.name,
+                userId: userId,
+                skillLevel: player.skillLevel || "INTERMEDIATE",
+                dominantHand: player.dominantHand || "RIGHT",
+                country: player.country || "",
+              }),
+            });
+            
+            if (!createResponse.ok) {
+              console.error(`Failed to create player: ${player.name}`);
+              continue;
+            }
+            
             const newPlayer = await createResponse.json();
-            createdPlayerIds.push(newPlayer.id);
-          } else {
-            console.error(`Failed to create player for user ${userId}`);
+            
+            // Now add this player to the tournament
+            const addResponse = await fetch(`/api/tournaments/${tournamentId}/players`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                playerIds: [newPlayer.id],
+              }),
+            });
+            
+            if (addResponse.ok) {
+              successCount++;
+            }
+          } catch (error) {
+            console.error(`Error creating/adding player ${player.name}:`, error);
           }
         }
         
-        // Now add these newly created players to the tournament
-        if (createdPlayerIds.length > 0) {
-          const addResponse = await fetch(`/api/tournaments/${tournamentId}/players`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              playerIds: createdPlayerIds,
-            }),
+        if (successCount > 0) {
+          toast({
+            title: "Success",
+            description: `Created and added ${successCount} new players to the tournament.`,
           });
-          
-          if (!addResponse.ok) {
-            const errorText = await addResponse.text();
-            console.error("Error adding created players:", errorText);
-          }
         }
       }
 
-      toast({
-        title: "Success",
-        description: `${selectedPlayers.length} player(s) added to tournament`,
-      });
-
-      // Refresh tournament players
-      fetchTournamentPlayers();
+      // Reset UI and refresh data
       setIsAddPlayerDialogOpen(false);
       setSelectedPlayers([]);
-    } catch (error: any) {
-      console.error("Error in handleAddPlayersToTournament:", error);
+      
+      // Refresh the lists of players
+      await fetchTournamentPlayers();
+      await fetchPlayers();
+      
+    } catch (error) {
+      console.error("Error adding players to tournament:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to add players to tournament",
+        description: error instanceof Error ? error.message : "Failed to add players to tournament",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -277,28 +352,6 @@ export default function TournamentPlayerManager({ tournamentId }: TournamentPlay
       });
     }
   };
-
-  // Handle selection of a player
-  const handleSelectPlayer = (player: Player) => {
-    if (selectedPlayers.some(p => p.id === player.id)) {
-      setSelectedPlayers(prev => prev.filter(p => p.id !== player.id));
-    } else {
-      setSelectedPlayers(prev => [...prev, player]);
-    }
-  };
-
-  // Filter players based on search and skill level
-  const filteredPlayers = players.filter(player => {
-    const matchesSearch = player.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (player.country && player.country.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesSkill = skillLevelFilter === "ALL" || player.skillLevel === skillLevelFilter;
-    
-    // Filter out players already in the tournament
-    const notInTournament = !tournamentPlayers.some(tp => tp.id === player.id);
-    
-    return matchesSearch && matchesSkill && notInTournament;
-  });
 
   return (
     <div className="space-y-4">
