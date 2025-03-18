@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `name` VARCHAR(191) NULL,
+    MODIFY `username` VARCHAR(100) NULL,
+    MODIFY `email` VARCHAR(255) NULL,
+    MODIFY `password` VARCHAR(255) NULL;
