@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     // Validate input
     const validationResult = registerSchema.safeParse(body);
     if (!validationResult.success) {
+      console.error("Validation failed:", validationResult.error.format());
       return NextResponse.json(
         { error: "Validation failed", details: validationResult.error.format() },
         { status: 400 }
@@ -55,41 +56,52 @@ export async function POST(request: Request) {
     console.log(`Hashing password for user: ${email}`);
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Prepare user data
-    const userData = {
-      username,
-      email,
-      password: hashedPassword,
-      role,
-      status: "ACTIVE", 
-      name: username, // Set name field for consistent data structure
-    };
-
-    console.log(`Creating user with email: ${email}, role: ${role}`);
+    console.log(`Starting user creation transaction for: ${email}, role: ${role}`);
     
-    // Create user
-    const user = await prisma.user.create({
-      data: userData,
-      select: {
-        id: true,
-        username: true,
-        name: true,
-        email: true,
-        role: true,
-        status: true,
-        password: true, // Only to confirm it was saved
-      },
-    });
+    // Use transaction to ensure all related records are created or nothing is created
+    const newUser = await prisma.$transaction(async (tx) => {
+      // Create user
+      const user = await tx.user.create({
+        data: {
+          username,
+          email,
+          password: hashedPassword,
+          role,
+          status: "ACTIVE", 
+          name: username, // Set name field for consistent data structure
+        },
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true,
+        },
+      });
+      
+      console.log(`User record created with ID: ${user.id}`);
+      
+      // Create account record for credentials
+      await tx.account.create({
+        data: {
+          userId: user.id,
+          type: "credentials",
+          provider: "credentials",
+          providerAccountId: email,
+        }
+      });
+      
+      console.log(`Credentials account created for user: ${user.id}`);
 
-    // Mask the password before logging
-    const userLog = {...user, password: user.password ? 'REDACTED' : null};
-    console.log(`User created successfully:`, userLog);
-
-    try {
       // If user is a PLAYER, create player profile with skill level
-      if (role === "PLAYER" && skillLevel) {
+      if (role === "PLAYER") {
+        if (!skillLevel) {
+          throw new Error("Skill level is required for player accounts");
+        }
+        
         console.log(`Creating player profile for user: ${user.id}`);
-        await prisma.player.create({
+        await tx.player.create({
           data: {
             userId: user.id,
             name: username, // Use username as the player name
@@ -103,7 +115,7 @@ export async function POST(request: Request) {
       // If user is a REFEREE, create referee profile with default certification level
       if (role === "REFEREE") {
         console.log(`Creating referee profile for user: ${user.id}`);
-        await prisma.referee.create({
+        await tx.referee.create({
           data: {
             userId: user.id,
             certificationLevel: "BASIC", // Default certification level for new referees
@@ -111,64 +123,76 @@ export async function POST(request: Request) {
         });
         console.log(`Referee profile created for user: ${user.id}`);
       }
-    } catch (roleError) {
-      // If role-specific creation fails, we'll still have the user created
-      console.error("Error creating role-specific profile:", roleError);
-      // We could delete the user here, but allowing partial registration might be better
-      // The user will still be able to log in and complete their profile later
-    }
-
-    // Double check that the user was created properly
-    const savedUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { 
-        id: true, 
-        email: true, 
-        username: true, 
-        name: true,
-        role: true,
-        status: true,
-        password: true // Only for verification
-      }
+      
+      // Create wallet for all users
+      await tx.wallet.create({
+        data: {
+          userId: user.id,
+          balance: 0,
+        }
+      });
+      
+      console.log(`Wallet created for user: ${user.id}`);
+      
+      return user;
     });
-    
-    // Confirm the user exists with password
-    if (!savedUser) {
-      console.error("User not found after creation");
-      return NextResponse.json(
-        { error: "Failed to create user properly" },
-        { status: 500 }
-      );
-    }
-    
-    console.log(`Verified user exists:`, {...savedUser, password: savedUser.password ? 'HASHED_PASSWORD_EXISTS' : 'NO_PASSWORD'});
+
+    console.log(`User registration completed successfully:`, {
+      id: newUser.id,
+      email: newUser.email,
+      role: newUser.role,
+    });
 
     return NextResponse.json({
       message: "User registered successfully",
       user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-        status: user.status,
+        id: newUser.id,
+        email: newUser.email,
+        username: newUser.username,
+        name: newUser.name,
+        role: newUser.role,
+        status: newUser.status,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Registration error:", error);
     
-    // Handle Prisma-specific errors
+    // Provide more specific error messages for different error types
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
+        const target = error.meta?.target as string[];
+        if (target) {
+          const field = target[0];
+          return NextResponse.json(
+            { error: `A user with this ${field} already exists` },
+            { status: 409 }
+          );
+        }
         return NextResponse.json(
           { error: "A user with this email or username already exists" },
           { status: 409 }
         );
       }
+      
+      // Handle foreign key constraint errors
+      if (error.code === 'P2003') {
+        return NextResponse.json(
+          { error: "Registration failed due to a database constraint error" },
+          { status: 500 }
+        );
+      }
+    }
+    
+    // Handle custom errors
+    if (error.message === "Skill level is required for player accounts") {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
     }
     
     return NextResponse.json(
-      { error: "Registration failed. Please try again." },
+      { error: "Registration failed. Please try again.", details: error.message },
       { status: 500 }
     );
   }

@@ -123,6 +123,8 @@ export default function PreRegistrationForm() {
     setError(null);
     
     try {
+      console.log(`Attempting to register user: ${email} with role: ${role}`);
+      
       // Call API to register the user
       const response = await fetch("/api/auth/register", {
         method: "POST",
@@ -141,7 +143,22 @@ export default function PreRegistrationForm() {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || data.message || "Registration failed");
+        console.error("Registration failed with status:", response.status);
+        console.error("Server response:", data);
+        
+        // Display a more specific error message if available
+        const errorMessage = data.error || data.message || "Registration failed";
+        
+        // If we have detailed validation errors, show the first one
+        if (data.details && typeof data.details === 'object') {
+          const firstErrorField = Object.keys(data.details)[0];
+          const fieldError = data.details[firstErrorField];
+          if (fieldError && fieldError._errors && fieldError._errors.length > 0) {
+            throw new Error(`${firstErrorField}: ${fieldError._errors[0]}`);
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
       
       console.log("Registration successful:", data);
