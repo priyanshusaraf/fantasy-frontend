@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if contest is open for registration
-    if (contest.status !== "UPCOMING") {
+    if (contest.status !== "OPEN" && contest.status !== "DRAFT") {
       return NextResponse.json(
         {
           message: "Contest is not open for registration",
@@ -123,14 +123,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check player selections
-    let rules: ContestRules = {};
-    try {
-      rules = JSON.parse(contest.rules || "{}") as ContestRules;
-    } catch (e) {
-      console.error("Error parsing contest rules:", e);
-    }
-
-    const teamSize = rules.fantasyTeamSize || 7;
+    // Determine team size from contest configuration or use default
+    const teamSize = 7; // Default team size if not specified
 
     if (body.players.length !== teamSize) {
       return NextResponse.json(
@@ -172,66 +166,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if contest requires payment
-    if (Number(contest.entryFee) > 0) {
-      // Get user wallet
-      const wallet = await prisma.wallet.findUnique({
-        where: { userId: user.id },
-      });
-
-      if (!wallet) {
-        return NextResponse.json(
-          {
-            message: "Wallet not found. Please add funds to your account.",
-          },
-          { status: 400 }
-        );
+    // Create the fantasy team
+    const newTeam = await prisma.fantasyTeam.create({
+      data: {
+        name: body.name,
+        userId: user.id,
+        contestId: body.contestId,
+        totalPoints: 0,
+        players: {
+          create: body.players.map(player => ({
+            playerId: player.playerId,
+            isCaptain: player.isCaptain,
+            isViceCaptain: player.isViceCaptain
+          }))
+        }
+      },
+      include: {
+        players: {
+          include: {
+            player: true
+          }
+        },
+        contest: true
       }
-
-      if (Number(wallet.balance) < Number(contest.entryFee)) {
-        return NextResponse.json(
-          {
-            message:
-              "Insufficient funds. Please add more funds to your wallet.",
-          },
-          { status: 400 }
-        );
-      }
-
-      // Process payment in a transaction
-      await prisma.$transaction(async (tx) => {
-        // Deduct entry fee from wallet
-        await tx.wallet.update({
-          where: { userId: user.id },
-          data: {
-            balance: {
-              decrement: contest.entryFee,
-            },
-          },
-        });
-
-        // Record transaction
-        await tx.transaction.create({
-          data: {
-            userId: user.id,
-            type: "CONTEST_ENTRY",
-            amount: contest.entryFee,
-            status: "COMPLETED",
-            description: `Entry fee for ${contest.name}`,
-          },
-        });
-      });
-    }
-
-    // Create team using service
-    const team = await FantasyTeamService.createTeam({
-      userId: user.id,
-      teamName: body.name,
-      players: body.players.map(p => p.playerId),
-      leagueId: body.contestId
     });
 
-    return NextResponse.json(team, { status: 201 });
+    return NextResponse.json(
+      { 
+        message: "Team created successfully", 
+        team: newTeam 
+      }, 
+      { status: 201 }
+    );
   } catch (error: any) {
     return errorHandler(error, request);
   }

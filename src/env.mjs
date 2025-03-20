@@ -1,11 +1,11 @@
-import { createEnv } from "@t3-env/core";
+import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
 export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]),
-    DATABASE_URL: z.string().url(),
-    NEXTAUTH_URL: z.string().url(),
+    DATABASE_URL: z.string().url().optional(),
+    NEXTAUTH_URL: z.string().url().optional(),
     NEXTAUTH_SECRET: z.string().min(1),
     GOOGLE_CLIENT_ID: z.string().min(1),
     GOOGLE_CLIENT_SECRET: z.string().min(1),
@@ -19,10 +19,10 @@ export const env = createEnv({
     EMAIL_SERVER_USER: z.string().email(),
     EMAIL_SERVER_PASSWORD: z.string().min(1),
     EMAIL_FROM: z.string().email(),
-    BYPASS_RAZORPAY: z.string().transform((val) => val === "true"),
+    BYPASS_RAZORPAY: z.string().transform((val) => val === "true" || val === "" ? true : false),
   },
   client: {
-    NEXT_PUBLIC_APP_URL: z.string().url(),
+    NEXT_PUBLIC_APP_URL: z.string().min(1),
   },
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
@@ -41,7 +41,8 @@ export const env = createEnv({
     EMAIL_SERVER_USER: process.env.EMAIL_SERVER_USER,
     EMAIL_SERVER_PASSWORD: process.env.EMAIL_SERVER_PASSWORD,
     EMAIL_FROM: process.env.EMAIL_FROM,
-    BYPASS_RAZORPAY: process.env.BYPASS_RAZORPAY,
+    BYPASS_RAZORPAY: process.env.BYPASS_RAZORPAY || "true",
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },
+  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
 }); 

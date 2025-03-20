@@ -18,7 +18,6 @@ import TeamCreationForm from "@/components/fantasy-pickleball/TeamCreationForm";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { toast } from '@/components/ui/sonner';
-import FantasyEntryPayment from "@/components/fantasy-pickleball/FantasyEntryPayment";
 
 interface JoinContestPageProps {
   params: {
@@ -53,7 +52,6 @@ export default function JoinContestPage(props: JoinContestPageProps) {
   const [error, setError] = useState<string | null>(null);
   const { isAuthenticated, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const [paymentComplete, setPaymentComplete] = useState(false);
 
   useEffect(() => {
     // Only check authentication after the auth state has loaded
@@ -182,11 +180,6 @@ export default function JoinContestPage(props: JoinContestPageProps) {
     );
   }
 
-  const handlePaymentSuccess = () => {
-    setPaymentComplete(true);
-    toast("Payment successful! Now you can create your team.");
-  };
-
   return (
     <div className="container mx-auto px-4 py-8 bg-gray-900 text-white">
       <div className="mb-8">
@@ -236,32 +229,7 @@ export default function JoinContestPage(props: JoinContestPageProps) {
         </Card>
       </div>
 
-      {/* Entry Fee Alert for paid contests */}
-      {contest.entryFee > 0 && (
-        <Alert className="mb-8 bg-gray-800 border-gray-700 text-white">
-          <Info className="h-4 w-4 text-indigo-400" />
-          <AlertTitle>Entry Fee Required</AlertTitle>
-          <AlertDescription>
-            This is a paid contest. In the first version, payment functionality
-            is disabled. Your entry will be processed without requiring payment.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Show payment component for paid contests if payment isn't complete */}
-      {contest.entryFee > 0 && !paymentComplete ? (
-        <div className="mb-8 max-w-2xl mx-auto">
-          <FantasyEntryPayment 
-            tournamentId={contest.tournament.id}
-            tournamentName={contest.name}
-            entryFee={contest.entryFee}
-            contestId={contest.id}
-            onSuccess={handlePaymentSuccess}
-          />
-        </div>
-      ) : (
-        <TeamCreationForm contestId={contestId} />
-      )}
+      <TeamCreationForm contestId={contestId} />
     </div>
   );
 }

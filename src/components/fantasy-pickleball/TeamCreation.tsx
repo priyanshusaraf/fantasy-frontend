@@ -663,7 +663,7 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                 size="lg"
                 disabled={!teamValid || submitting}
                 onClick={handleCreateTeam}
-                      >
+              >
                 {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -672,19 +672,9 @@ export default function TeamCreation({ contestId }: { contestId: number }) {
                 ) : (
                   <>Create Fantasy Team</>
                 )}
-            </Button>
-          </CardFooter>
+              </Button>
+            </CardFooter>
         </Card>
-          
-          {contest.entryFee > 0 && (
-            <Alert className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Entry Fee Required</AlertTitle>
-              <AlertDescription>
-                Creating this team will deduct ₹{contest.entryFee} from your wallet.
-              </AlertDescription>
-            </Alert>
-          )}
         </div>
       </div>
     </div>
