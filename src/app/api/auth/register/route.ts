@@ -9,7 +9,7 @@ import { pingDatabase } from "@/lib/prisma";
 
 // Define validation schema for registration
 const registerSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
+  username: z.string().min(2, "Username must be at least 2 characters"),
   email: z.string().email("Invalid email format"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   role: z.string().optional().default("USER"),
@@ -69,6 +69,8 @@ async function saveUserLocally(userData: any): Promise<boolean> {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    console.log("Registration request body:", JSON.stringify(body));
+    
     const validation = registerSchema.safeParse(body);
     
     if (!validation.success) {
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    const { name, email, password, role, skillLevel } = validation.data;
+    const { username, email, password, role, skillLevel } = validation.data;
     
     // Check if database is actually available before proceeding
     let dbAvailable = false;
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
       console.warn(`Database unavailable during registration for ${email}`);
       
       const saved = await saveUserLocally({
-        name,
+        username,
         email,
         password: await bcrypt.hash(password, 10),
         role,
@@ -142,7 +144,8 @@ export async function POST(req: NextRequest) {
       try {
         const newUser = await prisma.user.create({
           data: {
-            name,
+            username,
+            name: username,
             email,
             password: hashedPassword,
             role,
@@ -163,7 +166,7 @@ export async function POST(req: NextRequest) {
           await prisma.player.create({
             data: {
               userId: newUser.id,
-              name: name,
+              name: username,
               skillLevel: skillLevel as any,
               isActive: true,
             },
