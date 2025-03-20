@@ -22,7 +22,7 @@ import PreRegistrationForm from "@/components/auth/PreRegistrationForm";
 export default function AuthPage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen bg-black">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-blue-900 to-gray-900">
         <Loader2 className="h-8 w-8 animate-spin text-[#0dc5c1]" />
       </div>
     }>
@@ -65,14 +65,14 @@ function AuthPageContent() {
 
   if (status === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-blue-900 to-gray-900">
         <Loader2 className="h-8 w-8 animate-spin text-[#0dc5c1]" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-900 to-gray-900 text-white">
       <div className="container flex flex-col items-center justify-center p-4 w-full max-w-xl mx-auto">
         <div className="w-full text-center mb-8">
           <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#3b82f6] to-[#0dc5c1]">MatchUp Fantasy</h1>
