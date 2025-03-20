@@ -41,11 +41,15 @@ export default function Navbar() {
           {/* Logo & Brand */}
           <div className="flex items-center">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Trophy className="h-5 w-5 text-white" />
+              <div className="w-8 h-8 rounded-full overflow-hidden">
+                <img 
+                  src="/images/matchup_logo.png" 
+                  alt="MatchUp Logo" 
+                  className="w-full h-full object-cover"
+                />
               </div>
               <span className="font-bold text-lg hidden md:block bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">
-                PickleBall Fantasy
+                MatchUp
               </span>
             </Link>
           </div>

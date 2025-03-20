@@ -14,13 +14,13 @@ export default function Home() {
           <div className="flex justify-between items-center">
             {/* Logo */}
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-10 h-10 relative">
+              <div className="w-10 h-10 relative rounded-full overflow-hidden">
                 <Image 
-                  src="/images/matchup-logo.svg" 
+                  src="/images/matchup_logo.png" 
                   alt="MatchUp Logo" 
                   width={40}
                   height={40}
-                  className="object-contain"
+                  className="object-cover"
                 />
               </div>
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#3b82f6] to-[#0dc5c1]">

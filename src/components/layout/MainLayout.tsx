@@ -79,8 +79,12 @@ export function MainLayout({ children }: MainLayoutProps) {
       <header className="sticky top-0 z-50 w-full border-b backdrop-blur-md bg-background/80 dark:bg-background/70 border-border">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-600 flex items-center justify-center">
-              <Trophy className="h-5 w-5 text-white" />
+            <div className="w-8 h-8 rounded-full overflow-hidden">
+              <img 
+                src="/images/matchup_logo.png" 
+                alt="MatchUp Logo" 
+                className="w-full h-full object-cover"
+              />
             </div>
             <span className="font-bold text-lg hidden md:block bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-600">
               MatchUp

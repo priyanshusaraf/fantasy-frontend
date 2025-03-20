@@ -28,6 +28,11 @@ export const authOptions: NextAuthOptions = {
         if ('role' in user) token.role = user.role;
         if ('username' in user) token.username = user.username;
         if ('status' in user) token.status = user.status;
+        
+        // Restrict admin access to specific emails
+        if (token.email === 'thematchupcompany@gmail.com' || token.email === 'your-second-email@example.com') {
+          token.role = 'MASTER_ADMIN';
+        }
       }
       return token;
     },
