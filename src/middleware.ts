@@ -39,6 +39,7 @@ function createRateLimiter(options: RateLimitOptions) {
 // Public paths that don't require authentication
 const publicPaths = [
   "/api/auth",
+  "/api/auth/register",
   "/auth",
   "/api/webhooks"
 ];
@@ -47,11 +48,17 @@ const publicPaths = [
 const allowedOrigins = [
   'http://localhost:3000',
   'https://final-fantasy-app.vercel.app',
+  'https://matchup.ltd',
 ];
 
 // Add NEXTAUTH_URL to allowed origins if it exists and is not already included
 if (process.env.NEXTAUTH_URL && !allowedOrigins.includes(process.env.NEXTAUTH_URL)) {
   allowedOrigins.push(process.env.NEXTAUTH_URL);
+}
+
+// Explicitly add matchup.ltd domain if not included
+if (!allowedOrigins.includes('https://matchup.ltd')) {
+  allowedOrigins.push('https://matchup.ltd');
 }
 
 export async function middleware(request: NextRequest) {
@@ -178,6 +185,6 @@ export async function middleware(request: NextRequest) {
 // Configure which routes use this middleware
 export const config = {
   matcher: [
-    '/api/((?!auth|webhooks).*)',
+    '/api/((?!auth/register|auth/callback|auth|webhooks).*)',
   ],
 }; 
