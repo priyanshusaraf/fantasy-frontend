@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Badge } from "@/components/ui/badge";
+import Footer from "./Footer";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -236,38 +237,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
       <main className="flex-1">{children}</main>
 
-      <footer className="py-6 border-t">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col items-center justify-between space-y-4 md:flex-row md:space-y-0">
-            <div className="text-center md:text-left">
-              <p className="text-sm text-muted-foreground">
-                &copy; {new Date().getFullYear()} MatchUp. All rights
-                reserved.
-              </p>
-            </div>
-            <div className="flex space-x-4">
-              <Link
-                href="/terms"
-                className="text-sm text-muted-foreground hover:text-primary"
-              >
-                Terms
-              </Link>
-              <Link
-                href="/privacy"
-                className="text-sm text-muted-foreground hover:text-primary"
-              >
-                Privacy
-              </Link>
-              <Link
-                href="/contact"
-                className="text-sm text-muted-foreground hover:text-primary"
-              >
-                Contact
-              </Link>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
