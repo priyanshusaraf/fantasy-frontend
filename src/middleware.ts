@@ -1,64 +1,98 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { LRUCache } from 'lru-cache';
-import { addSecurityHeaders } from './utils/security';
-import { env } from '@/lib/env';
+import { env } from '@/env.mjs';
 
-// Rate limiting implementation (inlined to avoid module resolution issues)
-type RateLimitOptions = {
-  interval: number;
-  uniqueTokenPerInterval: number;
+// Security headers to add to all responses
+function addSecurityHeaders(response: NextResponse) {
+  // Set security headers
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 }
 
-function createRateLimiter(options: RateLimitOptions) {
-  const tokenCache = new LRUCache<string, number[]>({
-    max: options.uniqueTokenPerInterval || 500,
-    ttl: options.interval || 60000,
-  });
-
-  return {
-    check: (limit: number, token: string) =>
-      new Promise<void>((resolve, reject) => {
-        const tokenCount = tokenCache.get(token) || [0];
-        if (tokenCount[0] === 0) {
-          tokenCache.set(token, [1]);
-        } else {
-          tokenCount[0] = tokenCount[0] + 1;
-          tokenCache.set(token, tokenCount);
-        }
-        
-        if (tokenCount[0] > limit) {
-          reject(new Error('Rate limit exceeded'));
-        } else {
-          resolve();
-        }
-      }),
-  };
+// Define response helpers for auth errors
+function handleAuthError(message: string, status = 500) {
+  const response = new NextResponse(
+    JSON.stringify({
+      error: message,
+      timestamp: new Date().toISOString(),
+    }),
+    {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  
+  addSecurityHeaders(response);
+  return response;
 }
 
-// Public paths that don't require authentication
+// Rate limiter implementation
+class RateLimiter {
+  private readonly tokenBuckets: Map<string, { tokens: number; lastRefill: number }>;
+  private readonly interval: number;
+
+  constructor(options: { interval: number; uniqueTokenPerInterval: number }) {
+    this.tokenBuckets = new Map();
+    this.interval = options.interval;
+  }
+
+  async check(limit: number, key: string): Promise<void> {
+    const now = Date.now();
+    let bucket = this.tokenBuckets.get(key);
+
+    if (!bucket) {
+      bucket = { tokens: limit, lastRefill: now };
+      this.tokenBuckets.set(key, bucket);
+      return;
+    }
+
+    // Refill tokens based on elapsed time
+    const elapsedTime = now - bucket.lastRefill;
+    const tokensToAdd = Math.floor(elapsedTime / this.interval) * limit;
+    
+    if (tokensToAdd > 0) {
+      bucket.tokens = Math.min(limit, bucket.tokens + tokensToAdd);
+      bucket.lastRefill = now;
+    }
+
+    if (bucket.tokens <= 0) {
+      throw new Error('Rate limit exceeded');
+    }
+
+    bucket.tokens -= 1;
+  }
+}
+
+// Function to create a new rate limiter
+function createRateLimiter(options: { interval: number; uniqueTokenPerInterval: number }) {
+  return new RateLimiter(options);
+}
+
+// Define paths that don't require auth
 const publicPaths = [
-  "/api/auth",
-  "/api/auth/register",
-  "/auth",
-  "/api/webhooks",
-  "/api/test-db"
+  '/api/auth',
+  '/api/tournaments',
+  '/api/players',
+  '/api/leaderboard',
+  '/api/test',
+  '/api/test-db',
 ];
 
-// Allowed origins
+// Define allowed origins for CORS
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://final-fantasy-app.vercel.app',
-  'https://matchup.ltd',
+  'https://finally-frontend.vercel.app', 
 ];
 
-// Add NEXTAUTH_URL to allowed origins if it exists and is not already included
-if (process.env.NEXTAUTH_URL && !allowedOrigins.includes(process.env.NEXTAUTH_URL)) {
-  allowedOrigins.push(process.env.NEXTAUTH_URL);
-}
-
-// Explicitly add matchup.ltd domain if not included
-if (!allowedOrigins.includes('https://matchup.ltd')) {
+// Add production domain to allowed origins
+if (env.NEXT_PUBLIC_APP_URL) {
+  allowedOrigins.push(env.NEXT_PUBLIC_APP_URL);
   allowedOrigins.push('https://matchup.ltd');
 }
 
@@ -69,6 +103,29 @@ export async function middleware(request: NextRequest) {
   }
   
   const path = request.nextUrl.pathname;
+  
+  // Special handling for auth API routes to better handle database errors
+  if (path.startsWith('/api/auth/')) {
+    const origin = request.headers.get('origin');
+    
+    // Add more robust timeout handling for auth routes
+    if (path === '/api/auth/register' || path === '/api/auth/callback/credentials') {
+      const response = NextResponse.next();
+      
+      // Add security headers
+      addSecurityHeaders(response);
+      
+      // Add CORS headers
+      if (origin && (allowedOrigins.includes(origin) || env.NODE_ENV === 'development')) {
+        response.headers.set('Access-Control-Allow-Origin', origin);
+        response.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        response.headers.set('Access-Control-Max-Age', '86400');
+      }
+      
+      return response;
+    }
+  }
   
   // Handle CORS
   const origin = request.headers.get('origin');
@@ -147,7 +204,7 @@ export async function middleware(request: NextRequest) {
     
     return errorResponse;
   }
-  
+
   // Role-based access control checks
   if (path.startsWith('/api/admin') && 
       !['MASTER_ADMIN', 'TOURNAMENT_ADMIN'].includes(token.role as string)) {

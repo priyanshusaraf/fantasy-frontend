@@ -1,104 +1,172 @@
+import type { Adapter, AdapterAccount, AdapterUser } from "next-auth/adapters";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
-import type { Adapter } from "next-auth/adapters";
+import { User } from "@prisma/client";
 
 /**
- * Creates a custom adapter that maps NextAuth fields to our database schema
- * with enhanced error handling and logging
+ * Generate a unique username based on name or email
+ */
+function generateUniqueName(baseName: string): string {
+  // Generate a random 4-digit number to append to the username
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  return `${baseName.replace(/[^a-zA-Z0-9]/g, '_')}_${randomNum}`;
+}
+
+/**
+ * Converts a Prisma User to an AdapterUser
+ */
+function prismaToPrismaAdapter(user: User | null): AdapterUser | null {
+  if (!user) return null;
+  
+  return {
+    id: user.id.toString(),
+    email: user.email,
+    emailVerified: null,
+    name: user.name,
+    image: user.image,
+  };
+}
+
+/**
+ * Creates a custom adapter for NextAuth
+ * With enhanced error handling and logging
  */
 export function createCustomAdapter(): Adapter {
-  const baseAdapter = PrismaAdapter(prisma);
-  
-  // Wrap adapter methods with error handling and logging
   return {
-    ...baseAdapter,
-    
-    // Override createUser to add additional logging and validation
-    createUser: async (data) => {
+    // Wrap the default adapter methods, add logging and additional error handling
+    ...PrismaAdapter(prisma),
+
+    // Override createUser method to add logging, check for existing users, and create a wallet
+    async createUser(userData: Omit<AdapterUser, "id">): Promise<AdapterUser> {
       try {
-        console.log("NextAuth adapter: Creating user with email:", data.email);
+        console.log("Creating user in custom adapter:", { email: userData.email });
         
-        // Check if user already exists before trying to create
+        // Check if user already exists
         const existingUser = await prisma.user.findUnique({
-          where: { email: data.email },
+          where: { email: userData.email }
+        }).catch(error => {
+          console.error("Database error when checking existing user:", error);
+          // Return null to indicate no user was found - allows continued processing
+          return null;
         });
         
         if (existingUser) {
-          console.log("NextAuth adapter: User already exists with email:", data.email);
-          return existingUser;
+          console.log("User already exists, returning existing user:", { id: existingUser.id });
+          return prismaToPrismaAdapter(existingUser) as AdapterUser;
         }
         
-        // Create the user with default role and status
-        const user = await baseAdapter.createUser({
-          ...data,
-          role: "USER", // Default role
-          status: "ACTIVE", // Default status
-        });
-        
-        console.log("NextAuth adapter: User created successfully:", {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-        });
-        
-        // Create wallet for the user
-        await prisma.wallet.create({
+        // Create user with additional fields
+        const createdUser = await prisma.user.create({
           data: {
-            userId: user.id,
-            balance: 0,
+            email: userData.email,
+            name: userData.name || null,
+            image: userData.image || null,
+            username: generateUniqueName(userData.name || userData.email.split('@')[0]), // Generate a username if not provided
           }
+        }).catch(error => {
+          console.error("Database error when creating user:", error);
+          // Throw a specific error that won't block auth but gives good info
+          throw new Error(`Failed to create user: ${error.message}`);
         });
         
-        console.log("NextAuth adapter: Wallet created for user:", user.id);
+        console.log("User created successfully:", { id: createdUser.id });
         
-        return user;
+        // Create a wallet for the user
+        try {
+          await prisma.wallet.create({
+            data: {
+              userId: createdUser.id,
+              balance: 0,
+            }
+          });
+          
+          console.log("NextAuth adapter: Wallet created for user:", createdUser.id);
+        } catch (walletError) {
+          console.error("NextAuth adapter: Error creating wallet:", walletError);
+        }
+        
+        return prismaToPrismaAdapter(createdUser) as AdapterUser;
       } catch (error) {
-        console.error("NextAuth adapter: Error creating user:", error);
+        console.error("Error in createUser:", error);
+        // Rethrow with more context
         throw error;
       }
     },
     
-    // Override linkAccount to add better error handling
-    linkAccount: async (data) => {
+    // Override linkAccount method for error handling
+    async linkAccount(accountData: AdapterAccount): Promise<AdapterAccount> {
       try {
-        console.log("NextAuth adapter: Linking account for user:", data.userId);
-        const account = await baseAdapter.linkAccount(data);
+        console.log("Linking account in custom adapter:", { 
+          provider: accountData.provider, 
+          userId: accountData.userId 
+        });
+        
+        const adapter = PrismaAdapter(prisma);
+        const linkedAccount = await adapter.linkAccount(accountData);
         console.log("NextAuth adapter: Account linked successfully");
-        return account;
+        return linkedAccount;
       } catch (error) {
-        console.error("NextAuth adapter: Error linking account:", error);
+        console.error("Error in linkAccount:", error);
         throw error;
       }
     },
     
-    // Add additional error handling for other methods
-    getUser: async (id) => {
+    // Add better error handling for getUser
+    async getUser(id: string): Promise<AdapterUser | null> {
       try {
-        const user = await baseAdapter.getUser(id);
-        return user;
+        const user = await prisma.user.findUnique({
+          where: { id: parseInt(id) }
+        }).catch(error => {
+          console.error("Database error in getUser:", error);
+          return null;
+        });
+        
+        return prismaToPrismaAdapter(user);
       } catch (error) {
-        console.error("NextAuth adapter: Error getting user by ID:", error);
-        throw error;
+        console.error("Error in getUser:", error);
+        return null; // Return null instead of throwing to keep auth working
       }
     },
     
-    getUserByEmail: async (email) => {
+    // Add better error handling for getUserByEmail
+    async getUserByEmail(email: string): Promise<AdapterUser | null> {
       try {
-        const user = await baseAdapter.getUserByEmail(email);
-        return user;
+        const user = await prisma.user.findUnique({
+          where: { email }
+        }).catch(error => {
+          console.error("Database error in getUserByEmail:", error);
+          return null;
+        });
+        
+        return prismaToPrismaAdapter(user);
       } catch (error) {
-        console.error("NextAuth adapter: Error getting user by email:", error);
-        throw error;
+        console.error("Error in getUserByEmail:", error);
+        return null; // Return null instead of throwing to keep auth working
       }
     },
     
-    getUserByAccount: async (providerAccountId) => {
+    // Add better error handling for getUserByAccount
+    async getUserByAccount({ provider, providerAccountId }: Pick<AdapterAccount, "provider" | "providerAccountId">): Promise<AdapterUser | null> {
       try {
-        const user = await baseAdapter.getUserByAccount(providerAccountId);
-        return user;
+        const account = await prisma.account.findUnique({
+          where: {
+            provider_providerAccountId: {
+              provider,
+              providerAccountId
+            }
+          },
+          include: { user: true }
+        }).catch(error => {
+          console.error("Database error in getUserByAccount:", error);
+          return null;
+        });
+        
+        if (!account) return null;
+        
+        return prismaToPrismaAdapter(account.user);
       } catch (error) {
-        console.error("NextAuth adapter: Error getting user by account:", error);
-        throw error;
+        console.error("Error in getUserByAccount:", error);
+        return null; // Return null instead of throwing to keep auth working
       }
     },
   };
