@@ -3,10 +3,8 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createCustomAdapter } from "./custom-adapter";
 import { env } from "@/lib/env";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma"; // Import singleton prisma client
 import bcrypt from "bcryptjs";
-
-const prisma = new PrismaClient();
 
 /**
  * NextAuth configuration
@@ -71,7 +69,6 @@ export const authOptions: NextAuthOptions = {
             name: user.name || user.username,
             image: user.image || user.profilePicture,
             role: user.role,
-            // No status field to avoid TypeScript errors
           };
         } catch (error) {
           console.error("Authentication error:", error);
@@ -90,11 +87,14 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         console.log("Setting JWT from user:", { id: user.id, email: user.email });
         
-        token.id = user.id;
+        // Use type assertion to avoid TypeScript errors
+        (token as any).id = user.id;
+        
         // Add custom user fields from database to JWT
-        if ('role' in user) token.role = user.role;
-        if ('username' in user) token.username = user.username;
-        // Get status from the database user rather than the NextAuth user object
+        if ('role' in user) (token as any).role = user.role;
+        if ('username' in user) (token as any).username = user.username;
+        
+        // Get status from the database user
         if (user.id) {
           try {
             const dbUser = await prisma.user.findUnique({
@@ -102,7 +102,7 @@ export const authOptions: NextAuthOptions = {
               select: { status: true }
             });
             if (dbUser?.status) {
-              token.status = dbUser.status;
+              (token as any).status = dbUser.status;
             }
           } catch (error) {
             console.error("Error fetching user status:", error);
@@ -111,20 +111,26 @@ export const authOptions: NextAuthOptions = {
         
         // Restrict admin access to specific emails
         if (token.email === 'thematchupcompany@gmail.com' || token.email === 'your-second-email@example.com') {
-          token.role = 'MASTER_ADMIN';
+          (token as any).role = 'MASTER_ADMIN';
         }
       }
       return token;
     },
+    
     async session({ session, token }) {
       if (session.user) {
-        console.log("Setting session from token:", { id: token.id, email: token.email });
+        console.log("Setting session from token:", { 
+          id: (token as any).id,
+          email: token.email
+        });
         
-        session.user.id = token.id;
+        // Use type assertion to avoid TypeScript errors
+        (session.user as any).id = (token as any).id;
+        
         // Add custom user fields from JWT to session
-        if ('role' in token) session.user.role = token.role;
-        if ('username' in token) session.user.username = token.username;
-        if ('status' in token) session.user.status = token.status;
+        if ('role' in token) (session.user as any).role = (token as any).role;
+        if ('username' in token) (session.user as any).username = (token as any).username;
+        if ('status' in token) (session.user as any).status = (token as any).status;
       }
       return session;
     },

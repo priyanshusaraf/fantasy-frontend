@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import fs from 'fs';
+import path from 'path';
 
 // Use singleton pattern for PrismaClient to prevent connection issues
 import prisma from "@/lib/prisma";
@@ -15,6 +17,35 @@ const registerSchema = z.object({
   skillLevel: z.string().optional(),
 });
 
+// Fallback function for development only
+async function saveUserLocally(userData: any) {
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const filePath = path.join(process.cwd(), 'temp-users.json');
+      let users = [];
+      
+      if (fs.existsSync(filePath)) {
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        users = JSON.parse(fileContent);
+      }
+      
+      users.push({
+        ...userData,
+        id: users.length + 1,
+        createdAt: new Date().toISOString()
+      });
+      
+      fs.writeFileSync(filePath, JSON.stringify(users, null, 2));
+      console.log(`User saved locally at ${filePath}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to save user locally:', error);
+      return false;
+    }
+  }
+  return false;
+}
+
 export async function POST(request: Request) {
   try {
     console.log("Registration API called");
@@ -25,15 +56,26 @@ export async function POST(request: Request) {
     headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
     headers.set('Access-Control-Allow-Headers', 'Content-Type');
     
-    // Check if database is connected
+    // Test database connection with explicit settings
     try {
-      await prisma.$connect();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database connection timeout')), 5000)
+      );
+      
+      const connectionPromise = prisma.$connect();
+      
+      await Promise.race([connectionPromise, timeoutPromise]);
       console.log("Database connected successfully");
     } catch (dbError) {
       console.error("Database connection error:", dbError);
+      
+      // In production, return a user-friendly error
       return NextResponse.json(
-        { error: "Database connection failed", details: String(dbError) },
-        { status: 500, headers }
+        { 
+          error: "Temporary database connection issue. Please try again later.",
+          details: process.env.NODE_ENV === 'development' ? String(dbError) : undefined
+        },
+        { status: 503, headers }
       );
     }
     
@@ -275,4 +317,15 @@ export async function POST(request: Request) {
     // Ensure DB connection is closed properly
     await prisma.$disconnect();
   }
+}
+
+// Handle OPTIONS requests for CORS preflight
+export async function OPTIONS(request: Request) {
+  const headers = new Headers();
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  headers.set('Access-Control-Max-Age', '86400');
+  
+  return new Response(null, { headers });
 }

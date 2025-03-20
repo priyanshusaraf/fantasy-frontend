@@ -41,7 +41,8 @@ const publicPaths = [
   "/api/auth",
   "/api/auth/register",
   "/auth",
-  "/api/webhooks"
+  "/api/webhooks",
+  "/api/test-db"
 ];
 
 // Allowed origins
@@ -185,6 +186,6 @@ export async function middleware(request: NextRequest) {
 // Configure which routes use this middleware
 export const config = {
   matcher: [
-    '/api/((?!auth/register|auth/callback|auth|webhooks).*)',
+    '/api/((?!auth/register|auth/callback|auth|webhooks|test-db).*)',
   ],
 }; 

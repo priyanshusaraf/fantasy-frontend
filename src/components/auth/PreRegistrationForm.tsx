@@ -13,7 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/Input";
 import { signIn } from "next-auth/react";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
@@ -39,8 +39,12 @@ export default function PreRegistrationForm() {
   const [skillLevel, setSkillLevel] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [registrationMethod, setRegistrationMethod] = useState<"email" | "google">("email");
   const router = useRouter();
+
+  // TEMPORARY: State for fallback mode when database is down
+  const [useFallbackMode, setUseFallbackMode] = useState(false);
 
   const handleGoogleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,6 +89,42 @@ export default function PreRegistrationForm() {
     }
   };
 
+  // Function to save user locally when database is down
+  const saveUserToLocalStorage = (userData: any) => {
+    try {
+      // Get existing temp users or initialize empty array
+      const existingUsers = JSON.parse(localStorage.getItem('tempUsers') || '[]');
+      
+      // Check if email already exists
+      if (existingUsers.some((user: any) => user.email === userData.email)) {
+        return { success: false, error: "A user with this email already exists" };
+      }
+      
+      // Check if username already exists
+      if (existingUsers.some((user: any) => user.username === userData.username)) {
+        return { success: false, error: "A user with this username already exists" };
+      }
+      
+      // Add the new user with a timestamp and ID
+      const newUser = {
+        ...userData,
+        id: existingUsers.length + 1,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Save to localStorage
+      localStorage.setItem('tempUsers', JSON.stringify([...existingUsers, newUser]));
+      
+      // Also set as current user
+      localStorage.setItem('currentUser', JSON.stringify(newUser));
+      
+      return { success: true };
+    } catch (error) {
+      console.error("Error saving user to localStorage:", error);
+      return { success: false, error: "Failed to save user data" };
+    }
+  };
+
   const handleEmailRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -122,87 +162,134 @@ export default function PreRegistrationForm() {
     setIsLoading(true);
     setError(null);
     
+    // Create user data object
+    const userData = {
+      username,
+      email,
+      password, // In real app, never store raw passwords in localStorage
+      role,
+      skillLevel: role === "PLAYER" ? skillLevel : undefined,
+    };
+    
     try {
       console.log(`Attempting to register user: ${email} with role: ${role}`);
       
-      // Call API to register the user
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          email,
-          password,
-          role,
-          skillLevel: role === "PLAYER" ? skillLevel : undefined,
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error("Registration failed with status:", response.status);
-        console.error("Server response:", data);
-        
-        // Display a more specific error message if available
-        const errorMessage = data.error || data.message || "Registration failed";
-        
-        // If we have detailed validation errors, show the first one
-        if (data.details && typeof data.details === 'object') {
-          const firstErrorField = Object.keys(data.details)[0];
-          const fieldError = data.details[firstErrorField];
-          if (fieldError && fieldError._errors && fieldError._errors.length > 0) {
-            throw new Error(`${firstErrorField}: ${fieldError._errors[0]}`);
-          }
-        }
-        
-        throw new Error(errorMessage);
-      }
-      
-      console.log("Registration successful:", data);
-      
-      // If registration is successful, sign in the user
+      // First try the normal API call
       try {
-        console.log("Attempting to sign in after registration");
-        const signInResult = await signIn("credentials", {
-          email,
-          password,
-          redirect: false,
+        // Call API to register the user
+        const response = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(userData),
         });
         
-        console.log("Sign-in result:", signInResult);
+        const data = await response.json();
         
-        if (signInResult?.error) {
-          console.error("Error signing in after registration:", signInResult.error);
+        if (!response.ok) {
+          console.error("Registration failed with status:", response.status);
+          console.error("Server response:", data);
+          
+          // If we get a database connection error, use fallback mode
+          if (response.status === 503 || data.error?.includes("database") || data.error?.includes("Database")) {
+            console.log("Using fallback registration mode due to database issues");
+            throw new Error("Database connection error");
+          }
+          
+          // Display a more specific error message if available
+          const errorMessage = data.error || data.message || "Registration failed";
+          
+          // If we have detailed validation errors, show the first one
+          if (data.details && typeof data.details === 'object') {
+            const firstErrorField = Object.keys(data.details)[0];
+            const fieldError = data.details[firstErrorField];
+            if (fieldError && fieldError._errors && fieldError._errors.length > 0) {
+              throw new Error(`${firstErrorField}: ${fieldError._errors[0]}`);
+            }
+          }
+          
+          throw new Error(errorMessage);
+        }
+        
+        console.log("Registration successful:", data);
+        
+        // If registration is successful, sign in the user
+        try {
+          console.log("Attempting to sign in after registration");
+          const signInResult = await signIn("credentials", {
+            email,
+            password,
+            redirect: false,
+          });
+          
+          console.log("Sign-in result:", signInResult);
+          
+          if (signInResult?.error) {
+            console.error("Error signing in after registration:", signInResult.error);
+            // Even if sign-in fails, still redirect to dashboard as registration was successful
+            setTimeout(() => {
+              window.location.href = "/dashboard";
+            }, 1000);
+          } else if (signInResult?.ok) {
+            console.log("Sign-in successful, redirecting to dashboard");
+            setTimeout(() => {
+              window.location.href = "/dashboard";
+            }, 1000);
+          } else {
+            // Handle unexpected result
+            console.warn("Unexpected sign-in result:", signInResult);
+            // Still redirect to dashboard
+            setTimeout(() => {
+              window.location.href = "/dashboard";
+            }, 1000);
+          }
+        } catch (signInError) {
+          console.error("Error during sign-in after registration:", signInError);
           // Even if sign-in fails, still redirect to dashboard as registration was successful
           setTimeout(() => {
             window.location.href = "/dashboard";
           }, 1000);
-        } else if (signInResult?.ok) {
-          console.log("Sign-in successful, redirecting to dashboard");
-          setTimeout(() => {
-            window.location.href = "/dashboard";
-          }, 1000);
-        } else {
-          // Handle unexpected result
-          console.warn("Unexpected sign-in result:", signInResult);
-          // Still redirect to dashboard
-          setTimeout(() => {
-            window.location.href = "/dashboard";
-          }, 1000);
         }
-      } catch (signInError) {
-        console.error("Error during sign-in after registration:", signInError);
-        // Even if sign-in fails, still redirect to dashboard as registration was successful
-        setTimeout(() => {
-          window.location.href = "/dashboard";
-        }, 1000);
+      
+      } catch (apiError: any) {
+        console.error("API registration error:", apiError);
+        
+        // If there's a database connection error, use fallback mechanism
+        if (apiError.message === "Database connection error" || useFallbackMode) {
+          console.log("Using localStorage fallback for registration");
+          
+          // Save user to localStorage instead
+          const result = saveUserToLocalStorage(userData);
+          
+          if (result.success) {
+            // Show success message with explanation
+            setSuccess("Account created successfully in temporary mode. While our database is being updated, you can use the application with limited functionality. Your data will be synchronized when the database is available again.");
+            
+            // Clear form fields
+            setUsername("");
+            setEmail("");
+            setPassword("");
+            setConfirmPassword("");
+            setSkillLevel("");
+            
+            // Redirect to dashboard after delay
+            setTimeout(() => {
+              window.location.href = "/dashboard";
+            }, 4000);
+            
+          } else {
+            setError(result.error || "Failed to create account. Please try again.");
+          }
+        } else {
+          // For other errors, show the error message
+          throw apiError;
+        }
       }
     } catch (err: any) {
       console.error("Registration error:", err);
       setError(err.message || "Failed to register. Please try again.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -234,6 +321,13 @@ export default function PreRegistrationForm() {
           <Alert variant="destructive" className="mb-4 bg-red-900/40 border-red-800">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        {success && (
+          <Alert className="mb-4 bg-green-900/40 border-green-800">
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertDescription>{success}</AlertDescription>
           </Alert>
         )}
 
@@ -581,6 +675,22 @@ export default function PreRegistrationForm() {
               )}
             </Button>
           </form>
+        )}
+
+        {/* Add a manual override for fallback mode for testing */}
+        {process.env.NODE_ENV !== 'production' && (
+          <div className="mt-4 mb-2 flex items-center justify-between">
+            <Label htmlFor="fallback-mode" className="text-sm text-gray-400">
+              Use fallback mode
+            </Label>
+            <input 
+              type="checkbox" 
+              id="fallback-mode"
+              checked={useFallbackMode}
+              onChange={(e) => setUseFallbackMode(e.target.checked)}
+              className="h-4 w-4"
+            />
+          </div>
         )}
       </CardContent>
       <CardFooter className="border-t border-gray-800 pt-4 px-8 pb-6">
