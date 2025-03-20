@@ -1,87 +1,126 @@
 import React, { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { z } from "zod";
+import { toast } from "sonner";
+
+// Form validation schema
+const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
 
 export function LoginForm() {
+  const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const { login } = useAuth();
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-
+    
+    // Reset errors
+    setErrors({});
+    
     try {
+      // Validate form
+      const result = loginSchema.safeParse({ email, password });
+      if (!result.success) {
+        const formattedErrors = result.error.format();
+        setErrors({
+          email: formattedErrors.email?._errors[0],
+          password: formattedErrors.password?._errors[0],
+        });
+        return;
+      }
+      
+      setIsSubmitting(true);
+      
+      // Attempt login
       await login(email, password);
-    } catch {
-      setError("Invalid email or password");
+      
+      // Show success toast
+      toast.success("Login successful");
+      
+      // Redirect to dashboard
+      router.push("/dashboard");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
+      toast.error(errorMessage);
+      setErrors({
+        email: "Invalid email or password",
+        password: "Invalid email or password",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md"
-    >
-      <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
-
-      {error && (
-        <div
-          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"
-          role="alert"
-        >
-          {error}
+    <div className="mx-auto max-w-md space-y-6 rounded-lg border bg-card p-6 shadow-sm">
+      <div className="space-y-2 text-center">
+        <h1 className="text-3xl font-bold">Welcome back</h1>
+        <p className="text-muted-foreground">Enter your credentials to sign in</p>
+      </div>
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="name@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={isSubmitting}
+            className={errors.email ? "border-destructive" : ""}
+          />
+          {errors.email && (
+            <p className="text-sm text-destructive">{errors.email}</p>
+          )}
         </div>
-      )}
-
-      <div className="mb-4">
-        <label
-          htmlFor="email"
-          className="block text-gray-700 text-sm font-bold mb-2"
-        >
-          Email
-        </label>
-        <input
-          type="email"
-          id="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-        />
+        
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            disabled={isSubmitting}
+            className={errors.password ? "border-destructive" : ""}
+          />
+          {errors.password && (
+            <p className="text-sm text-destructive">{errors.password}</p>
+          )}
+        </div>
+        
+        <div className="text-right">
+          <Link href="/auth/reset-password" className="text-sm text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
+        
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in..." : "Sign in"}
+        </Button>
+      </form>
+      
+      <div className="text-center text-sm">
+        Don't have an account?{" "}
+        <Link href="/auth?mode=signup" className="text-primary hover:underline">
+          Sign up
+        </Link>
       </div>
-
-      <div className="mb-6">
-        <label
-          htmlFor="password"
-          className="block text-gray-700 text-sm font-bold mb-2"
-        >
-          Password
-        </label>
-        <input
-          type="password"
-          id="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline"
-        />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <button
-          type="submit"
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-        >
-          Sign In
-        </button>
-        <a
-          href="/reset-password"
-          className="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800"
-        >
-          Forgot Password?
-        </a>
-      </div>
-    </form>
+    </div>
   );
 }

@@ -17,6 +17,8 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/label";
 import PreRegistrationForm from "@/components/auth/PreRegistrationForm";
 
 export default function AuthPage() {
@@ -37,6 +39,9 @@ function AuthPageContent() {
   const searchParams = useSearchParams();
   const activeTab = searchParams.get("mode") || "signin";
   const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [signInError, setSignInError] = useState("");
 
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const authError = searchParams.get("error");
@@ -55,10 +60,53 @@ function AuthPageContent() {
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
+    setSignInError("");
     try {
       await signIn("google", { callbackUrl });
     } catch (err) {
       console.error("Google sign-in error:", err);
+      setLoading(false);
+    }
+  };
+
+  const handleCredentialsSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setSignInError("");
+    
+    if (!email || !password) {
+      setSignInError("Email and password are required");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      console.log("Attempting sign in with credentials:", { email });
+      
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false
+      });
+
+      console.log("Sign in result:", result);
+
+      if (result?.error) {
+        console.error("Sign in error:", result.error);
+        setSignInError(`Authentication failed: ${result.error}`);
+        setLoading(false);
+      } else if (result?.ok) {
+        console.log("Sign in successful, waiting for session to establish before redirecting to:", callbackUrl);
+        setTimeout(() => {
+          window.location.href = callbackUrl;
+        }, 1500);
+      } else {
+        setSignInError("Unknown authentication error");
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error("Credentials sign-in error:", err);
+      setSignInError(`An error occurred during sign in: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setLoading(false);
     }
   };
@@ -107,7 +155,7 @@ function AuthPageContent() {
                     Sign In
                   </CardTitle>
                   <CardDescription className="text-gray-400">
-                    Sign in with your Google account to continue
+                    Sign in to your account to continue
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="py-6">
@@ -122,6 +170,64 @@ function AuthPageContent() {
                       </AlertDescription>
                     </Alert>
                   )}
+                  
+                  {signInError && (
+                    <Alert variant="destructive" className="mb-4 bg-red-900/40 border-red-800">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{signInError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <form onSubmit={handleCredentialsSignIn} className="space-y-4 mb-6">
+                    <div className="space-y-1">
+                      <Label htmlFor="email">Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Enter your email"
+                        disabled={loading}
+                        className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label htmlFor="password">Password</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter your password"
+                        disabled={loading}
+                        className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                      />
+                    </div>
+                    
+                    <Button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full justify-center bg-gradient-to-r from-[#3b82f6] to-[#0dc5c1] hover:opacity-90 text-white py-2 rounded-md"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in...
+                        </>
+                      ) : (
+                        "Sign in with Email"
+                      )}
+                    </Button>
+                  </form>
+                  
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-gray-700"></span>
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-gray-900 px-2 text-gray-400">Or continue with</span>
+                    </div>
+                  </div>
 
                   <Button
                     onClick={handleGoogleSignIn}

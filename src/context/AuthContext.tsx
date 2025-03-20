@@ -28,8 +28,10 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (provider: string) => Promise<void>;
-  register: (username: string, email: string, role: UserRole) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string, role?: UserRole) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (token: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   hasRole: (roles: UserRole | UserRole[]) => boolean;
   isApproved: () => boolean;
@@ -67,11 +69,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [session, status]);
 
-  // Login using OAuth provider
-  const login = async (provider: string = "google") => {
+  // Login using email/password
+  const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      await signIn(provider, { callbackUrl: "/dashboard" });
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
     } catch (error) {
       console.error("Authentication error:", error);
       throw error;
@@ -84,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (
     username: string,
     email: string,
+    password: string,
     role: UserRole = "USER"
   ) => {
     setIsLoading(true);
@@ -91,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, role }),
+        body: JSON.stringify({ username, email, password, role }),
       });
 
       if (!response.ok) {
@@ -99,10 +110,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(error.message || "Registration failed");
       }
 
-      // After registration, redirect to login
-      await login("google");
+      // After registration, login automatically
+      await login(email, password);
     } catch (error) {
       console.error("Registration error:", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Request password reset
+  const requestPasswordReset = async (email: string) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/auth/reset-password/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to request password reset");
+      }
+      
+      return response.json();
+    } catch (error) {
+      console.error("Password reset request error:", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Reset password with token
+  const resetPassword = async (token: string, newPassword: string) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/auth/reset-password/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password: newPassword }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to reset password");
+      }
+      
+      return response.json();
+    } catch (error) {
+      console.error("Password reset error:", error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -140,6 +199,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login,
     register,
+    requestPasswordReset,
+    resetPassword,
     logout,
     hasRole,
     isApproved,
