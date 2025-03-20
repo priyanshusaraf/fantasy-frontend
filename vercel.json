@@ -48,9 +48,7 @@
   ],
   "build": {
     "env": {
-      "PRISMA_GENERATE_DATAPROXY": "true",
-      "DATABASE_URL": "@database_url",
-      "NEXTAUTH_URL": "@nextauth_url"
+      "PRISMA_GENERATE_DATAPROXY": "true"
     }
   }
 } 

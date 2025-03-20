@@ -90,7 +90,7 @@ export default function PreRegistrationForm() {
   };
 
   return (
-    <Card className="border-0 bg-gray-900 text-white rounded-xl overflow-hidden">
+    <Card className="border-0 bg-gray-900 text-white rounded-xl overflow-hidden w-full">
       <CardHeader className="text-center pb-2">
         <CardTitle className="text-2xl font-bold text-[#0dc5c1]">
           Create Account

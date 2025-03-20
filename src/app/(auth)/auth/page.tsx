@@ -72,14 +72,14 @@ function AuthPageContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-black text-white">
-      <div className="container flex flex-col items-center justify-center min-h-screen p-4">
-        <div className="w-full max-w-md mx-auto text-center mb-10">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white">
+      <div className="container flex flex-col items-center justify-center p-4 w-full max-w-xl mx-auto">
+        <div className="w-full text-center mb-8">
           <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#3b82f6] to-[#0dc5c1]">MatchUp Fantasy</h1>
           <p className="text-gray-400">Your Ultimate Fantasy Sports Experience</p>
         </div>
 
-        <div className="w-full max-w-md">
+        <div className="w-full">
           <Tabs
             defaultValue={activeTab}
             onValueChange={handleTabChange}
@@ -101,7 +101,7 @@ function AuthPageContent() {
             </TabsList>
 
             <TabsContent value="signin">
-              <Card className="border-0 bg-gray-900 text-white rounded-xl overflow-hidden">
+              <Card className="border-0 bg-gray-900 text-white rounded-xl overflow-hidden w-full">
                 <CardHeader className="text-center pb-2">
                   <CardTitle className="text-2xl font-bold text-[#0dc5c1]">
                     Sign In
