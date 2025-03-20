@@ -31,7 +31,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // During SSR, render without ThemeProvider to avoid hydration mismatch
   if (!mounted) {
     return (
-      <SessionProvider refetchInterval={1800} refetchOnWindowFocus={true}>
+      <SessionProvider refetchInterval={0} refetchOnWindowFocus={false}>
         {children}
       </SessionProvider>
     );
@@ -40,8 +40,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // Only render ThemeProvider on the client
   return (
     <SessionProvider 
-      refetchInterval={1800} // Refresh session every 30 minutes (in seconds)
-      refetchOnWindowFocus={true} // Refresh when window gains focus
+      refetchInterval={0} // Disable automatic refresh to avoid async issues
+      refetchOnWindowFocus={false} // Disable refresh on window focus to prevent errors
     >
       <ThemeProvider
         attribute="class"

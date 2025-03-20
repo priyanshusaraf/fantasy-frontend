@@ -97,15 +97,21 @@ export const authOptions: NextAuthOptions = {
         // Get status from the database user
         if (user.id) {
           try {
+            // Use a simpler approach that won't cause promise issues
             const dbUser = await prisma.user.findUnique({
               where: { id: parseInt(user.id.toString()) },
               select: { status: true }
+            }).catch(error => {
+              console.error("Error fetching user status:", error);
+              return null;
             });
+            
             if (dbUser?.status) {
               (token as any).status = dbUser.status;
             }
           } catch (error) {
             console.error("Error fetching user status:", error);
+            // Don't throw - continue with authentication even if this fails
           }
         }
         

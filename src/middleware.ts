@@ -63,6 +63,11 @@ if (!allowedOrigins.includes('https://matchup.ltd')) {
 }
 
 export async function middleware(request: NextRequest) {
+  // Block Sentry API requests that are causing errors
+  if (request.url.includes('ingest.sentry.io')) {
+    return new NextResponse(null, { status: 200 });
+  }
+  
   const path = request.nextUrl.pathname;
   
   // Handle CORS
