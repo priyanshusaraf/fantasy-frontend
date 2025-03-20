@@ -10,7 +10,7 @@ const nextConfig = {
   },
   output: 'standalone',
   experimental: {
-    missingSuspenseWithCSRBailout: true
+    // Removed missingSuspenseWithCSRBailout as it's not recognized in Next.js 15.2.2
   },
   images: {
     domains: [
