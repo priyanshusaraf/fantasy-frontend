@@ -99,60 +99,74 @@ export async function POST(req: NextRequest) {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create the user with hashed password directly in User model
-    const newUser = await prisma.user.create({
-      data: {
-        username,
-        name: username, // Use username as the initial name
-        email,
-        role,
-        password: hashedPassword, // Store the hashed password in the User model
-        status: "ACTIVE",
-      },
-    });
+    // Use transaction to ensure all records are created or none are
+    const newUser = await prisma.$transaction(async (tx) => {
+      // Create the user with hashed password
+      const user = await tx.user.create({
+        data: {
+          username,
+          name: username, // Use username as the initial name
+          email,
+          role,
+          password: hashedPassword,
+          status: "ACTIVE",
+        },
+      });
 
-    // Create credentials account
-    await prisma.account.create({
-      data: {
-        userId: newUser.id,
-        type: "credentials",
-        provider: "credentials",
-        providerAccountId: email,
+      // Create credentials account
+      await tx.account.create({
+        data: {
+          userId: user.id,
+          type: "credentials",
+          provider: "credentials",
+          providerAccountId: email,
+        }
+      });
+
+      // Create role-specific record if needed
+      if (role === "PLAYER" && skillLevel) {
+        await tx.player.create({
+          data: {
+            userId: user.id,
+            name: username,
+            skillLevel: skillLevel as any, // Cast to any since skillLevel is an enum
+            isActive: true,
+          },
+        });
+      } else if (role === "REFEREE") {
+        await tx.referee.create({
+          data: {
+            userId: user.id,
+            certificationLevel: "BASIC", // Default certification level
+          },
+        });
+      } else if (role === "TOURNAMENT_ADMIN") {
+        await tx.tournamentAdmin.create({
+          data: {
+            userId: user.id,
+          },
+        });
+      } else if (role === "MASTER_ADMIN") {
+        await tx.masterAdmin.create({
+          data: {
+            userId: user.id,
+          },
+        });
       }
+
+      // Initialize wallet for the user
+      await tx.wallet.create({
+        data: {
+          userId: user.id,
+          balance: 0,
+        },
+      });
+
+      return user;
     });
 
-    // If it's a player, create the player profile
-    if (role === "PLAYER" && skillLevel) {
-      await prisma.player.create({
-        data: {
-          userId: newUser.id,
-          name: username,
-          skillLevel: skillLevel as any, // Cast to any since skillLevel is an enum
-        },
-      });
-    }
-
-    // Create corresponding role-specific record if needed
-    if (role === "REFEREE") {
-      await prisma.referee.create({
-        data: {
-          userId: newUser.id,
-          certificationLevel: "BASIC", // Default certification level
-        },
-      });
-    } else if (role === "TOURNAMENT_ADMIN") {
-      await prisma.tournamentAdmin.create({
-        data: {
-          userId: newUser.id,
-        },
-      });
-    } else if (role === "MASTER_ADMIN") {
-      await prisma.masterAdmin.create({
-        data: {
-          userId: newUser.id,
-        },
-      });
-    }
+    // Log successful creation
+    console.log(`User ${newUser.id} (${newUser.email}) created successfully with role ${newUser.role}`);
 
     // TODO: If sendEmail is true, send an email notification to the user
     // with their credentials (this would be implemented in a separate service)
@@ -172,10 +186,19 @@ export async function POST(req: NextRequest) {
         status: newUser.status,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating user:", error);
+    
+    // Provide more specific error messages
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { error: "A conflict occurred with existing data", detail: error.meta?.target },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Failed to create user" },
+      { error: "Failed to create user", detail: error.message },
       { status: 500 }
     );
   }
