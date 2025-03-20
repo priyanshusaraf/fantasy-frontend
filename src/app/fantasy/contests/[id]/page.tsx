@@ -26,6 +26,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ContestDetailPageProps {
   params: {
@@ -51,6 +52,7 @@ interface Contest {
     startDate: string;
     endDate: string;
   };
+  isDynamicPrizePool?: boolean;
 }
 
 interface UserTeam {
@@ -222,7 +224,19 @@ export default function ContestDetailPage({ params }: ContestDetailPageProps) {
               <Trophy className="h-5 w-5 text-primary mr-3" />
               <div>
                 <p className="text-xs text-muted-foreground">Prize Pool</p>
-                <p className="font-medium">₹{contest.prizePool.toLocaleString()}</p>
+                <div className="flex items-center gap-1">
+                  <p className="font-medium">₹{contest.prizePool.toLocaleString()}</p>
+                  {contest.isDynamicPrizePool && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs w-[220px]">Dynamic prize pool (77.64% of all entry fees) - increases with each entry!</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -286,6 +300,51 @@ export default function ContestDetailPage({ params }: ContestDetailPageProps) {
                       <>This contest has ended. The winners have been determined.</>
                     )}
                   </p>
+                </div>
+                
+                <div>
+                  <h3 className="font-medium mb-2">Prize Distribution</h3>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    {contest.isDynamicPrizePool 
+                      ? "This contest features a dynamic prize pool that grows with each entry. 77.64% of all entry fees go directly to the prize pool." 
+                      : "This contest has a fixed prize pool set by the tournament organizers."}
+                  </p>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm font-medium">
+                      <span>1st Place</span>
+                      <span>{contest.currentEntries < 5 ? "100%" : contest.currentEntries <= 8 ? "70%" : contest.currentEntries <= 15 ? "60%" : contest.currentEntries <= 25 ? "50%" : "40%"}</span>
+                    </div>
+                    {contest.currentEntries >= 5 && (
+                      <div className="flex justify-between text-sm">
+                        <span>2nd Place</span>
+                        <span>{contest.currentEntries <= 8 ? "30%" : contest.currentEntries <= 15 ? "25%" : contest.currentEntries <= 25 ? "25%" : "20%"}</span>
+                      </div>
+                    )}
+                    {contest.currentEntries >= 9 && (
+                      <div className="flex justify-between text-sm">
+                        <span>3rd Place</span>
+                        <span>{contest.currentEntries <= 15 ? "15%" : contest.currentEntries <= 25 ? "15%" : "15%"}</span>
+                      </div>
+                    )}
+                    {contest.currentEntries >= 16 && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span>4th Place</span>
+                          <span>7%</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>5th Place</span>
+                          <span>{contest.currentEntries <= 25 ? "3%" : "5%"}</span>
+                        </div>
+                      </>
+                    )}
+                    {contest.currentEntries > 25 && (
+                      <div className="flex justify-between text-sm">
+                        <span>6th - 10th Place</span>
+                        <span>13% (distributed)</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 {userTeam && (

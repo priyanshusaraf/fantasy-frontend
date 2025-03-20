@@ -17,11 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import TeamChangeOptions from "@/components/fantasy-pickleball/TeamChangeOptions";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface FantasyCategory {
   name: string;
-  playerSkillLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  playerSkillLevel: "A_PLUS" | "A" | "A_MINUS" | "B_PLUS" | "B" | "B_MINUS" | "C" | "D";
   price: number;
 }
 
@@ -36,9 +36,9 @@ interface FantasySettings {
   categories: FantasyCategory[];
   entryFees: {
     free: boolean;
-    basic: boolean;
-    premium: boolean;
-    elite: boolean;
+    basic: { enabled: boolean; amount: number };
+    premium: { enabled: boolean; amount: number };
+    elite: { enabled: boolean; amount: number };
   };
 }
 
@@ -55,24 +55,28 @@ export default function FantasySetupForm({
 
   // Default fantasy settings
   const [settings, setSettings] = useState<FantasySettings>({
-    teamSize: 7,
-    walletSize: 100000,
+    teamSize: 11,
+    walletSize: 60000,
     allowTeamChanges: true,
     changeFrequency: "daily",
     maxPlayersToChange: 2,
     changeWindowStart: "18:00",
     changeWindowEnd: "22:00",
     categories: [
-      { name: "A Grade", playerSkillLevel: "PROFESSIONAL", price: 15000 },
-      { name: "B Grade", playerSkillLevel: "ADVANCED", price: 10000 },
-      { name: "C Grade", playerSkillLevel: "INTERMEDIATE", price: 7000 },
-      { name: "D Grade", playerSkillLevel: "BEGINNER", price: 5000 },
+      { name: "A+ Grade", playerSkillLevel: "A_PLUS", price: 12000 },
+      { name: "A Grade", playerSkillLevel: "A", price: 11500 },
+      { name: "A- Grade", playerSkillLevel: "A_MINUS", price: 11000 },
+      { name: "B+ Grade", playerSkillLevel: "B_PLUS", price: 10500 },
+      { name: "B Grade", playerSkillLevel: "B", price: 10000 },
+      { name: "B- Grade", playerSkillLevel: "B_MINUS", price: 9500 },
+      { name: "C Grade", playerSkillLevel: "C", price: 9000 },
+      { name: "D Grade", playerSkillLevel: "D", price: 9000 },
     ],
     entryFees: {
       free: true,
-      basic: true,
-      premium: true,
-      elite: true,
+      basic: { enabled: true, amount: 500 },
+      premium: { enabled: true, amount: 1000 },
+      elite: { enabled: true, amount: 1500 },
     },
   });
 
@@ -116,13 +120,26 @@ export default function FantasySetupForm({
     fee: "free" | "basic" | "premium" | "elite",
     value: boolean
   ) => {
-    setSettings((prev) => ({
-      ...prev,
-      entryFees: {
-        ...prev.entryFees,
-        [fee]: value,
-      },
-    }));
+    if (fee === "free") {
+      setSettings(prev => ({
+        ...prev,
+        entryFees: {
+          ...prev.entryFees,
+          [fee]: value,
+        },
+      }));
+    } else {
+      setSettings(prev => ({
+        ...prev,
+        entryFees: {
+          ...prev.entryFees,
+          [fee]: {
+            ...prev.entryFees[fee],
+            enabled: value,
+          },
+        },
+      }));
+    }
   };
 
   const nextStep = () => {
@@ -346,7 +363,7 @@ export default function FantasySetupForm({
                         Basic (₹500)
                       </Label>
                       <Switch
-                        checked={settings.entryFees.basic}
+                        checked={settings.entryFees.basic.enabled}
                         onCheckedChange={(checked) =>
                           handleEntryFeeToggle("basic", checked)
                         }
@@ -365,7 +382,7 @@ export default function FantasySetupForm({
                         Premium (₹1000)
                       </Label>
                       <Switch
-                        checked={settings.entryFees.premium}
+                        checked={settings.entryFees.premium.enabled}
                         onCheckedChange={(checked) =>
                           handleEntryFeeToggle("premium", checked)
                         }
@@ -384,7 +401,7 @@ export default function FantasySetupForm({
                         Elite (₹1500)
                       </Label>
                       <Switch
-                        checked={settings.entryFees.elite}
+                        checked={settings.entryFees.elite.enabled}
                         onCheckedChange={(checked) =>
                           handleEntryFeeToggle("elite", checked)
                         }

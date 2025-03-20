@@ -9,9 +9,10 @@ interface Player {
   id: number;
   name: string;
   imageUrl?: string;
-  skillLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  skillLevel?: "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C" | "D";
   country?: string;
-  dominantHand?: "LEFT" | "RIGHT" | "AMBIDEXTROUS";
+  age?: number;
+  gender?: "MALE" | "FEMALE" | "OTHER";
 }
 
 interface PlayerCardProps {
@@ -31,14 +32,18 @@ export function PlayerCard({
 }: PlayerCardProps) {
   const getSkillLevelColor = (level?: string) => {
     switch (level) {
-      case "BEGINNER":
-        return "bg-green-100 text-green-800";
-      case "INTERMEDIATE":
-        return "bg-blue-100 text-blue-800";
-      case "ADVANCED":
-        return "bg-purple-100 text-purple-800";
-      case "PROFESSIONAL":
+      case "A+":
+      case "A":
+      case "A-":
         return "bg-red-100 text-red-800";
+      case "B+":
+      case "B":
+      case "B-":
+        return "bg-blue-100 text-blue-800";
+      case "C":
+        return "bg-green-100 text-green-800";
+      case "D":
+        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -63,12 +68,18 @@ export function PlayerCard({
           {player.country && (
             <span className="text-xs text-gray-500">{player.country}</span>
           )}
+          {player.age && (
+            <span className="text-xs text-gray-500">{player.age} years</span>
+          )}
+          {player.gender && (
+            <span className="text-xs text-gray-500">{player.gender.toLowerCase()}</span>
+          )}
           {player.skillLevel && (
             <Badge
               variant="secondary"
               className={getSkillLevelColor(player.skillLevel)}
             >
-              {player.skillLevel.toLowerCase()}
+              {player.skillLevel}
             </Badge>
           )}
         </div>

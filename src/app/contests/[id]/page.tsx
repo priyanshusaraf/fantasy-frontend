@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { 
   Trophy, Users, Calendar, Clock, ChevronRight, 
   Medal, Award, TrendingUp, Info, ArrowUpRight,

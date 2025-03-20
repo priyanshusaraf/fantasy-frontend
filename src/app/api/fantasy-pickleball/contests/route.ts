@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+
+// Simple logger implementation
+const logger = {
+  info: (message: any) => console.log("[INFO]", message),
+  error: (message: any) => console.error("[ERROR]", message)
+};
 
 // Define type for contest rules
 interface ContestRules {
@@ -25,7 +33,6 @@ interface ContestWithCount {
   entryFee: number;
   prizePool: number;
   maxEntries: number;
-  currentEntries: number;
   startDate: Date;
   endDate: Date;
   status: string;
@@ -50,10 +57,12 @@ interface ContestWithCount {
 interface PlayerData {
   id: number;
   name: string;
-  skillLevel?: string;
+  skillLevel?: any; // Accept any type for skillLevel due to DB enum
   imageUrl?: string;
   price?: number;
+  rank?: number | null;
   category?: string;
+  teamMemberships?: any[];
   [key: string]: any;
 }
 
@@ -63,9 +72,12 @@ interface TeamLeaderboardData {
   name: string;
   userId: number;
   username?: string;
-  fantasyContestId: number;
+  contestId: number;
   totalPoints: number;
   rank: number;
+  user?: {
+    username: string | null;
+  };
   [key: string]: any;
 }
 
@@ -81,6 +93,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const status = searchParams.get("status");
     const tournamentId = searchParams.get("tournamentId");
+    const forceRefresh = searchParams.get("force") === "true";
 
     // Validate pagination
     if (page < 1 || limit < 1) {
@@ -125,7 +138,7 @@ export async function GET(request: NextRequest) {
       where.tournamentId = parseInt(tournamentId);
     }
 
-    console.log("Query parameters:", { page, limit, status, tournamentId });
+    console.log("Query parameters:", { page, limit, status, tournamentId, forceRefresh });
     console.log("Where conditions:", where);
 
     // Get contests with pagination
@@ -170,10 +183,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Parse rules for each contest
-    const contestsWithParsedRules = contests.map((contest: ContestWithCount) => {
+    const contestsWithParsedRules = contests.map((contest: any) => {
       let rules: ContestRules = {};
       try {
-        rules = JSON.parse(contest.rules || "{}") as ContestRules;
+        // Check if rules exist and parse them
+        if (typeof contest.rules === 'string') {
+          rules = JSON.parse(contest.rules) as ContestRules;
+        }
       } catch (e) {
         console.error("Error parsing contest rules:", e);
       }
@@ -188,7 +204,8 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.ceil(total / limit);
     console.log(`Returning ${contestsWithParsedRules.length} contests, page ${page} of ${totalPages}`);
 
-    return NextResponse.json(
+    // Set cache control headers based on the force parameter
+    const response = NextResponse.json(
       {
         contests: contestsWithParsedRules,
         total,
@@ -198,6 +215,22 @@ export async function GET(request: NextRequest) {
       },
       { status: 200 }
     );
+    
+    // Set cache control headers
+    if (forceRefresh) {
+      // No caching when force refresh is requested
+      response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+      response.headers.set('Surrogate-Control', 'no-store');
+      // Add a timestamp to response to confirm fresh data
+      response.headers.set('X-Data-Timestamp', new Date().toISOString());
+    } else {
+      // Limited caching for normal requests (30 seconds)
+      response.headers.set('Cache-Control', 'public, max-age=30');
+    }
+    
+    return response;
   } catch (error: any) {
     console.error("Error fetching fantasy contests:", error);
     return errorHandler(error, request);
@@ -208,120 +241,95 @@ export async function GET(request: NextRequest) {
  * POST /api/fantasy-pickleball/contests
  * Create a new fantasy contest
  */
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    // Check authentication and authorization
-    const authResult = await authMiddleware(request);
-    if (authResult.status !== 200) {
-      return authResult;
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Get current user from auth middleware
-    const { user } = request;
-
-    // Only admin and tournament_admin can create contests
-    if (!user || !["TOURNAMENT_ADMIN", "MASTER_ADMIN"].includes(user.role)) {
-      return NextResponse.json(
-        {
-          message: "Not authorized to create contests",
-        },
-        { status: 403 }
-      );
+    // Only allow admins to create contests
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    // Parse request body
-    const contestData = await request.json();
+    const body = await req.json();
+    const { tournamentId, name, description, entryFee, maxEntries, rules, isPublished, contestLogo } = body;
 
-    // Basic validation
-    if (
-      !contestData.name ||
-      !contestData.tournamentId ||
-      !contestData.startDate ||
-      !contestData.endDate
-    ) {
+    if (!tournamentId || !name || entryFee === undefined || !maxEntries) {
       return NextResponse.json(
-        {
-          message: "Missing required fields",
-        },
+        { error: 'Missing required fields: tournamentId, name, entryFee, maxEntries' },
         { status: 400 }
       );
     }
 
-    // Find the tournament
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: contestData.tournamentId },
-      include: {
-        tournamentAdmin: true,
-      },
-    });
-
-    if (!tournament) {
-      return NextResponse.json(
-        {
-          message: "Tournament not found",
-        },
-        { status: 404 }
-      );
+    // Validate rules
+    if (!rules) {
+      return NextResponse.json({ error: 'Contest rules are required' }, { status: 400 });
     }
 
-    // Check if user is the tournament admin
-    if (
-      tournament.tournamentAdmin.userId !== user.id &&
-      user.role !== "MASTER_ADMIN"
-    ) {
-      return NextResponse.json(
-        {
-          message: "Not authorized to create contests for this tournament",
-        },
-        { status: 403 }
-      );
-    }
+    // Start prize pool at 0 - it will be dynamically updated based on registrations using the 77.64% calculation
+    const prizePool = 0;
 
-    // Check dates
-    if (
-      new Date(contestData.startDate) < new Date(tournament.startDate) ||
-      new Date(contestData.endDate) > new Date(tournament.endDate)
-    ) {
-      return NextResponse.json(
-        {
-          message: "Contest dates must be within tournament dates",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Format rules as JSON string
-    const rules = JSON.stringify({
-      walletSize: contestData.walletSize || 100000,
-      fantasyTeamSize: contestData.fantasyTeamSize || 7,
-      allowTeamChanges: contestData.allowTeamChanges || false,
-      changeFrequency: contestData.changeFrequency || "daily",
-      maxPlayersToChange: contestData.maxPlayersToChange || 2,
-      changeWindowStart: contestData.changeWindowStart || "18:00",
-      changeWindowEnd: contestData.changeWindowEnd || "22:00",
-      playerCategories: contestData.playerCategories || [],
-    });
-
-    // Create the contest
+    // Create the contest with validated data
     const contest = await prisma.fantasyContest.create({
       data: {
-        name: contestData.name,
-        tournamentId: contestData.tournamentId,
-        entryFee: contestData.entryFee || 0,
-        prizePool: contestData.prizePool || contestData.entryFee * 0.8 || 0, // 80% of entry fee goes to prize pool
-        maxEntries: contestData.maxEntries || 100,
-        currentEntries: 0,
-        startDate: new Date(contestData.startDate),
-        endDate: new Date(contestData.endDate),
-        status: "OPEN",
-        description: contestData.description || "",
-        rules,
+        tournamentId,
+        name,
+        description: description || '',
+        entryFee,
+        maxEntries,
+        prizePool, // Starting at 0, will be updated dynamically
+        isPublished: isPublished || false,
+        contestLogo: contestLogo || null,
+        rules: {
+          create: {
+            teamSize: rules.teamSize,
+            maxFromSameTeam: rules.maxFromSameTeam,
+            allowedPositions: {
+              create: rules.allowedPositions.map((pos: any) => ({
+                position: pos.position,
+                min: pos.min,
+                max: pos.max
+              }))
+            },
+            prizeDistribution: {
+              create: rules.prizeDistribution.map((prize: any) => ({
+                rank: prize.rank,
+                percentage: prize.percentage
+              }))
+            }
+          }
+        }
       },
+      include: {
+        rules: {
+          include: {
+            allowedPositions: true,
+            prizeDistribution: true
+          }
+        }
+      }
     });
 
-    return NextResponse.json(contest, { status: 201 });
-  } catch (error: any) {
-    return errorHandler(error, request);
+    // Log creation for auditing
+    logger.info({
+      message: 'Fantasy contest created',
+      contestId: contest.id,
+      createdBy: session.user.id
+    });
+
+    return NextResponse.json(contest);
+  } catch (error) {
+    logger.error({
+      message: 'Error creating fantasy contest',
+      error: error instanceof Error ? error.message : String(error)
+    });
+    
+    return NextResponse.json(
+      { error: 'Failed to create fantasy contest' },
+      { status: 500 }
+    );
   }
 }
 
@@ -389,10 +397,14 @@ export async function GET_SPECIFIC(request: NextRequest) {
       );
     }
 
-    // Parse rules
+    // Parse rules from the contest object
     let rules: ContestRules = {};
     try {
-      rules = JSON.parse(contest.rules || "{}") as ContestRules;
+      // Handle rules based on what's actually in the database
+      const contestAny = contest as any;
+      if (contestAny.rules && typeof contestAny.rules === 'string') {
+        rules = JSON.parse(contestAny.rules) as ContestRules;
+      }
     } catch (e) {
       console.error("Error parsing contest rules:", e);
     }
@@ -406,19 +418,31 @@ export async function GET_SPECIFIC(request: NextRequest) {
           },
         },
       },
+      include: {
+        teamMemberships: {
+          where: {
+            tournamentId: contest.tournamentId
+          }
+        }
+      },
       orderBy: {
         rank: "asc",
       },
     });
 
     // Calculate fantasy price for each player
-    const playersWithPrices = players.map((player: PlayerData) => {
+    const playersWithPrices = players.map((player: any) => {
       // Find player category from rules
       let categoryPrice = 5000; // Default price
       if (rules.playerCategories && Array.isArray(rules.playerCategories)) {
-        const category = player.skillLevel?.toLowerCase() || "";
+        // Handle different skill level types
+        const skillLevel = player.skillLevel ? 
+          (typeof player.skillLevel === 'string' ? 
+            player.skillLevel : 
+            String(player.skillLevel)
+          ).toLowerCase() : '';
         const categoryData = rules.playerCategories.find(
-          (c: any) => c.name.toLowerCase() === category
+          (c: any) => c.name.toLowerCase() === skillLevel
         );
 
         if (categoryData) {
@@ -431,9 +455,16 @@ export async function GET_SPECIFIC(request: NextRequest) {
         categoryPrice = Math.max(1000 / player.rank, 500);
       }
 
+      // Get team information
+      const team = player.teamMemberships?.length > 0 ? player.teamMemberships[0] : null;
+
       return {
         ...player,
         fantasyPrice: categoryPrice,
+        teamId: team?.id || null,
+        teamName: team?.name || null,
+        // Remove teamMemberships from the response
+        teamMemberships: undefined
       };
     });
 
@@ -478,7 +509,6 @@ export async function GET_PLAYERS(request: NextRequest) {
       where: { id: contestId },
       select: {
         tournamentId: true,
-        rules: true,
       },
     });
 
@@ -491,15 +521,18 @@ export async function GET_PLAYERS(request: NextRequest) {
       );
     }
 
-    // Parse rules
-    let rules: ContestRules = {};
+    // Parse rules from default values
+    const rules: ContestRules = {
+      walletSize: 100000,
+      fantasyTeamSize: 7,
+      playerCategories: [
+        { name: "PROFESSIONAL", price: 10000 },
+        { name: "ADVANCED", price: 7500 },
+        { name: "INTERMEDIATE", price: 5000 },
+        { name: "BEGINNER", price: 2500 }
+      ]
+    };
     
-    try {
-      rules = JSON.parse(contest.rules || "{}") as ContestRules;
-    } catch (e) {
-      console.error("Error parsing contest rules:", e);
-    }
-
     // Get players for this tournament
     const players = await prisma.player.findMany({
       where: {
@@ -509,19 +542,31 @@ export async function GET_PLAYERS(request: NextRequest) {
           },
         },
       },
+      include: {
+        teamMemberships: {
+          where: {
+            tournamentId: contest.tournamentId
+          }
+        }
+      },
       orderBy: {
         rank: "asc",
       },
     });
 
     // Calculate fantasy price for each player
-    const playersWithPrices = players.map((player: PlayerData) => {
+    const playersWithPrices = players.map((player: any) => {
       // Find player category from rules
       let categoryPrice = 5000; // Default price
       if (rules.playerCategories && Array.isArray(rules.playerCategories)) {
-        const category = player.skillLevel?.toLowerCase() || "";
+        // Handle different skill level types
+        const skillLevel = player.skillLevel ? 
+          (typeof player.skillLevel === 'string' ? 
+            player.skillLevel : 
+            String(player.skillLevel)
+          ).toLowerCase() : '';
         const categoryData = rules.playerCategories.find(
-          (c: any) => c.name.toLowerCase() === category
+          (c: any) => c.name.toLowerCase() === skillLevel
         );
 
         if (categoryData) {
@@ -534,9 +579,16 @@ export async function GET_PLAYERS(request: NextRequest) {
         categoryPrice = Math.max(1000 / player.rank, 500);
       }
 
+      // Get team information
+      const team = player.teamMemberships?.length > 0 ? player.teamMemberships[0] : null;
+
       return {
         ...player,
         fantasyPrice: categoryPrice,
+        teamId: team?.id || null,
+        teamName: team?.name || null,
+        // Remove teamMemberships from the response
+        teamMemberships: undefined
       };
     });
 
@@ -544,6 +596,7 @@ export async function GET_PLAYERS(request: NextRequest) {
       {
         players: playersWithPrices,
         walletSize: rules.walletSize || 100000,
+        maxTeamSize: rules.fantasyTeamSize || 7,
       },
       { status: 200 }
     );
@@ -582,7 +635,6 @@ export async function GET_LEADERBOARD(request: NextRequest) {
         name: true,
         entryFee: true,
         prizePool: true,
-        currentEntries: true,
       },
     });
 
@@ -613,17 +665,17 @@ export async function GET_LEADERBOARD(request: NextRequest) {
       prisma.fantasyTeam.count({ where: { contestId } }),
     ]);
 
-    // Calculate prize breakdown
+    // Calculate prize breakdown based on total number of teams
     const prizeBreakdown = calculatePrizeBreakdown(
       Number(contest.prizePool),
-      contest.currentEntries
+      total
     );
 
-    // Update the player mapping in the GET_LEADERBOARD function
-    const teamLeaderboardData = teams.map((team: TeamLeaderboardData) => {
+    // Process team data
+    const teamLeaderboardData = teams.map((team: any) => {
       return {
         ...team,
-        // Any additional transformations you want to apply
+        username: team.user?.username || "Anonymous",
       };
     });
 
@@ -634,7 +686,7 @@ export async function GET_LEADERBOARD(request: NextRequest) {
           name: contest.name,
           entryFee: contest.entryFee,
           prizePool: contest.prizePool,
-          participants: contest.currentEntries,
+          participants: total,
         },
         prizeBreakdown,
         meta: {

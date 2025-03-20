@@ -38,7 +38,7 @@ import {
   Shield,
   Award,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 // Define User interface
 interface User {

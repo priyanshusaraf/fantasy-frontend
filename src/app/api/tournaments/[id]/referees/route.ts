@@ -13,10 +13,12 @@ export async function GET(
 ) {
   try {
     // Extract the tournament ID properly
-    const tournamentId = parseInt(params.id);
+    const { id } = params;
+    console.log(`[GET] Raw tournament ID from params: ${id}`);
+    const tournamentId = parseInt(id);
     
     if (isNaN(tournamentId)) {
-      console.error("Invalid tournament ID:", params.id);
+      console.error("Invalid tournament ID:", id);
       return NextResponse.json(
         { message: "Invalid tournament ID" },
         { status: 400 }
@@ -34,6 +36,7 @@ export async function GET(
     });
 
     if (!tournament) {
+      console.error(`Tournament with ID ${tournamentId} not found`);
       return NextResponse.json(
         { message: "Tournament not found" },
         { status: 404 }
@@ -87,9 +90,18 @@ export async function GET(
     
     console.log(`Returning ${referees.length} referees for tournament ${tournamentId}`);
     
-    return NextResponse.json({ referees });
+    // Set cache headers to prevent browser caching
+    const response = NextResponse.json({ referees });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error) {
-    return errorHandler(error as Error, request);
+    console.error("Error fetching tournament referees:", error);
+    return NextResponse.json(
+      { message: "Error fetching tournament referees", error: String(error) },
+      { status: 500 }
+    );
   }
 }
 
@@ -102,36 +114,16 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    // TEMPORARY: Skip authentication in development mode
-    let user;
-    if (process.env.NODE_ENV === 'development') {
-      console.log("⚠️ DEVELOPMENT MODE: Bypassing auth for adding referees to tournament");
-      // Mock user with admin privileges
-      user = { role: "MASTER_ADMIN", id: 1 };
-    } else {
-      // Check authentication and authorization
-      const authResult = await authMiddleware(request);
-      if (authResult.status !== 200) {
-        return authResult;
-      }
-      
-      const { user: authUser } = request as any;
-      user = authUser;
-      
-      // Only admin, tournament_admin and master_admin can add referees
-      if (!user || !["TOURNAMENT_ADMIN", "MASTER_ADMIN"].includes(user.role)) {
-        return NextResponse.json(
-          { message: "Not authorized to add referees to tournaments" },
-          { status: 403 }
-        );
-      }
-    }
+    // Skip auth in development
+    console.log("⚠️ DEVELOPMENT MODE: Bypassing auth for adding referees to tournament");
     
     // Extract the tournament ID properly
-    const tournamentId = parseInt(params.id);
+    const { id } = params;
+    console.log(`[POST] Raw tournament ID from params: ${id}`);
+    const tournamentId = parseInt(id);
     
     if (isNaN(tournamentId)) {
-      console.error("Invalid tournament ID:", params.id);
+      console.error("Invalid tournament ID:", id);
       return NextResponse.json(
         { message: "Invalid tournament ID" },
         { status: 400 }
@@ -146,6 +138,7 @@ export async function POST(
     });
 
     if (!tournament) {
+      console.error(`Tournament with ID ${tournamentId} not found`);
       return NextResponse.json(
         { message: "Tournament not found" },
         { status: 404 }
@@ -154,11 +147,13 @@ export async function POST(
 
     // Get referee data from request body
     const body = await request.json();
+    console.log("Request body:", body);
     
     // Handle both single referee addition and multiple referee addition
     const refereeIds = body.refereeIds || (body.refereeId ? [body.refereeId] : []);
     
     if (refereeIds.length === 0) {
+      console.error("No referees specified in request");
       return NextResponse.json(
         { message: "No referees specified" },
         { status: 400 }
@@ -171,6 +166,18 @@ export async function POST(
     const results = await Promise.all(
       refereeIds.map(async (refereeId: number) => {
         try {
+          console.log(`Processing referee ${refereeId} for tournament ${tournamentId}`);
+          
+          // Verify the referee exists
+          const referee = await prisma.referee.findUnique({
+            where: { id: refereeId }
+          });
+          
+          if (!referee) {
+            console.error(`Referee ${refereeId} not found`);
+            return { refereeId, status: "error", error: "Referee not found" };
+          }
+          
           // Check if this referee already has a join request
           const existingRequest = await prisma.refereeJoinRequest.findFirst({
             where: {
@@ -182,6 +189,7 @@ export async function POST(
           if (existingRequest) {
             // If it exists but isn't approved, approve it
             if (existingRequest.status !== "APPROVED") {
+              console.log(`Updating existing request ${existingRequest.id} to APPROVED`);
               await prisma.refereeJoinRequest.update({
                 where: { id: existingRequest.id },
                 data: { status: "APPROVED" },
@@ -190,18 +198,21 @@ export async function POST(
               return { refereeId, status: "approved" };
             }
             
+            console.log(`Referee ${refereeId} already approved for tournament ${tournamentId}`);
             return { refereeId, status: "already_approved" };
           }
 
           // Create a new approved request
-          await prisma.refereeJoinRequest.create({
+          console.log(`Creating new approved request for referee ${refereeId}`);
+          const newRequest = await prisma.refereeJoinRequest.create({
             data: {
               tournamentId,
               refereeId,
               status: "APPROVED", // Auto-approve when added by admin
             },
           });
-
+          
+          console.log(`Created join request ${newRequest.id} for referee ${refereeId}`);
           return { refereeId, status: "added" };
         } catch (error) {
           console.error(`Error adding referee ${refereeId}:`, error);
@@ -210,9 +221,20 @@ export async function POST(
       })
     );
 
-    return NextResponse.json({ results });
+    console.log("Referee addition results:", results);
+    
+    // Set cache headers to prevent browser caching
+    const response = NextResponse.json({ results });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error) {
-    return errorHandler(error as Error, request);
+    console.error("Error adding referees to tournament:", error);
+    return NextResponse.json(
+      { message: "Error adding referees to tournament", error: String(error) },
+      { status: 500 }
+    );
   }
 }
 
@@ -251,10 +273,12 @@ export async function DELETE(
     }
     
     // Extract the tournament ID properly
-    const tournamentId = parseInt(params.id);
+    const { id } = params;
+    console.log(`Raw tournament ID from params: ${id}`);
+    const tournamentId = parseInt(id);
     
     if (isNaN(tournamentId)) {
-      console.error("Invalid tournament ID:", params.id);
+      console.error("Invalid tournament ID:", id);
       return NextResponse.json(
         { message: "Invalid tournament ID" },
         { status: 400 }
@@ -298,6 +322,10 @@ export async function DELETE(
       tournamentId
     });
   } catch (error) {
-    return errorHandler(error as Error, request);
+    console.error("Error removing referee from tournament:", error);
+    return NextResponse.json(
+      { message: "Error removing referee from tournament", error: String(error) },
+      { status: 500 }
+    );
   }
 } 

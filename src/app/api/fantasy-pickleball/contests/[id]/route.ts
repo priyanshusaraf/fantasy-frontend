@@ -11,7 +11,7 @@ export async function GET(
   context: { params: { id: string } }
 ) {
   try {
-    const { params } = context;
+    const params = await context.params;
     const contestId = parseInt(params.id);
     
     console.log(`Fetching contest with ID: ${contestId}`);
@@ -40,7 +40,7 @@ export async function GET(
         },
         _count: {
           select: {
-            teams: true,
+            fantasyTeams: true,
           },
         },
       },
@@ -54,39 +54,41 @@ export async function GET(
       );
     }
     
+    // Return formatted contest data
+    const teamCount = contest._count.fantasyTeams;
+    
     // Parse rules as needed
     let rules = {};
     try {
-      if (contest.rules) {
-        rules = JSON.parse(contest.rules);
+      // Safely access rules property which might not exist in the type
+      const rulesString = (contest as any).rules;
+      if (rulesString) {
+        rules = JSON.parse(rulesString);
       }
-    } catch (e) {
-      console.error("Error parsing contest rules:", e);
+    } catch (error) {
+      console.error("Error parsing contest rules:", error);
     }
     
     console.log(`Successfully fetched contest: ${contest.name}`);
     
-    // Return formatted contest data
-    return NextResponse.json(
-      {
-        contest: {
-          id: contest.id,
-          name: contest.name,
-          entryFee: contest.entryFee,
-          prizePool: contest.prizePool,
-          maxEntries: contest.maxEntries,
-          currentEntries: contest.currentEntries,
-          startDate: contest.startDate,
-          endDate: contest.endDate,
-          status: contest.status,
-          description: contest.description,
-          rules,
-          tournament: contest.tournament,
-          participantCount: contest._count.teams,
-        },
+    return NextResponse.json({
+      contest: {
+        id: contest.id,
+        name: contest.name,
+        entryFee: contest.entryFee,
+        prizePool: contest.prizePool,
+        maxEntries: contest.maxEntries,
+        currentEntries: teamCount,
+        startDate: contest.startDate,
+        endDate: contest.endDate,
+        status: contest.status,
+        description: contest.description,
+        rules,
+        tournament: contest.tournament,
+        participantCount: teamCount,
+        isDynamicPrizePool: true, // All contests use dynamic prize pool
       },
-      { status: 200 }
-    );
+    }, { status: 200 });
   } catch (error) {
     console.error("Error fetching contest:", error);
     return errorHandler(error as Error, request);

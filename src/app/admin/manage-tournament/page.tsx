@@ -29,7 +29,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import TournamentMatches from "@/components/tournaments/TournamentMatches";
 import { PlayerStatsTable } from "@/components/tournaments/PlayerStatsTable";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Tournament {
   id: number;

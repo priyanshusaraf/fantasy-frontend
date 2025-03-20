@@ -1,7 +1,8 @@
 // src/app/fantasy/contests/[id]/join/page.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from 'react';
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -16,6 +17,8 @@ import { Calendar, Trophy, DollarSign, Info, AlertCircle, Loader2 } from "lucide
 import TeamCreationForm from "@/components/fantasy-pickleball/TeamCreationForm";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
+import { toast } from '@/components/ui/sonner';
+import FantasyEntryPayment from "@/components/fantasy-pickleball/FantasyEntryPayment";
 
 interface JoinContestPageProps {
   params: {
@@ -43,13 +46,14 @@ interface Contest {
 }
 
 export default function JoinContestPage(props: JoinContestPageProps) {
-  // Access the id safely with proper type checking
+  // Correctly use React.use for params
   const contestId = String(props.params.id);
   const [contest, setContest] = useState<Contest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { isAuthenticated, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const [paymentComplete, setPaymentComplete] = useState(false);
 
   useEffect(() => {
     // Only check authentication after the auth state has loaded
@@ -151,16 +155,20 @@ export default function JoinContestPage(props: JoinContestPageProps) {
     );
   }
 
-  // Check if contest can be joined
-  if (contest.status !== "UPCOMING") {
+  // Check if contest can be joined - modified to use tournament start date
+  const currentDate = new Date();
+  const tournamentStartDate = new Date(contest.tournament.startDate);
+  
+  // Allow joining if tournament hasn't started yet (regardless of contest status)
+  if (currentDate >= tournamentStartDate) {
     return (
       <div className="container mx-auto px-4 py-8 bg-gray-900">
         <Alert variant="default" className="border-yellow-700 bg-yellow-900/20 text-yellow-300">
           <Info className="h-4 w-4 text-yellow-400" />
           <AlertTitle>Cannot Join Contest</AlertTitle>
           <AlertDescription className="text-yellow-300">
-            This contest has already started or has been completed. You can only
-            join upcoming contests.
+            The tournament for this contest has already started. You can only
+            join contests before the tournament begins.
           </AlertDescription>
         </Alert>
         <Button 
@@ -173,6 +181,11 @@ export default function JoinContestPage(props: JoinContestPageProps) {
       </div>
     );
   }
+
+  const handlePaymentSuccess = () => {
+    setPaymentComplete(true);
+    toast("Payment successful! Now you can create your team.");
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 bg-gray-900 text-white">
@@ -235,7 +248,20 @@ export default function JoinContestPage(props: JoinContestPageProps) {
         </Alert>
       )}
 
-      <TeamCreationForm contestId={contestId} />
+      {/* Show payment component for paid contests if payment isn't complete */}
+      {contest.entryFee > 0 && !paymentComplete ? (
+        <div className="mb-8 max-w-2xl mx-auto">
+          <FantasyEntryPayment 
+            tournamentId={contest.tournament.id}
+            tournamentName={contest.name}
+            entryFee={contest.entryFee}
+            contestId={contest.id}
+            onSuccess={handlePaymentSuccess}
+          />
+        </div>
+      ) : (
+        <TeamCreationForm contestId={contestId} />
+      )}
     </div>
   );
 }

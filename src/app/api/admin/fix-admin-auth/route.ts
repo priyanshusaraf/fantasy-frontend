@@ -102,10 +102,15 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Set a flag to track if we need to link Google OAuth
-    let needsGoogleAccount = !user.accounts.some(account => 
-      account.provider === "google" && !account.providerAccountId.startsWith("placeholder_")
-    );
+    // Check if user has Google account linked
+    const hasGoogleAccount = await prisma.account.findFirst({
+      where: {
+        userId: user.id,
+        provider: "google",
+      },
+    });
+
+    const needsGoogleAccount = !hasGoogleAccount && user.password === null;
     
     // NextAuth will handle linking on the next sign-in with our signIn callback
     

@@ -29,7 +29,7 @@ import {
   FileEdit,
   Eye,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { useAuth } from "@/hooks/useAuth";
 
 // Define interfaces

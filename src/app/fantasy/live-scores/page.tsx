@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
-import { RedoIcon, ChevronLeft, TrophyIcon, ActivityIcon } from "lucide-react";
+import { RedoIcon, ChevronLeft, TrophyIcon, ActivityIcon, Loader2 } from "lucide-react";
 import LiveMatchCard from "@/components/fantasy-pickleball/LiveMatchCard";
 import RecentUpdatesCard from "@/components/fantasy-pickleball/RecentUpdatesCard";
 import LeaderboardTable from "@/components/fantasy-pickleball/LeaderboardTable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 
 interface LiveMatch {
   id: number;
@@ -21,6 +22,7 @@ interface LiveMatch {
     profileImage?: string;
     score: number;
     ownership?: number;
+    fantasyPoints?: number;
   };
   teamB: {
     id: number;
@@ -28,13 +30,18 @@ interface LiveMatch {
     profileImage?: string;
     score: number;
     ownership?: number;
+    fantasyPoints?: number;
   };
-  status: "upcoming" | "live" | "completed";
+  teamAScore: number;
+  teamBScore: number;
+  status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   startTime: string;
   court?: string;
   round?: string;
   tournamentId: number;
   tournamentName: string;
+  fantasyPoints: number;
+  scoreChanged?: boolean;
 }
 
 interface UpdateEvent {
@@ -64,6 +71,7 @@ interface LeaderboardTeam {
   ownerName: string;
   points: number;
   isUserTeam: boolean;
+  pointsChanged?: boolean;
 }
 
 interface ContestData {
@@ -83,6 +91,20 @@ interface ContestData {
 }
 
 export default function LiveScoresPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto py-6 max-w-7xl">
+        <div className="flex justify-center items-center min-h-[50vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-[#00a1e0]" />
+        </div>
+      </div>
+    }>
+      <LiveScoresContent />
+    </Suspense>
+  );
+}
+
+function LiveScoresContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const contestId = searchParams.get("contestId");
@@ -130,24 +152,63 @@ export default function LiveScoresPage() {
   useEffect(() => {
     if (!selectedContest) return;
     
+    let isMounted = true;
+    
     async function fetchLiveData() {
+      if (!isMounted) return;
+      
       setRefreshing(true);
       try {
-        const response = await fetch(`/api/fantasy-pickleball/contests/${selectedContest}/live`);
-        if (response.ok) {
+        const response = await fetch(`/api/fantasy-pickleball/contests/${selectedContest}/live?t=${Date.now()}`);
+        if (response.ok && isMounted) {
           const data = await response.json();
-          setLiveMatches(data.matches || []);
+          
+          // Compare with previous data to provide visual cue for updates
+          setLiveMatches(prevMatches => {
+            // Compare match scores and add visual indicator if score has changed
+            return data.matches?.map((match: LiveMatch) => {
+              const prevMatch = prevMatches.find(pm => pm.id === match.id);
+              if (prevMatch) {
+                const scoreChanged = 
+                  prevMatch.teamAScore !== match.teamAScore || 
+                  prevMatch.teamBScore !== match.teamBScore;
+                
+                return {
+                  ...match,
+                  scoreChanged: scoreChanged
+                };
+              }
+              return match;
+            }) || [];
+          });
+          
+          setLeaderboard(prevLeaderboard => {
+            // Compare points and add visual indicator if points changed
+            return data.leaderboard?.map((team: LeaderboardTeam) => {
+              const prevTeam = prevLeaderboard.find(pt => pt.id === team.id);
+              if (prevTeam) {
+                const pointsChanged = prevTeam.points !== team.points;
+                return {
+                  ...team,
+                  pointsChanged: pointsChanged
+                };
+              }
+              return team;
+            }) || [];
+          });
+          
           setUpdates(data.updates || []);
-          setLeaderboard(data.leaderboard || []);
           setLastUpdated(new Date());
-        } else {
+        } else if (!response.ok) {
           console.error("Failed to fetch live data");
         }
       } catch (error) {
         console.error("Error fetching live data:", error);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (isMounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     }
     
@@ -156,7 +217,10 @@ export default function LiveScoresPage() {
     // Set up polling interval (every 30 seconds)
     const interval = setInterval(fetchLiveData, 30000);
     
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [selectedContest]);
   
   // Handle contest change
@@ -326,11 +390,38 @@ export default function LiveScoresPage() {
                 <div className="space-y-4">
                   {liveMatches.length > 0 ? (
                     liveMatches.map((match) => (
-                      <LiveMatchCard 
+                      <Card 
                         key={match.id}
-                        match={match}
-                        contestId={selectedContest}
-                      />
+                        className={`overflow-hidden transition-all cursor-pointer ${
+                          match.scoreChanged ? 'animate-brief-highlight' : ''
+                        }`}
+                        onClick={() => router.push(`/fantasy/live-scores/match/${match.id}?contestId=${selectedContest}`)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h3 className="font-medium">{match.teamA.name}</h3>
+                              <div className="text-sm text-muted-foreground">vs</div>
+                              <h3 className="font-medium">{match.teamB.name}</h3>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xl font-bold">{match.teamAScore}</div>
+                              <div className="text-xl font-bold">{match.teamBScore}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            {match.status === "IN_PROGRESS" && (
+                              <Badge variant="outline" className="bg-red-500/10 text-red-500 animate-pulse">LIVE</Badge>
+                            )}
+                            {match.status === "COMPLETED" && (
+                              <Badge variant="outline" className="bg-green-500/10 text-green-500">Completed</Badge>
+                            )}
+                            {match.status === "SCHEDULED" && (
+                              <Badge variant="outline" className="bg-gray-500/10 text-gray-500">Upcoming</Badge>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))
                   ) : (
                     <Card className="bg-gray-800 border-gray-700">
@@ -349,8 +440,10 @@ export default function LiveScoresPage() {
               <TabsContent value="leaderboard" className="mt-0">
                 <LeaderboardTable 
                   teams={leaderboard}
+                  maxHeight="320px"
                   title="Contest Leaderboard"
                   description="Fantasy team standings"
+                  highlightUpdates={true}
                 />
               </TabsContent>
               
@@ -379,11 +472,38 @@ export default function LiveScoresPage() {
                 <div className="space-y-4">
                   {liveMatches.length > 0 ? (
                     liveMatches.map((match) => (
-                      <LiveMatchCard 
+                      <Card 
                         key={match.id}
-                        match={match}
-                        contestId={selectedContest}
-                      />
+                        className={`overflow-hidden transition-all cursor-pointer ${
+                          match.scoreChanged ? 'animate-brief-highlight' : ''
+                        }`}
+                        onClick={() => router.push(`/fantasy/live-scores/match/${match.id}?contestId=${selectedContest}`)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h3 className="font-medium">{match.teamA.name}</h3>
+                              <div className="text-sm text-muted-foreground">vs</div>
+                              <h3 className="font-medium">{match.teamB.name}</h3>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xl font-bold">{match.teamAScore}</div>
+                              <div className="text-xl font-bold">{match.teamBScore}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            {match.status === "IN_PROGRESS" && (
+                              <Badge variant="outline" className="bg-red-500/10 text-red-500 animate-pulse">LIVE</Badge>
+                            )}
+                            {match.status === "COMPLETED" && (
+                              <Badge variant="outline" className="bg-green-500/10 text-green-500">Completed</Badge>
+                            )}
+                            {match.status === "SCHEDULED" && (
+                              <Badge variant="outline" className="bg-gray-500/10 text-gray-500">Upcoming</Badge>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))
                   ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -405,6 +525,7 @@ export default function LiveScoresPage() {
               maxHeight="320px"
               title="Contest Leaderboard"
               description="Fantasy team standings"
+              highlightUpdates={true}
             />
             
             <RecentUpdatesCard 

@@ -3,14 +3,16 @@ export interface Player {
   id: number;
   name: string;
   imageUrl?: string;
-  skillLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  skillLevel?: "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C" | "D";
   country?: string;
-  dominantHand?: "LEFT" | "RIGHT" | "AMBIDEXTROUS";
+  age?: number;
+  gender?: "MALE" | "FEMALE" | "OTHER";
 }
 
 export interface NewPlayerData {
   name: string;
-  skillLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  skillLevel: "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C" | "D";
   country?: string;
-  dominantHand: "LEFT" | "RIGHT" | "AMBIDEXTROUS";
+  age?: number;
+  gender: "MALE" | "FEMALE" | "OTHER";
 }

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  ReloadIcon,
   ChevronLeft,
   Clock,
   MapPin,
@@ -18,6 +17,7 @@ import {
   ActivityIcon,
   CheckIcon,
   XIcon,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import RecentUpdatesCard from "@/components/fantasy-pickleball/RecentUpdatesCard";
@@ -274,9 +274,9 @@ export default function MatchDetailsPage() {
             className="flex items-center gap-2"
           >
             {refreshing ? (
-              <ReloadIcon className="h-3.5 w-3.5 animate-spin" />
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <ReloadIcon className="h-3.5 w-3.5" />
+              <RefreshCw className="h-3.5 w-3.5" />
             )}
             Refresh
           </Button>

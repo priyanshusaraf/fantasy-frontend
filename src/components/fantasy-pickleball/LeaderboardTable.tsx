@@ -28,6 +28,7 @@ interface LeaderboardTeam {
   ownerName: string;
   points: number;
   isUserTeam: boolean;
+  pointsChanged?: boolean;
 }
 
 interface LeaderboardTableProps {
@@ -37,6 +38,7 @@ interface LeaderboardTableProps {
   description?: string;
   maxHeight?: string;
   highlightTopThree?: boolean;
+  highlightUpdates?: boolean;
 }
 
 export default function LeaderboardTable({
@@ -46,6 +48,7 @@ export default function LeaderboardTable({
   description,
   maxHeight = "500px",
   highlightTopThree = true,
+  highlightUpdates = false,
 }: LeaderboardTableProps) {
   // Get rank movement (up, down, or same)
   const getRankMovement = (team: LeaderboardTeam) => {
@@ -169,7 +172,14 @@ export default function LeaderboardTable({
                         )}
                       </TableCell>
                       
-                      <TableCell className="text-right font-medium text-indigo-400">
+                      <TableCell 
+                        className={`
+                          text-right font-medium 
+                          ${team.pointsChanged && highlightUpdates 
+                            ? 'text-green-400 animate-pulse-brief' 
+                            : 'text-indigo-400'}
+                        `}
+                      >
                         {typeof team.points === 'number' ? team.points.toFixed(1) : '0.0'}
                       </TableCell>
                     </TableRow>

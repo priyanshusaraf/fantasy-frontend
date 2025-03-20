@@ -12,12 +12,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface NewPlayerData {
   name: string;
-  skillLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  skillLevel: "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C" | "D";
   country?: string;
-  dominantHand: "LEFT" | "RIGHT" | "AMBIDEXTROUS";
+  age?: number;
+  gender: "MALE" | "FEMALE" | "OTHER";
 }
 
 interface NewPlayerDialogProps {
@@ -26,6 +28,7 @@ interface NewPlayerDialogProps {
   playerData: NewPlayerData;
   onPlayerDataChange: (data: NewPlayerData) => void;
   onSubmit: () => void;
+  children?: React.ReactNode;
 }
 
 export function NewPlayerDialog({
@@ -34,6 +37,7 @@ export function NewPlayerDialog({
   playerData,
   onPlayerDataChange,
   onSubmit,
+  children,
 }: NewPlayerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,51 +75,68 @@ export function NewPlayerDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label>Skill Level</Label>
-            <RadioGroup
-              value={playerData.skillLevel}
-              onValueChange={(
-                value: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL"
-              ) => onPlayerDataChange({ ...playerData, skillLevel: value })}
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="BEGINNER" id="beginner" />
-                <Label htmlFor="beginner">Beginner</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="INTERMEDIATE" id="intermediate" />
-                <Label htmlFor="intermediate">Intermediate</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="ADVANCED" id="advanced" />
-                <Label htmlFor="advanced">Advanced</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="PROFESSIONAL" id="professional" />
-                <Label htmlFor="professional">Professional</Label>
-              </div>
-            </RadioGroup>
+            <Label htmlFor="age">Age</Label>
+            <Input
+              id="age"
+              type="number"
+              value={playerData.age || ""}
+              onChange={(e) =>
+                onPlayerDataChange({ 
+                  ...playerData, 
+                  age: e.target.value ? parseInt(e.target.value) : undefined 
+                })
+              }
+              placeholder="Player age"
+            />
           </div>
 
           <div className="grid gap-2">
-            <Label>Dominant Hand</Label>
+            <Label>Skill Level</Label>
+            {children ? (
+              children
+            ) : (
+              <Select
+                value={playerData.skillLevel}
+                onValueChange={(value) =>
+                  onPlayerDataChange({ ...playerData, skillLevel: value as any })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select skill level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A+">A+</SelectItem>
+                  <SelectItem value="A">A</SelectItem>
+                  <SelectItem value="A-">A-</SelectItem>
+                  <SelectItem value="B+">B+</SelectItem>
+                  <SelectItem value="B">B</SelectItem>
+                  <SelectItem value="B-">B-</SelectItem>
+                  <SelectItem value="C">C</SelectItem>
+                  <SelectItem value="D">D</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Gender</Label>
             <RadioGroup
-              value={playerData.dominantHand}
-              onValueChange={(value: "LEFT" | "RIGHT" | "AMBIDEXTROUS") =>
-                onPlayerDataChange({ ...playerData, dominantHand: value })
+              value={playerData.gender}
+              onValueChange={(value: "MALE" | "FEMALE" | "OTHER") =>
+                onPlayerDataChange({ ...playerData, gender: value })
               }
             >
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="RIGHT" id="right" />
-                <Label htmlFor="right">Right</Label>
+                <RadioGroupItem value="MALE" id="male" />
+                <Label htmlFor="male">Male</Label>
               </div>
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="LEFT" id="left" />
-                <Label htmlFor="left">Left</Label>
+                <RadioGroupItem value="FEMALE" id="female" />
+                <Label htmlFor="female">Female</Label>
               </div>
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="AMBIDEXTROUS" id="ambidextrous" />
-                <Label htmlFor="ambidextrous">Ambidextrous</Label>
+                <RadioGroupItem value="OTHER" id="other" />
+                <Label htmlFor="other">Other</Label>
               </div>
             </RadioGroup>
           </div>

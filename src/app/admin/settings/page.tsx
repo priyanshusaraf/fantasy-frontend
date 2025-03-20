@@ -34,7 +34,7 @@ import {
   Globe,
   Percent,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 export default function AdminSettingsPage() {
   const { data: session, status } = useSession();

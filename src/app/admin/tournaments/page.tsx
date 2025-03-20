@@ -52,7 +52,8 @@ import {
   Trash2, 
   Trophy,
   UserPlus,
-  Users
+  Users,
+  PlusCircle
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +64,7 @@ import InvitePlayersDialog from "@/components/tournaments/invitations/InvitePlay
 import ActiveInvitationsTable from "@/components/tournaments/invitations/ActiveInvitationsTable";
 import JoinRequestsTable from "@/components/tournaments/invitations/JoinRequestsTable";
 import { toast } from "@/components/ui/use-toast";
+import Link from "next/link";
 
 // Define tournament interface
 interface Tournament {
@@ -321,13 +323,12 @@ export default function TournamentManagement() {
                   <SelectItem value="completed">Completed</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={() => createTournament()}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Tournament
-              </Button>
-              <a href="/admin/tournaments/create" className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-md">
-                Direct Link
-              </a>
+              <div className="text-sm text-muted-foreground text-right">
+                <Link href="/admin/tournaments/create/" className="text-primary hover:underline flex items-center justify-end">
+                  <PlusCircle className="h-4 w-4 mr-1" />
+                  Create New Tournament
+                </Link>
+              </div>
             </div>
           </div>
 

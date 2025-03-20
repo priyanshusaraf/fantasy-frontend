@@ -17,11 +17,29 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertCircle, Loader2, CheckCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+// Player skill levels from the database schema
+const PLAYER_SKILL_LEVELS = [
+  { value: "BEGINNER", label: "Beginner" },
+  { value: "INTERMEDIATE", label: "Intermediate" },
+  { value: "ADVANCED", label: "Advanced" },
+  { value: "PROFESSIONAL", label: "Professional" },
+  { value: "A_PLUS", label: "A+" },
+  { value: "A", label: "A" },
+  { value: "A_MINUS", label: "A-" },
+  { value: "B_PLUS", label: "B+" },
+  { value: "B", label: "B" },
+  { value: "B_MINUS", label: "B-" },
+  { value: "C", label: "C" },
+  { value: "D", label: "D" },
+];
 
 export default function CompleteRegistrationPage() {
   const { data: session, status, update } = useSession();
   const [role, setRole] = useState("USER");
   const [username, setUsername] = useState("");
+  const [skillLevel, setSkillLevel] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,11 +74,23 @@ export default function CompleteRegistrationPage() {
     }
   }, [session, status, router]);
 
+  // Reset skill level when role changes
+  useEffect(() => {
+    if (role !== "PLAYER") {
+      setSkillLevel("");
+    }
+  }, [role]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!username.trim()) {
       setError("Username is required");
+      return;
+    }
+
+    if (role === "PLAYER" && !skillLevel) {
+      setError("Please select your skill level");
       return;
     }
 
@@ -77,6 +107,7 @@ export default function CompleteRegistrationPage() {
           email: session?.user?.email,
           role,
           username,
+          skillLevel: role === "PLAYER" ? skillLevel : undefined,
         }),
       });
 
@@ -102,7 +133,7 @@ export default function CompleteRegistrationPage() {
 
       // Redirect based on role after a short delay
       setTimeout(() => {
-        if (role === "REFEREE" || role === "TOURNAMENT_ADMIN") {
+        if (role === "TOURNAMENT_ADMIN") {
           router.push("/approval-pending");
         } else {
           router.push("/dashboard");
@@ -126,6 +157,13 @@ export default function CompleteRegistrationPage() {
       </div>
     );
   }
+
+  const handleRoleChange = (newRole: string) => {
+    setRole(newRole);
+    if (newRole !== "PLAYER") {
+      setSkillLevel("");
+    }
+  };
 
   return (
     <div className="container flex items-center justify-center min-h-screen p-4">
@@ -181,7 +219,7 @@ export default function CompleteRegistrationPage() {
               <Label>Account Type</Label>
               <RadioGroup
                 value={role}
-                onValueChange={setRole}
+                onValueChange={handleRoleChange}
                 className="space-y-2"
                 disabled={loading || success}
               >
@@ -190,18 +228,12 @@ export default function CompleteRegistrationPage() {
                   <Label htmlFor="user" className="cursor-pointer">
                     Fantasy Player
                   </Label>
-                  <span className="text-xs text-gray-500 ml-2">
-                    (Instantly approved)
-                  </span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="PLAYER" id="player" />
                   <Label htmlFor="player" className="cursor-pointer">
                     Tournament Player
                   </Label>
-                  <span className="text-xs text-gray-500 ml-2">
-                    (Instantly approved)
-                  </span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="REFEREE" id="referee" />
@@ -220,7 +252,7 @@ export default function CompleteRegistrationPage() {
                 </div>
               </RadioGroup>
 
-              {(role === "REFEREE" || role === "TOURNAMENT_ADMIN") && (
+              {role === "TOURNAMENT_ADMIN" && (
                 <Alert className="mt-2 border-amber-200 bg-amber-50">
                   <AlertCircle className="h-4 w-4 text-amber-600" />
                   <AlertDescription className="text-amber-800">
@@ -230,6 +262,32 @@ export default function CompleteRegistrationPage() {
                 </Alert>
               )}
             </div>
+
+            {/* Show skill level dropdown if PLAYER is selected */}
+            {role === "PLAYER" && (
+              <div className="space-y-2">
+                <Label htmlFor="skillLevel">Skill Level</Label>
+                <Select
+                  value={skillLevel}
+                  onValueChange={setSkillLevel}
+                  disabled={loading || success}
+                >
+                  <SelectTrigger id="skillLevel">
+                    <SelectValue placeholder="Select your skill level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLAYER_SKILL_LEVELS.map((level) => (
+                      <SelectItem key={level.value} value={level.value}>
+                        {level.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  This will be used for matchmaking and team balancing
+                </p>
+              </div>
+            )}
 
             <Button
               type="submit"

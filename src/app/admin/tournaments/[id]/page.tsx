@@ -11,10 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Calendar, Users, Shield, Trophy, Settings, MapPin, Clock, UserPlus, User } from "lucide-react";
 import TournamentPlayerManager from "@/components/tournaments/TournamentPlayerManager";
 import TournamentRefereeManager from "@/components/tournaments/TournamentRefereeManager";
-import { useToast } from "@/components/ui/use-toast";
-import FantasySetup from "@/components/admin/tournament-creation/FantasySetup";
 import { FormProvider, useForm } from "react-hook-form";
 import TeamDisplay from "@/components/admin/TeamDisplay";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/Input";
+import { toast } from "@/components/ui/sonner";
+import FantasySetup from "@/components/admin/tournament-creation/FantasySetup";
 
 interface TournamentDetailProps {
   params: {
@@ -62,7 +64,6 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
-  const { toast } = useToast();
   
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,9 +77,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
   
   // Helper function to get auth token
   const getAuthToken = (): string => {
-    // If session is available, get the JWT token if it's been stored
-    // Otherwise, return an empty string
-    return session?.accessToken || '';
+    return localStorage.getItem('auth_token') || '';
   };
   
   // Store token in localStorage when session is available
@@ -89,11 +88,11 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
       // For security, retrieve token without logging it
       let sessionToken = null;
       
-      // @ts-ignore - Check different potential token locations
+      // @ts-expect-error - Check different potential token locations
       if (session.token) sessionToken = session.token;
-      // @ts-ignore
+      // @ts-expect-error
       else if (session.accessToken) sessionToken = session.accessToken; 
-      // @ts-ignore
+      // @ts-expect-error
       else if (session.user && session.user.token) sessionToken = session.user.token;
       
       if (sessionToken && typeof window !== 'undefined') {
@@ -151,11 +150,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
         } catch (err: any) {
           console.error("Error fetching tournament:", err);
           setError(err.message || "Failed to load tournament data");
-          toast({
-            title: "Error",
-            description: "Failed to load tournament data. Please try again.",
-            variant: "destructive",
-          });
+          toast("Failed to load tournament data. Please try again.");
         } finally {
           setLoading(false);
         }
@@ -171,7 +166,14 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
   // Format date for display
   const formatDate = (date: string | Date): string => {
     if (!date) return "TBD";
-    return format(new Date(date), "MMMM d, yyyy");
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   // Format time for display
@@ -367,11 +369,35 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
       console.log("Saving fantasy settings:", JSON.stringify(fantasyData, null, 2));
       console.log("Contests to save:", fantasyData.contests?.length || 0);
       
+      // Ensure contests array exists
+      if (!fantasyData.contests) {
+        fantasyData.contests = [];
+      }
+      
+      // Clean up contest data before validation
+      const cleanedContests = fantasyData.contests.map((contest: any) => {
+        // Ensure name is properly trimmed
+        if (contest.name) {
+          contest.name = contest.name.trim();
+        }
+        
+        // Ensure prizeBreakdown is an array
+        if (!contest.prizeBreakdown || !Array.isArray(contest.prizeBreakdown)) {
+          contest.prizeBreakdown = [{ position: 1, percentage: 100 }];
+        }
+        
+        return contest;
+      });
+      
+      // Replace contests with cleaned data
+      fantasyData.contests = cleanedContests;
+      
+      // Re-validate now that we've cleaned the data
       if (fantasyData.contests?.length > 0) {
-        console.log("First contest details:", JSON.stringify(fantasyData.contests[0], null, 2));
+        console.log("First contest details (after cleaning):", JSON.stringify(fantasyData.contests[0], null, 2));
         
         // Validate contests before saving
-        const invalidContests = fantasyData.contests.filter((contest: any) => !contest.name);
+        const invalidContests = fantasyData.contests.filter((contest: any) => !contest.name || contest.name === "");
         if (invalidContests.length > 0) {
           console.error("Found invalid contests without names:", invalidContests.length);
           throw new Error("All contests must have a name");
@@ -379,8 +405,13 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
         
         // Validate prize breakdowns
         const invalidPrizes = fantasyData.contests.filter((contest: any) => {
-          if (!contest.prizeBreakdown || !Array.isArray(contest.prizeBreakdown)) return true;
-          const sum = contest.prizeBreakdown.reduce((total: number, item: any) => total + (item.percentage || 0), 0);
+          if (!contest.prizeBreakdown || !Array.isArray(contest.prizeBreakdown) || contest.prizeBreakdown.length === 0) {
+            return true;
+          }
+          const sum = contest.prizeBreakdown.reduce((total: number, item: any) => {
+            const percentage = typeof item.percentage === 'number' ? item.percentage : 0;
+            return total + percentage;
+          }, 0);
           return Math.abs(sum - 100) > 0.1; // Allow small rounding errors
         });
         
@@ -388,11 +419,6 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
           console.error("Found contests with invalid prize breakdowns:", invalidPrizes.length);
           throw new Error("All contests must have prize breakdowns that sum to 100%");
         }
-      }
-      
-      // Ensure all required properties exist
-      if (!fantasyData.contests) {
-        fantasyData.contests = [];
       }
       
       // Make sure we have proper IDs for contests if created in the UI
@@ -466,6 +492,17 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
         title: "Success",
         description: `Fantasy settings saved successfully. ${result.contestResults?.length || 0} contests processed.`,
       });
+      
+      // Dispatch custom event to trigger refresh of contest lists on any open pages
+      if (typeof window !== 'undefined') {
+        console.log("Dispatching fantasy-contest-updated event");
+        const refreshEvent = new CustomEvent('fantasy-contest-updated');
+        window.dispatchEvent(refreshEvent);
+        
+        // Dispatch the fantasy-settings-saved event for FantasySetup component to detect
+        console.log("Dispatching fantasy-settings-saved event");
+        window.dispatchEvent(new CustomEvent('fantasy-settings-saved'));
+      }
       
       // Wait briefly for database to update
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -562,6 +599,72 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
       setLoading(false);
     }
   };
+
+  const [playerId, setPlayerId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAddPlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!playerId) {
+      toast({
+        title: "Missing information",
+        description: "Please enter a player ID",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      const response = await fetch(`/api/tournaments/${tournamentId}/players`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          playerId: parseInt(playerId),
+          tournamentId: parseInt(tournamentId.toString())
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Player added successfully"
+        });
+        setPlayerId("");
+        // Refresh tournament data
+        fetchTournament();
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to add player",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error("Error adding player:", error);
+      toast({
+        title: "Error",
+        description: "An error occurred while adding the player",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Define the players to bracket map
+  // @ts-expect-error - Using dynamic object mapping for player-bracket relationships
+  const playersToBracketMap = {};
+  // @ts-expect-error - Using dynamic object mapping for player-team relationships
+  const playersToTeamsMap = {};
+  // @ts-expect-error - Using dynamic object mapping for team-match relationships
+  const teamsToMatchesMap = {};
 
   if (loading) {
     return (
@@ -889,6 +992,33 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
           </Card>
         </TabsContent>
       </Tabs>
+      
+      <div className="mt-8 border rounded-md p-6 bg-card">
+        <h3 className="text-xl font-semibold mb-4">Add Player to Tournament</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Directly add a player to this tournament without requiring them to request access.
+        </p>
+        
+        <form onSubmit={handleAddPlayer} className="space-y-4">
+          <div>
+            <Label htmlFor="playerId">Player ID</Label>
+            <Input
+              id="playerId"
+              value={playerId}
+              onChange={(e) => setPlayerId(e.target.value)}
+              placeholder="Enter player ID"
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Enter the ID of the player you want to add to this tournament.
+            </p>
+          </div>
+          
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Adding..." : "Add Player"}
+          </Button>
+        </form>
+      </div>
     </div>
   );
 } 

@@ -26,8 +26,8 @@ export async function GET(
     const contest = await prisma.fantasyContest.findUnique({
       where: { id: contestId },
       select: {
-        rules: true,
         tournamentId: true,
+        // Include any other fields you need from the contest
       },
     });
 
@@ -41,16 +41,22 @@ export async function GET(
 
     console.log(`Found contest with tournament ID: ${contest.tournamentId}`);
 
-    // Parse rules
+    // Parse rules (from a separate source or default values)
     let rules = {};
-    try {
-      rules =
-        typeof contest.rules === "string"
-          ? JSON.parse(contest.rules)
-          : contest.rules || {};
-    } catch (e) {
-      console.error("Error parsing contest rules:", e);
-    }
+    // Set default rules
+    const defaultRules = {
+      walletSize: 100000,
+      teamSize: 7,
+      playerCategories: [
+        { name: "PROFESSIONAL", price: 10000 },
+        { name: "ADVANCED", price: 7500 },
+        { name: "INTERMEDIATE", price: 5000 },
+        { name: "BEGINNER", price: 2500 }
+      ]
+    };
+
+    // Use default rules since 'rules' field doesn't exist in the schema
+    rules = defaultRules;
 
     // Get all players in tournament
     console.log(`Finding players for tournament ID: ${contest.tournamentId}`);
@@ -62,12 +68,32 @@ export async function GET(
           },
         },
       },
+      include: {
+        teamMemberships: {
+          where: {
+            tournamentId: contest.tournamentId
+          }
+        }
+      }
     });
 
     console.log(`Found ${dbPlayers.length} players in the database for the tournament`);
 
+    // Process real players to include team info
+    let players = dbPlayers.map(player => {
+      // Get team information if available
+      const team = player.teamMemberships.length > 0 ? player.teamMemberships[0] : null;
+      
+      return {
+        ...player,
+        teamId: team?.id || null,
+        teamName: team?.name || null,
+        // Remove teamMemberships to clean up the response
+        teamMemberships: undefined
+      };
+    });
+
     // If no players found in the database, provide mock data
-    let players = dbPlayers;
     if (players.length === 0) {
       console.log("No real players found, using mock players instead");
       
@@ -82,10 +108,13 @@ export async function GET(
         isActive: true,
         createdAt: now,
         updatedAt: now,
+        teamId: null,
+        teamName: null,
+        teamMemberships: undefined
       };
       
-      // Create mock players with different skill levels
-      players = [
+      // Create mock players
+      const mockPlayers = [
         {
           ...mockPlayerBase,
           id: 1001,
@@ -197,6 +226,20 @@ export async function GET(
           rank: 20,
         },
       ];
+      
+      // Use type assertion to get around Prisma type checking for mock data
+      players = mockPlayers.map((player, index) => {
+        // Assign players to mock teams
+        const teamId = Math.floor(index / 3) + 1;
+        const teamNames = ["Smash Hitters", "Paddle Masters", "Court Kings", "Net Aces"];
+        
+        return {
+          ...player,
+          teamId,
+          teamName: teamNames[teamId - 1],
+          teamMemberships: undefined
+        };
+      }) as typeof players;
     }
 
     // Calculate fantasy price for each player based on rules or skill level

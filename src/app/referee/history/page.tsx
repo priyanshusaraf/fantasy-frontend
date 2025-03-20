@@ -29,6 +29,44 @@ interface MatchHistory {
   duration: string;
 }
 
+// Mock data for when API fails (for development purposes)
+const MOCK_MATCHES: MatchHistory[] = [
+  {
+    id: 1,
+    tournamentName: "Sample Tournament",
+    tournamentId: 1,
+    matchNumber: "Match #1",
+    round: "Quarter Finals",
+    court: "Court 1",
+    date: "2023-03-20",
+    time: "14:30",
+    team1: "Team Alpha",
+    team2: "Team Beta",
+    score1: 21,
+    score2: 15,
+    winner: "Team Alpha",
+    status: "COMPLETED",
+    duration: "45 minutes"
+  },
+  {
+    id: 2,
+    tournamentName: "Sample Tournament",
+    tournamentId: 1,
+    matchNumber: "Match #2",
+    round: "Semi Finals",
+    court: "Court 2",
+    date: "2023-03-21",
+    time: "16:00",
+    team1: "Team Charlie",
+    team2: "Team Delta",
+    score1: 12,
+    score2: 21,
+    winner: "Team Delta",
+    status: "COMPLETED",
+    duration: "38 minutes"
+  }
+];
+
 export default function RefereeHistoryPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -36,6 +74,7 @@ export default function RefereeHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState<string | null>(null);
+  const [apiError, setApiError] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -52,19 +91,24 @@ export default function RefereeHistoryPage() {
       if (session?.user) {
         try {
           setLoading(true);
+          setApiError(false);
           
           // Fetch from real API endpoint
           const response = await fetch("/api/referee/matches/history");
           
           if (!response.ok) {
-            throw new Error("Failed to fetch match history");
+            throw new Error(`Failed to fetch match history: ${response.status}`);
           }
           
           const data = await response.json();
           setMatches(data.matches || []);
         } catch (error) {
           console.error("Error fetching match history:", error);
-          toast.error("Failed to load match history. Please try again.");
+          // Use the standard toast function
+          toast("Failed to load match history. Using sample data instead.");
+          // Set API error flag and use mock data
+          setApiError(true);
+          setMatches(MOCK_MATCHES);
         } finally {
           setLoading(false);
         }

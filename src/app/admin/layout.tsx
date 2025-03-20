@@ -48,8 +48,8 @@ function NavItem({ href, icon, label, isActive }: NavItemProps) {
         className={cn(
           "w-full justify-start",
           isActive
-            ? "bg-primary/10 text-primary hover:bg-primary/15"
-            : "hover:bg-muted"
+            ? "bg-blue-500/10 text-blue-500 hover:bg-blue-500/15"
+            : "hover:bg-accent/10"
         )}
       >
         <div className="flex items-center">
@@ -88,9 +88,9 @@ export default function AdminLayout({
   // If still checking authentication, show loading state
   if (status === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
           <p className="text-muted-foreground">Loading admin panel...</p>
         </div>
       </div>
@@ -187,7 +187,7 @@ export default function AdminLayout({
         <Button
           variant="outline"
           size="icon"
-          className="rounded-full"
+          className="rounded-full border-blue-200 dark:border-blue-800"
           onClick={() => setSidebarOpen(!sidebarOpen)}
         >
           {sidebarOpen ? (
@@ -208,7 +208,7 @@ export default function AdminLayout({
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
           <Link href="/admin/dashboard" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
               <PieChart className="h-5 w-5 text-white" />
             </div>
             <span className="font-bold text-xl">
@@ -229,7 +229,7 @@ export default function AdminLayout({
             </Badge>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-custom">
             {filteredNavigationItems.map((item) => (
               <NavItem
                 key={item.href}
@@ -244,7 +244,7 @@ export default function AdminLayout({
               <Link href="/" passHref>
                 <Button
                   variant="outline"
-                  className="w-full justify-start"
+                  className="w-full justify-start border-blue-200 dark:border-blue-800"
                 >
                   <Home className="mr-2 h-4 w-4" />
                   <span>Back to Home</span>
@@ -254,101 +254,56 @@ export default function AdminLayout({
           </div>
           
           <div className="p-3 border-t border-border">
-            <div className="mb-3 flex items-center gap-3 px-2 py-1.5">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative p-0 h-auto rounded-full">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={session?.user?.image || ""} alt={session?.user?.name || "User"} />
-                      <AvatarFallback>{getInitials(session?.user?.name)}</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => router.push("/profile")}>
-                    <User className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push("/admin/settings")}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              
-              <div className="flex-1 overflow-hidden">
-                <div className="font-medium text-sm truncate">
-                  {session?.user?.name || "Admin User"}
-                </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {session?.user?.email}
-                </div>
-              </div>
-            </div>
-            
-            <Button
-              variant="destructive"
-              className="w-full"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign Out
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Backdrop for mobile sidebar */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Main content */}
-      <div className="flex-1 overflow-auto">
-        <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-16 flex items-center px-4 justify-end">
-          <div className="flex items-center gap-2">
-            <ThemeToggle className="md:hidden" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full md:hidden">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={session?.user?.image || ""} alt={session?.user?.name || "User"} />
-                    <AvatarFallback>{getInitials(session?.user?.name)}</AvatarFallback>
-                  </Avatar>
+                <Button variant="ghost" className="w-full justify-start">
+                  <div className="flex items-center">
+                    <Avatar className="h-8 w-8 mr-2">
+                      <AvatarFallback>{getInitials(session?.user?.name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium">{session?.user?.name}</span>
+                      <span className="text-xs text-muted-foreground">{session?.user?.email}</span>
+                    </div>
+                  </div>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 md:hidden">
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push("/profile")}>
+                <DropdownMenuItem onClick={() => router.push('/admin/profile')}>
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push("/admin/settings")}>
+                <DropdownMenuItem onClick={() => router.push('/admin/settings')}>
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                <DropdownMenuItem onClick={handleLogout} className="text-red-500 focus:text-red-500">
                   <LogOut className="mr-2 h-4 w-4" />
-                  Sign Out
+                  Log out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </header>
-        <main className="min-h-[calc(100vh-64px)]">{children}</main>
+        </div>
       </div>
+
+      {/* Main content */}
+      <div className="flex-1 overflow-auto">
+        <main className="p-4 md:p-6">
+          {children}
+        </main>
+      </div>
+      
+      {/* Backdrop for mobile sidebar */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 } 

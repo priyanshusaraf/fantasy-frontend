@@ -11,11 +11,17 @@ export default function DashboardRedirector() {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login");
+      router.push("/auth");
       return;
     }
 
     if (status === "authenticated" && session?.user?.role) {
+      // If user status is PENDING_APPROVAL, redirect them to approval pending page
+      if (session.user.status === "PENDING_APPROVAL") {
+        router.push("/approval-pending");
+        return;
+      }
+      
       const role = session.user.role;
       
       // Redirect based on user role

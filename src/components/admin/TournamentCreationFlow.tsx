@@ -58,7 +58,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Step-specific components

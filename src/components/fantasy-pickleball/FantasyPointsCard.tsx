@@ -15,6 +15,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Crown, Award, Star, Info, ArrowUp, ArrowDown, BarChart3, Shield, Zap, User } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 interface PlayerStats {
   wins: number;
@@ -38,6 +39,7 @@ interface FantasyPointsCardProps {
   matchesPlayed: number;
   price: number;
   ownership: number;
+  teamName?: string | null;
   className?: string;
 }
 
@@ -75,6 +77,7 @@ export function FantasyPointsCard({
   matchesPlayed,
   price,
   ownership,
+  teamName,
   className
 }: FantasyPointsCardProps) {
   // Calculate points per stat category
@@ -97,35 +100,54 @@ export function FantasyPointsCard({
   const pointsPerMatch = matchesPlayed > 0 ? totalPoints / matchesPlayed : 0;
   
   return (
-    <Card className={`w-full overflow-hidden transition-all hover:shadow-md ${className}`}>
+    <Card className={cn("w-full overflow-hidden transition-all hover:shadow-md", className)}>
       <CardHeader className="relative pb-2">
         <div className="flex justify-between items-start">
           <div>
             <CardTitle className="text-lg font-bold">{playerName}</CardTitle>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline">{playerPosition}</Badge>
-              <Badge variant="secondary">{skillLevel}</Badge>
+              <CardDescription className="text-xs">
+                {playerPosition}
+              </CardDescription>
+              <Badge variant="outline" className={getSkillLevelColor(skillLevel)}>
+                {skillLevel}
+              </Badge>
+              {teamName && (
+                <Badge variant="secondary" className="text-xs">
+                  {teamName}
+                </Badge>
+              )}
               
               {isCaptain && (
-                <Tooltip delayDuration={300} content="Captain (2x points)">
-                  <div>
-                    <Badge className="bg-yellow-500 hover:bg-yellow-600">
-                      <Star className="h-3 w-3 mr-1" />
-                      C
-                    </Badge>
-                  </div>
-                </Tooltip>
+                <TooltipProvider>
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger>
+                      <Badge className="bg-yellow-500 hover:bg-yellow-600">
+                        <Star className="h-3 w-3 mr-1" />
+                        C
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Captain (2x points)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
               
               {isViceCaptain && (
-                <Tooltip delayDuration={300} content="Vice Captain (1.5x points)">
-                  <div>
-                    <Badge className="bg-blue-500 hover:bg-blue-600">
-                      <Award className="h-3 w-3 mr-1" />
-                      VC
-                    </Badge>
-                  </div>
-                </Tooltip>
+                <TooltipProvider>
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger>
+                      <Badge className="bg-blue-500 hover:bg-blue-600">
+                        <Award className="h-3 w-3 mr-1" />
+                        VC
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Vice Captain (1.5x points)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
             </div>
           </div>

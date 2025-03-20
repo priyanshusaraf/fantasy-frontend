@@ -12,42 +12,56 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Extract the tournament ID properly
     const tournamentId = parseInt(params.id);
-    
+
     if (isNaN(tournamentId)) {
-      console.error("Invalid tournament ID:", params.id);
       return NextResponse.json(
-        { message: "Invalid tournament ID" },
+        { error: "Invalid tournament ID" },
         { status: 400 }
       );
     }
 
-    // Check if tournament exists
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-    });
-
-    if (!tournament) {
-      return NextResponse.json(
-        { message: "Tournament not found" },
-        { status: 404 }
-      );
-    }
-
-    // Get all players in the tournament
+    // Get the tournament entries (players)
     const tournamentEntries = await prisma.tournamentEntry.findMany({
-      where: { tournamentId },
+      where: {
+        tournamentId: tournamentId,
+      },
       include: {
-        player: true,
+        player: {
+          include: {
+            teamMemberships: true
+          }
+        }
       },
     });
 
-    const players = tournamentEntries.map((entry) => entry.player);
+    // Format the players array with team information
+    const players = tournamentEntries.map((entry) => {
+      // Find team information if available
+      const team = entry.player.teamMemberships.find(
+        team => team.tournamentId === tournamentId
+      );
 
-    return NextResponse.json({ players });
+      return {
+        id: entry.player.id,
+        name: entry.player.name,
+        skillLevel: entry.player.skillLevel,
+        gender: entry.player.dominantHand, // Using dominantHand as a placeholder for gender since it's not in the schema
+        position: entry.player.bio?.substring(0, 50) || "Player", // Using bio substring as a placeholder for position
+        email: null, // We don't expose email for privacy reasons
+        phone: null, // We don't expose phone for privacy reasons
+        teamId: team?.id || null,
+        teamName: team?.name || null,
+      };
+    });
+
+    return NextResponse.json(players);
   } catch (error) {
-    return errorHandler(error as Error, request);
+    console.error("Error retrieving tournament players:", error);
+    return NextResponse.json(
+      { error: "Failed to retrieve tournament players" },
+      { status: 500 }
+    );
   }
 }
 

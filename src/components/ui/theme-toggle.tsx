@@ -13,6 +13,8 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   React.useEffect(() => {
     setMounted(true)
+    // Force dark mode
+    document.documentElement.classList.add('dark')
   }, [])
 
   if (!mounted) {
@@ -29,39 +31,29 @@ export function ThemeToggle({ className }: { className?: string }) {
     )
   }
 
+  // Since we're forcing dark mode in this app version, this button
+  // is now just decorative and doesn't change the theme
   return (
     <Button
       variant="ghost"
       size="icon"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
       className={cn(
-        "rounded-full w-10 h-10 relative overflow-hidden bg-opacity-80 hover:bg-opacity-100 transition-all", 
+        "rounded-full w-10 h-10 relative overflow-hidden transition-all", 
+        "bg-transparent hover:bg-accent/10",
         className
       )}
-      aria-label="Toggle theme"
+      aria-label="Theme toggle"
     >
       <div className="absolute inset-0 flex items-center justify-center">
-        {theme === "dark" ? (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -20, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Sun className="h-5 w-5 text-amber-300" />
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -20, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Moon className="h-5 w-5 text-indigo-500" />
-          </motion.div>
-        )}
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.2 }}
+        >
+          <Moon className="h-5 w-5 text-blue-400" />
+        </motion.div>
       </div>
-      <span className="sr-only">Toggle theme</span>
+      <span className="sr-only">Dark mode enabled</span>
     </Button>
   )
 } 

@@ -195,17 +195,20 @@ export default function TournamentBasicInfo({ formData, onChange }: TournamentBa
               onChange={(e) => onChange('entryFee', parseFloat(e.target.value))}
               required
             />
+            <p className="text-xs text-muted-foreground">
+              Prize pool will be calculated dynamically as 77.64% of all entry fees collected.
+            </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="prizeMoney">Prize Money</Label>
+            <Label htmlFor="maxParticipants">Maximum Participants</Label>
             <Input
-              id="prizeMoney"
+              id="maxParticipants"
               type="number"
-              min="0"
-              step="0.01"
-              value={formData.prizeMoney}
-              onChange={(e) => onChange('prizeMoney', parseFloat(e.target.value))}
+              min="2"
+              value={formData.maxParticipants}
+              onChange={(e) => onChange('maxParticipants', parseInt(e.target.value))}
+              required
             />
           </div>
         </div>

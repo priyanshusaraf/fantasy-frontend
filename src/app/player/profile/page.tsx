@@ -146,81 +146,12 @@ export default function PlayerProfilePage() {
           
         } catch (apiError) {
           console.error("API error:", apiError);
-          
-          // Use mock data if API call fails
-          const mockProfile: PlayerProfile = {
-            id: "1",
-            username: session.user.name || "player",
-            email: session.user.email || "player@example.com",
-            firstName: "John",
-            lastName: "Player",
-            profilePicture: session.user.image || "",
-            bio: "Professional pickleball player with 5 years of experience in competitive play.",
-            phone: "+1 (555) 123-4567",
-            address: "123 Main St",
-            city: "San Francisco",
-            state: "CA",
-            country: "USA",
-            role: "PLAYER",
-            createdAt: new Date().toISOString(),
-            skillLevel: "ADVANCED",
-            dominantHand: "RIGHT",
-            ranking: 42,
-            rating: 4.8,
-            yearsPlaying: 5,
-            tournamentWins: 7,
-            matchesWon: 86,
-            matchesLost: 24,
-            winPercentage: 78.2
-          };
-          
-          setProfile(mockProfile);
-          
-          // Initialize form data
-          setFormData({
-            firstName: mockProfile.firstName || "",
-            lastName: mockProfile.lastName || "",
-            email: mockProfile.email || "",
-            bio: mockProfile.bio || "",
-            phone: mockProfile.phone || "",
-            address: mockProfile.address || "",
-            city: mockProfile.city || "",
-            state: mockProfile.state || "",
-            country: mockProfile.country || "",
-            dateOfBirth: mockProfile.dateOfBirth ? mockProfile.dateOfBirth.split('T')[0] : "",
-            skillLevel: mockProfile.skillLevel || "",
-            dominantHand: mockProfile.dominantHand || "",
+          setError("Failed to load profile. Please try again later.");
+          toast({
+            title: "Error",
+            description: "Failed to load profile",
+            variant: "destructive"
           });
-          
-          // Mock tournament history
-          const mockTournaments = [
-            {
-              id: "1",
-              name: "Summer Grand Slam",
-              date: "2023-07-15",
-              location: "Miami, FL",
-              result: "Winner",
-              placement: 1
-            },
-            {
-              id: "2",
-              name: "Regional Championships",
-              date: "2023-05-22",
-              location: "Denver, CO",
-              result: "Semi-finalist",
-              placement: 3
-            },
-            {
-              id: "3",
-              name: "Pro Tour Finals",
-              date: "2023-03-10",
-              location: "Austin, TX",
-              result: "Finalist",
-              placement: 2
-            }
-          ];
-          
-          setTournamentHistory(mockTournaments);
         }
       } catch (err: any) {
         setError(err.message || "Failed to load profile");
@@ -229,8 +160,29 @@ export default function PlayerProfilePage() {
       }
     };
     
+    const fetchTournamentHistory = async () => {
+      try {
+        const response = await fetch('/api/player/tournaments');
+        if (!response.ok) {
+          throw new Error('Failed to fetch tournament history');
+        }
+        
+        const data = await response.json();
+        setTournamentHistory(data);
+      } catch (error) {
+        console.error("Error fetching tournament history:", error);
+        setTournamentHistory([]);
+        toast({
+          title: "Error",
+          description: "Failed to load tournament history",
+          variant: "destructive"
+        });
+      }
+    };
+
     fetchProfile();
-  }, [session, status]);
+    fetchTournamentHistory();
+  }, [session]);
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

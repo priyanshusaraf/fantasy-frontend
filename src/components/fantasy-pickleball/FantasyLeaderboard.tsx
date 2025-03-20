@@ -28,8 +28,6 @@ interface FantasyTeam {
   ownerName: string;
   ownerAvatar?: string;
   points: number;
-  captainName: string;
-  viceCaptainName: string;
   contestId: string;
 }
 
@@ -127,7 +125,6 @@ export function FantasyLeaderboard({
             <TableRow>
               <TableHead className="w-[80px]">Rank</TableHead>
               <TableHead>Team</TableHead>
-              <TableHead>Captain</TableHead>
               <TableHead className="text-right">Points</TableHead>
             </TableRow>
           </TableHeader>
@@ -160,7 +157,6 @@ export function FantasyLeaderboard({
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>{team.captainName}</TableCell>
                 <TableCell className="text-right font-bold">
                   {isLive && <span className="text-primary animate-pulse mr-1">•</span>}
                   {team.points}
@@ -169,7 +165,7 @@ export function FantasyLeaderboard({
             ))}
             {filteredTeams.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                   No teams found matching your search.
                 </TableCell>
               </TableRow>

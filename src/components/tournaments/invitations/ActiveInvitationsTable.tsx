@@ -48,57 +48,13 @@ export default function ActiveInvitationsTable({
   const fetchInvitations = async () => {
     setLoading(true);
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/invitations`);
-      // if (!response.ok) {
-      //   throw new Error("Failed to fetch invitations");
-      // }
-      // const data = await response.json();
-      // setInvitations(data);
-
-      // Mock data for demonstration
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const mockInvitations: Invitation[] = [
-        {
-          id: 1,
-          invitedEmail: "john.doe@example.com",
-          invitedUser: {
-            id: 101,
-            username: "johndoe",
-            email: "john.doe@example.com",
-          },
-          role: "PLAYER",
-          status: "PENDING",
-          invitationCode: "abc123def456",
-          createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          expiresAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: 2,
-          invitedEmail: "sarah.jones@example.com",
-          invitedUser: null,
-          role: "REFEREE",
-          status: "PENDING",
-          invitationCode: "xyz789abc012",
-          createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: 3,
-          invitedEmail: "mike.brown@example.com",
-          invitedUser: {
-            id: 103,
-            username: "mikebrown",
-            email: "mike.brown@example.com",
-          },
-          role: "PLAYER",
-          status: "ACCEPTED",
-          invitationCode: "def456ghi789",
-          createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ];
-      setInvitations(mockInvitations);
+      // Make a real API call to fetch invitations
+      const response = await fetch(`/api/tournaments/${tournamentId}/invitations`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch invitations");
+      }
+      const data = await response.json();
+      setInvitations(data);
     } catch (error) {
       console.error("Error fetching invitations:", error);
       toast({
@@ -131,17 +87,13 @@ export default function ActiveInvitationsTable({
     setProcessingId(invitation.id);
     
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/invitations/${invitation.id}/resend`, {
-      //   method: "POST",
-      // });
+      const response = await fetch(`/api/tournaments/${tournamentId}/invitations/${invitation.id}/resend`, {
+        method: "POST",
+      });
       
-      // if (!response.ok) {
-      //   throw new Error("Failed to resend invitation");
-      // }
-      
-      // Mock successful response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!response.ok) {
+        throw new Error("Failed to resend invitation");
+      }
       
       toast({
         title: "Invitation Resent",
@@ -164,21 +116,17 @@ export default function ActiveInvitationsTable({
     setProcessingId(invitation.id);
     
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/invitations`, {
-      //   method: "DELETE",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({ invitationId: invitation.id }),
-      // });
+      const response = await fetch(`/api/tournaments/${tournamentId}/invitations`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ invitationId: invitation.id }),
+      });
       
-      // if (!response.ok) {
-      //   throw new Error("Failed to cancel invitation");
-      // }
-      
-      // Mock successful response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!response.ok) {
+        throw new Error("Failed to cancel invitation");
+      }
       
       // Update local state
       setInvitations((prev) => prev.filter((inv) => inv.id !== invitation.id));

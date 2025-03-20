@@ -6,6 +6,7 @@ import {
   MatchStatus,
   PaymentStatus,
 } from "@prisma/client";
+import { canRegisterForTournament } from "@/utils/tournament";
 
 export class TournamentService {
   /**
@@ -215,6 +216,34 @@ export class TournamentService {
     playerId: number
   ) {
     try {
+      // Check if registration is allowed
+      const tournament = await prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        include: {
+          _count: {
+            select: { entries: true }
+          }
+        }
+      });
+
+      if (!tournament) {
+        throw new Error("Tournament not found");
+      }
+
+      // Use our utility to check if registration is allowed
+      const registrationCheck = canRegisterForTournament({
+        status: tournament.status,
+        registrationOpenDate: tournament.registrationOpenDate,
+        registrationCloseDate: tournament.registrationCloseDate,
+        startDate: tournament.startDate,
+        maxParticipants: tournament.maxParticipants,
+        currentParticipants: tournament._count.entries
+      });
+
+      if (!registrationCheck.allowed) {
+        throw new Error(registrationCheck.reason || "Registration is not allowed at this time");
+      }
+
       const entry = await prisma.tournamentEntry.create({
         data: {
           tournament: { connect: { id: tournamentId } },

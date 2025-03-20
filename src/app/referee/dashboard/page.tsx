@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -29,12 +30,16 @@ import {
   History,
   ShieldAlert,
   Bell as Whistle,
+  Play,
+  PlusCircle,
+  Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Match {
   id: number;
   tournamentName: string;
+  tournamentId: number;
   matchNumber: number;
   team1: string;
   team2: string;
@@ -53,6 +58,17 @@ interface Assignment {
   status: "PENDING" | "APPROVED" | "REJECTED";
 }
 
+interface Tournament {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  location: string;
+  status: string;
+  matchCount: number;
+  liveMatchCount: number;
+}
+
 interface Stats {
   totalMatches: number;
   monthlyMatches: number;
@@ -66,6 +82,7 @@ export default function RefereeDashboard() {
   const [loading, setLoading] = useState(true);
   const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [refereeStats, setRefereeStats] = useState<Stats>({
     totalMatches: 0,
     monthlyMatches: 0,
@@ -93,19 +110,22 @@ export default function RefereeDashboard() {
         setLoading(true);
         
         // Real API calls
-        const [matchesResponse, assignmentsResponse, statsResponse] = await Promise.all([
+        const [matchesResponse, assignmentsResponse, statsResponse, tournamentsResponse] = await Promise.all([
           fetch('/api/referee/matches?status=SCHEDULED'),
           fetch('/api/referee/assignments'),
-          fetch('/api/referee/stats')
+          fetch('/api/referee/stats'),
+          fetch('/api/referee/tournaments')
         ]);
         
         if (!matchesResponse.ok) throw new Error('Failed to fetch matches');
         if (!assignmentsResponse.ok) throw new Error('Failed to fetch assignments');
         if (!statsResponse.ok) throw new Error('Failed to fetch stats');
+        if (!tournamentsResponse.ok) throw new Error('Failed to fetch tournaments');
         
         const matchesData = await matchesResponse.json();
         const assignmentsData = await assignmentsResponse.json();
         const statsData = await statsResponse.json();
+        const tournamentsData = await tournamentsResponse.json();
         
         setUpcomingMatches(matchesData.matches || []);
         setAssignments(assignmentsData.assignments || []);
@@ -115,9 +135,10 @@ export default function RefereeDashboard() {
           averageMatchTime: "0hr 0min",
           tournamentCount: 0,
         });
+        setTournaments(tournamentsData.tournaments || []);
       } catch (error) {
         console.error("Error fetching referee data:", error);
-        toast.error("Failed to load referee data");
+        toast("Failed to load referee data");
       } finally {
         setLoading(false);
       }
@@ -145,10 +166,16 @@ export default function RefereeDashboard() {
         )
       );
       
-      toast.success("Assignment accepted successfully");
+      // Also update tournaments list
+      const updatedAssignment = assignments.find(a => a.id === assignmentId);
+      if (updatedAssignment) {
+        fetchTournamentData();
+      }
+      
+      toast("Assignment accepted successfully");
     } catch (error) {
       console.error("Error accepting assignment:", error);
-      toast.error("Failed to accept assignment");
+      toast("Failed to accept assignment");
     }
   };
   
@@ -169,10 +196,23 @@ export default function RefereeDashboard() {
         )
       );
       
-      toast.success("Assignment declined successfully");
+      toast("Assignment declined successfully");
     } catch (error) {
       console.error("Error declining assignment:", error);
-      toast.error("Failed to decline assignment");
+      toast("Failed to decline assignment");
+    }
+  };
+
+  // Fetch tournament data after accepting assignment
+  const fetchTournamentData = async () => {
+    try {
+      const response = await fetch('/api/referee/tournaments');
+      if (!response.ok) throw new Error('Failed to fetch tournaments');
+      
+      const data = await response.json();
+      setTournaments(data.tournaments || []);
+    } catch (error) {
+      console.error("Error fetching tournaments:", error);
     }
   };
 
@@ -248,162 +288,226 @@ export default function RefereeDashboard() {
                   className="flex items-center gap-1"
                 >
                   <History className="h-4 w-4" />
-                  Match History
+                  <span className="hidden sm:inline">Match History</span>
                 </Button>
                 <Button
-                  onClick={() => router.push("/referee/live-scoring")}
-                  className="bg-gradient-to-r from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600"
+                  onClick={() => router.push("/referee/create-match")}
+                  className="bg-teal-600 hover:bg-teal-700 text-white flex items-center gap-1"
                 >
-                  <Flag className="h-4 w-4 mr-2" />
-                  Start Scoring
+                  <PlusCircle className="h-4 w-4" />
+                  <span className="hidden sm:inline">Create Match</span>
                 </Button>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Stats Cards */}
-        <section className="mb-8">
-          <h3 className="text-lg font-medium mb-4">Your Stats</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-950/20 dark:to-slate-900/20 border-slate-200/50 dark:border-slate-800/30">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Matches</p>
-                    <h3 className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{refereeStats.totalMatches}</h3>
-                    <p className="text-xs mt-1 text-muted-foreground">Lifetime total</p>
-                  </div>
-                  <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-full">
-                    <ClipboardCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-950/20 dark:to-slate-900/20 border-slate-200/50 dark:border-slate-800/30">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Monthly Matches</p>
-                    <h3 className="text-2xl font-bold text-teal-600 dark:text-teal-400 mt-1">{refereeStats.monthlyMatches}</h3>
-                    <p className="text-xs mt-1 text-muted-foreground">Current month</p>
-                  </div>
-                  <div className="bg-teal-100 dark:bg-teal-900/30 p-2 rounded-full">
-                    <Calendar className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-950/20 dark:to-slate-900/20 border-slate-200/50 dark:border-slate-800/30">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Avg. Match Time</p>
-                    <h3 className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{refereeStats.averageMatchTime}</h3>
-                    <p className="text-xs mt-1 text-muted-foreground">Per match</p>
-                  </div>
-                  <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-full">
-                    <Timer className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-950/20 dark:to-slate-900/20 border-slate-200/50 dark:border-slate-800/30">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Tournaments</p>
-                    <h3 className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{refereeStats.tournamentCount}</h3>
-                    <p className="text-xs mt-1 text-muted-foreground">Officiated</p>
-                  </div>
-                  <div className="bg-amber-100 dark:bg-amber-900/30 p-2 rounded-full">
-                    <Award className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-
-        {/* Main content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Upcoming Matches */}
-          <div className="lg:col-span-2 space-y-8">
+        {/* Main dashboard content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left column: Tournaments & Assignments */}
+          <div className="space-y-6 lg:col-span-2">
+            {/* Assigned Tournaments */}
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <div className="flex justify-between items-center">
-                  <CardTitle>Upcoming Matches</CardTitle>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Award className="h-5 w-5 text-teal-500" />
+                    Your Tournaments
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs flex items-center"
+                    onClick={() => router.push("/referee/tournaments")}
+                  >
+                    View All
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+                <CardDescription>
+                  Tournaments you are assigned to referee
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {tournaments.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Award className="h-12 w-12 text-gray-300 mb-3" />
+                    <h3 className="text-lg font-medium">No tournaments assigned</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs mt-1">
+                      You don't have any tournaments assigned yet. Tournament admins will assign you to tournaments.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {tournaments.slice(0, 3).map((tournament) => (
+                      <Card key={tournament.id} className="overflow-hidden">
+                        <CardContent className="p-0">
+                          <div className="flex flex-col sm:flex-row">
+                            <div className="p-4 sm:w-2/3">
+                              <h3 className="font-semibold text-lg">{tournament.name}</h3>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <div className="flex items-center text-muted-foreground">
+                                  <Calendar className="h-3.5 w-3.5 mr-2" />
+                                  <span>
+                                    {new Date(tournament.startDate).toLocaleDateString()} - {new Date(tournament.endDate).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <div className="flex items-center text-muted-foreground">
+                                  <MapPin className="h-3.5 w-3.5 mr-2" />
+                                  <span>{tournament.location}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="p-4 bg-muted/30 flex flex-col justify-between space-y-4 sm:w-1/3">
+                              <div>
+                                <div className="text-sm flex items-center justify-between">
+                                  <span className="text-muted-foreground">Status:</span>
+                                  <Badge 
+                                    variant={tournament.status === 'IN_PROGRESS' ? 'default' : 'outline'}
+                                    className="ml-2"
+                                  >
+                                    {tournament.status.replace('_', ' ')}
+                                  </Badge>
+                                </div>
+                                <div className="text-sm flex items-center justify-between mt-1">
+                                  <span className="text-muted-foreground">Live Matches:</span>
+                                  <Badge variant="outline" className={tournament.liveMatchCount > 0 ? "bg-green-500/10 text-green-600" : ""}>
+                                    {tournament.liveMatchCount}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <Button 
+                                  size="sm" 
+                                  className="w-full"
+                                  onClick={() => router.push(`/referee/tournaments/${tournament.id}/create-match`)}
+                                >
+                                  <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                                  Add Match
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  className="w-full"
+                                  onClick={() => router.push(`/referee/tournaments/${tournament.id}`)}
+                                >
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+              {tournaments.length > 3 && (
+                <CardFooter className="pt-0">
                   <Button 
-                    variant="link" 
-                    className="text-sm gap-1"
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full"
+                    onClick={() => router.push("/referee/tournaments")}
+                  >
+                    View All Tournaments
+                  </Button>
+                </CardFooter>
+              )}
+            </Card>
+
+            {/* Upcoming Matches */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-teal-500" />
+                    Upcoming Matches
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
                     onClick={() => router.push("/referee/matches")}
                   >
                     View All
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
                 </div>
-                <CardDescription>Matches you are scheduled to officiate</CardDescription>
+                <CardDescription>
+                  Your upcoming scheduled matches to referee
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {upcomingMatches.length === 0 ? (
-                  <div className="text-center py-6 text-muted-foreground">
-                    <ClipboardCheck className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>No upcoming matches found</p>
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Calendar className="h-12 w-12 text-gray-300 mb-3" />
+                    <h3 className="text-lg font-medium">No upcoming matches</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs mt-1">
+                      You don't have any upcoming matches scheduled. Create a match or check back later.
+                    </p>
+                    <Button 
+                      className="mt-4"
+                      onClick={() => router.push("/referee/create-match")}
+                    >
+                      <PlusCircle className="h-4 w-4 mr-2" />
+                      Create Match
+                    </Button>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {upcomingMatches.map((match) => (
-                      <div 
-                        key={match.id} 
-                        className="p-4 rounded-lg border border-teal-200/40 dark:border-teal-800/30 hover:bg-teal-50/50 dark:hover:bg-teal-950/10 transition-colors cursor-pointer"
-                        onClick={() => router.push(`/referee/matches/${match.id}`)}
+                      <div
+                        key={match.id}
+                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors"
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="font-medium text-lg">Match #{match.matchNumber}</h4>
-                            <p className="text-sm text-muted-foreground">{match.tournamentName}</p>
-                          </div>
-                          <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                            Upcoming
-                          </Badge>
-                        </div>
-                        
-                        <div className="my-3">
-                          <h5 className="text-center font-medium mb-1">
-                            {match.team1} vs. {match.team2}
-                          </h5>
-                        </div>
-                        
-                        <div className="grid grid-cols-3 gap-2 mt-4 text-sm">
+                        <div className="mb-2 sm:mb-0">
                           <div className="flex items-center">
-                            <Clock className="h-4 w-4 text-muted-foreground mr-1" />
-                            <p>{new Date(match.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                            <Badge className="mr-2 capitalize">
+                              {match.status.toLowerCase()}
+                            </Badge>
+                            <h3 className="font-medium">
+                              {match.team1} vs {match.team2}
+                            </h3>
                           </div>
-                          <div className="flex items-center">
-                            <Calendar className="h-4 w-4 text-muted-foreground mr-1" />
-                            <p>{new Date(match.startTime).toLocaleDateString()}</p>
-                          </div>
-                          <div className="flex items-center">
-                            <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
-                            <p>{match.court}</p>
+                          <div className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4">
+                            <span className="flex items-center">
+                              <Award className="h-3.5 w-3.5 mr-1.5" />
+                              {match.tournamentName}
+                            </span>
+                            <span className="flex items-center">
+                              <MapPin className="h-3.5 w-3.5 mr-1.5" />
+                              {match.court}
+                            </span>
+                            <span className="flex items-center">
+                              <Clock className="h-3.5 w-3.5 mr-1.5" />
+                              {new Date(match.startTime).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
                           </div>
                         </div>
-                        
-                        <div className="flex justify-end mt-4">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/referee/live-scoring/match/${match.id}`);
-                            }}
-                          >
-                            <Flag className="h-4 w-4 mr-1" />
-                            Score Match
-                          </Button>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          {match.status === "IN_PROGRESS" ? (
+                            <Button
+                              className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
+                              size="sm"
+                              onClick={() => router.push(`/referee/live-scoring/${match.id}`)}
+                            >
+                              <Play className="h-4 w-4 mr-1.5" />
+                              Score Match
+                            </Button>
+                          ) : (
+                            <Button
+                              className="w-full sm:w-auto"
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => router.push(`/referee/matches/${match.id}`)}
+                            >
+                              View Match
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -411,195 +515,132 @@ export default function RefereeDashboard() {
                 )}
               </CardContent>
             </Card>
-
-            {/* Rules and Guidelines Card */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Referee Guidelines</CardTitle>
-                <CardDescription>Important rules and guidelines for officiating</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-full">
-                      <CheckSquare className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-base">Match Preparation</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Arrive 15 minutes before scheduled match time. Verify player IDs and equipment.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3">
-                    <div className="bg-teal-100 dark:bg-teal-900/30 p-2 rounded-full">
-                      <Whistle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-base">Scoring Protocol</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Announce scores clearly after each point. First server, then receiver's score.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3">
-                    <div className="bg-amber-100 dark:bg-amber-900/30 p-2 rounded-full">
-                      <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-base">Conflict Resolution</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        For disputes, make firm decisions based on rules. Consult tournament director if needed.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3">
-                    <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-full">
-                      <ShieldAlert className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-base">Code of Conduct</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Issue warnings for unsportsmanlike conduct. Two warnings result in point penalty.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <Button 
-                  variant="outline" 
-                  className="w-full mt-6"
-                  onClick={() => router.push("/referee/guidelines")}
-                >
-                  View Complete Referee Handbook
-                </Button>
-              </CardContent>
-            </Card>
           </div>
 
-          {/* Right Column - Tournament Assignments */}
-          <div className="space-y-8">
-            {/* Tournament Assignments */}
+          {/* Right column: Stats and pending assignments */}
+          <div className="space-y-6">
+            {/* Referee Stats */}
             <Card>
               <CardHeader>
-                <CardTitle>Tournament Assignments</CardTitle>
-                <CardDescription>Your assigned tournaments</CardDescription>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <CheckSquare className="h-5 w-5 text-teal-500" />
+                  Your Stats
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {assignments.map((assignment) => (
-                    <div key={assignment.id} className="p-4 rounded-lg border border-blue-200/40 dark:border-blue-800/30">
-                      <h4 className="font-medium">{assignment.tournamentName}</h4>
-                      <div className="flex items-center text-xs text-muted-foreground mt-1">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        <span>{new Date(assignment.date).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex items-center text-xs text-muted-foreground mt-1">
-                        <Users className="h-3 w-3 mr-1" />
-                        <span>Assigned by: {assignment.assignedBy}</span>
-                      </div>
-                      <div className="flex items-center text-xs text-muted-foreground mt-1">
-                        <ClipboardCheck className="h-3 w-3 mr-1" />
-                        <span>{assignment.matchCount} matches to officiate</span>
-                      </div>
-                      
-                      {assignment.status === "PENDING" ? (
-                        <div className="flex gap-2 mt-4">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="w-full"
-                            onClick={() => handleAcceptAssignment(assignment.id)}
-                          >
-                            Accept
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="w-full"
-                            onClick={() => handleDeclineAssignment(assignment.id)}
-                          >
-                            Decline
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="mt-4">
-                          <Badge 
-                            className={
-                              assignment.status === "APPROVED" 
-                                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" 
-                                : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                            }
-                          >
-                            {assignment.status === "APPROVED" ? "Accepted" : "Declined"}
-                          </Badge>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            className="ml-2"
-                            onClick={() => router.push(`/referee/tournaments/${assignment.tournamentId}`)}
-                          >
-                            View Details
-                          </Button>
-                        </div>
-                      )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-muted/30 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      Total Matches
+                    </h3>
+                    <div className="mt-2 flex items-center">
+                      <Whistle className="h-5 w-5 text-teal-500 mr-2" />
+                      <span className="text-2xl font-semibold">
+                        {refereeStats.totalMatches}
+                      </span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="bg-muted/30 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      This Month
+                    </h3>
+                    <div className="mt-2 flex items-center">
+                      <Calendar className="h-5 w-5 text-teal-500 mr-2" />
+                      <span className="text-2xl font-semibold">
+                        {refereeStats.monthlyMatches}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-muted/30 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      Avg. Match Time
+                    </h3>
+                    <div className="mt-2 flex items-center">
+                      <Timer className="h-5 w-5 text-teal-500 mr-2" />
+                      <span className="text-2xl font-semibold">
+                        {refereeStats.averageMatchTime}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-muted/30 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      Tournaments
+                    </h3>
+                    <div className="mt-2 flex items-center">
+                      <Trophy className="h-5 w-5 text-teal-500 mr-2" />
+                      <span className="text-2xl font-semibold">
+                        {refereeStats.tournamentCount}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
-              <CardFooter>
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={() => router.push("/referee/assignments")}
-                >
-                  Manage All Assignments
-                </Button>
-              </CardFooter>
             </Card>
 
-            {/* Quick Actions Card */}
+            {/* Pending Assignments */}
             <Card>
               <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-                <CardDescription>Common referee tasks</CardDescription>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5 text-teal-500" />
+                  Tournament Assignments
+                </CardTitle>
+                <CardDescription>
+                  Requests to referee tournaments
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left"
-                  onClick={() => router.push("/referee/live-scoring")}
-                >
-                  <Flag className="h-4 w-4 mr-2" />
-                  Start Scoring a Match
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left"
-                  onClick={() => router.push("/referee/tournaments/available")}
-                >
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Find Tournaments
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left"
-                  onClick={() => router.push("/referee/incidents")}
-                >
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  Report an Incident
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left"
-                  onClick={() => router.push("/referee/settings")}
-                >
-                  <User className="h-4 w-4 mr-2" />
-                  Referee Settings
-                </Button>
+              <CardContent>
+                {assignments.filter(a => a.status === "PENDING").length === 0 ? (
+                  <div className="text-center py-6">
+                    <CheckSquare className="h-10 w-10 mx-auto text-gray-300 mb-2" />
+                    <p className="text-muted-foreground">
+                      No pending assignments
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {assignments
+                      .filter(a => a.status === "PENDING")
+                      .map((assignment) => (
+                        <div
+                          key={assignment.id}
+                          className="p-4 border rounded-lg"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h3 className="font-medium">
+                                {assignment.tournamentName}
+                              </h3>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                Assigned by: {assignment.assignedBy}
+                              </p>
+                              <div className="flex items-center text-sm text-muted-foreground mt-1">
+                                <Calendar className="h-3.5 w-3.5 mr-1.5" />
+                                <span>{assignment.date}</span>
+                              </div>
+                            </div>
+                            <Badge variant="outline">Pending</Badge>
+                          </div>
+                          <div className="flex gap-2 mt-4">
+                            <Button
+                              size="sm"
+                              className="w-full bg-green-600 hover:bg-green-700"
+                              onClick={() => handleAcceptAssignment(assignment.id)}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => handleDeclineAssignment(assignment.id)}
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

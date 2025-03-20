@@ -1,80 +1,52 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import prisma from "@/lib/prisma";
+import { createCustomAdapter } from "./custom-adapter";
+import { env } from "@/lib/env";
 
-// Define types for next-auth
-declare module "next-auth" {
-  interface User {
-    id: string;
-    role: string;
-    isApproved: boolean;
-    username: string;
-  }
-
-  interface Session {
-    user: {
-      id: string;
-      name?: string | null;
-      email?: string | null;
-      image?: string | null;
-      role: string;
-      isApproved: boolean;
-      username: string;
-    };
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    id: string;
-    role: string;
-    isApproved: boolean;
-    username: string;
-  }
-}
-
+/**
+ * NextAuth configuration
+ */
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: createCustomAdapter(),
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          scope: "openid profile email",
-        },
-      },
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: true, // Allow linking accounts with the same email
     }),
   ],
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: env.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role;
-        token.username = user.username;
-        token.isApproved = user.isApproved;
+        // Add custom user fields from database to JWT
+        if ('role' in user) token.role = user.role;
+        if ('username' in user) token.username = user.username;
+        if ('status' in user) token.status = user.status;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.username = token.username;
-        session.user.isApproved = token.isApproved;
+        // Add custom user fields from JWT to session
+        if ('role' in token) session.user.role = token.role;
+        if ('username' in token) session.user.username = token.username;
+        if ('status' in token) session.user.status = token.status;
       }
       return session;
     },
   },
   pages: {
-    signIn: "/login",
+    signIn: "/auth",
     error: "/auth/error",
   },
+  debug: process.env.NODE_ENV === 'development',
 };
 
 export default authOptions; 

@@ -1,5 +1,16 @@
 import nodemailer from "nodemailer";
 
+// Simple logger implementation
+const logger = {
+  info: (message: any, details?: any) => console.log("[INFO]", message, details || ""),
+  error: (message: any, details?: any) => console.error("[ERROR]", message, details || "")
+};
+
+// Function for logging events
+const logEvent = (event: string, metadata?: any) => {
+  logger.info(event, metadata);
+};
+
 // EmailService is kept here for general email notifications,
 // but password reset emails are no longer supported.
 export class EmailService {

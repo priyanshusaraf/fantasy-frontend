@@ -8,11 +8,16 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  output: 'standalone',
+  experimental: {
+    missingSuspenseWithCSRBailout: true
+  },
   images: {
     domains: [
       'assets.razorpay.com',
       'lh3.googleusercontent.com',
-      'avatars.githubusercontent.com'
+      'avatars.githubusercontent.com',
+      'images.unsplash.com'
     ],
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60

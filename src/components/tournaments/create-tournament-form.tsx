@@ -35,7 +35,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -72,12 +72,16 @@ const TournamentStatusEnum = z.enum([
 
 const TournamentSchema = z.object({
   name: z.string().min(3, "Tournament name must have at least 3 characters"),
-    description: z.string().optional(),
-    type: TournamentTypeEnum,
-    startDate: z.date(),
-    endDate: z.date(),
-    registrationOpenDate: z.date(),
-    registrationCloseDate: z.date(),
+  description: z.string().optional(),
+  type: TournamentTypeEnum,
+  startDate: z.date(),
+  startTime: z.string(),
+  endDate: z.date(),
+  endTime: z.string(),
+  registrationOpenDate: z.date(),
+  registrationOpenTime: z.string(),
+  registrationCloseDate: z.date(),
+  registrationCloseTime: z.string(),
   location: z.string().min(3, "Location must have at least 3 characters"),
   maxParticipants: z.number().min(2, "Must have at least 2 participants"),
   entryFee: z.number().min(0, "Entry fee cannot be negative"),
@@ -85,8 +89,8 @@ const TournamentSchema = z.object({
   enableLiveScoring: z.boolean().optional(),
   imageUrl: z.string().optional(),
   rules: z.string().optional(),
-    prizeMoney: z.number().optional(),
-  });
+  prizeMoney: z.number().optional(),
+});
 
 type CreateTournamentInput = z.infer<typeof TournamentSchema>;
 
@@ -130,9 +134,13 @@ const CreateTournamentForm: React.FC = () => {
       description: "",
       type: "SINGLES",
       startDate: new Date(),
+      startTime: "16:00", // Default to 4:00 PM
       endDate: new Date(new Date().setDate(new Date().getDate() + 7)),
+      endTime: "20:00", // Default to 8:00 PM
       registrationOpenDate: new Date(),
+      registrationOpenTime: "09:00", // Default to 9:00 AM
       registrationCloseDate: new Date(new Date().setDate(new Date().getDate() + 5)),
+      registrationCloseTime: "16:00", // Default to 4:00 PM (matches tournament start time)
       location: "",
       maxParticipants: 32,
       entryFee: 0,
@@ -299,8 +307,8 @@ const CreateTournamentForm: React.FC = () => {
       if (enableLiveScoring && selectedReferees.length === 0) {
         toast.error("You need at least 1 referee for live scoring");
         setLoading(false);
-      return;
-    }
+        return;
+      }
 
       // Prepare player IDs
       const playerIds = isTeamBased
@@ -318,14 +326,32 @@ const CreateTournamentForm: React.FC = () => {
       // Prepare referee IDs
       const refereeIds = selectedReferees.map((referee) => referee.id);
 
-      // Create the tournament
+      // Combine date and time for each DateTime field
+      const combineDateAndTime = (date: Date, timeString: string) => {
+        const [hours, minutes] = timeString.split(':').map(Number);
+        const newDate = new Date(date);
+        newDate.setHours(hours, minutes, 0, 0);
+        return newDate;
+      };
+
+      // Create the tournament with combined date and time
       const tournamentData = {
         ...data,
+        startDate: combineDateAndTime(data.startDate, data.startTime),
+        endDate: combineDateAndTime(data.endDate, data.endTime),
+        registrationOpenDate: combineDateAndTime(data.registrationOpenDate, data.registrationOpenTime),
+        registrationCloseDate: combineDateAndTime(data.registrationCloseDate, data.registrationCloseTime),
         organizerId: user?.id,
         playerIds,
         teamsData: isTeamBased ? teamsData : undefined,
         refereeIds: enableLiveScoring ? refereeIds : undefined,
       };
+
+      // Remove time-only fields before submitting
+      delete tournamentData.startTime;
+      delete tournamentData.endTime;
+      delete tournamentData.registrationOpenTime;
+      delete tournamentData.registrationCloseTime;
 
       const response = await fetch("/api/tournaments", {
         method: "POST",
@@ -583,12 +609,12 @@ const CreateTournamentForm: React.FC = () => {
                   name="startDate"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                      <FormLabel>Start Date</FormLabel>
+                    <FormLabel>Start Date</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                              variant={"outline"}
+                            variant={"outline"}
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -599,17 +625,17 @@ const CreateTournamentForm: React.FC = () => {
                             ) : (
                               <span>Pick a date</span>
                             )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                            disabled={(date) =>
-                              date < new Date()
+                          disabled={(date) =>
+                            date < new Date()
                           }
                           initialFocus
                         />
@@ -621,15 +647,31 @@ const CreateTournamentForm: React.FC = () => {
               />
               <FormField
                 control={form.control}
-                  name="endDate"
+                name="startTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start Time</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="time"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="endDate"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                      <FormLabel>End Date</FormLabel>
+                    <FormLabel>End Date</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                              variant={"outline"}
+                            variant={"outline"}
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -640,22 +682,38 @@ const CreateTournamentForm: React.FC = () => {
                             ) : (
                               <span>Pick a date</span>
                             )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                            disabled={(date) =>
-                              date < form.getValues("startDate")
+                          disabled={(date) =>
+                            date < form.getValues("startDate")
                           }
                           initialFocus
                         />
                       </PopoverContent>
                     </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="endTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>End Time</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="time"
+                        {...field}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -668,12 +726,12 @@ const CreateTournamentForm: React.FC = () => {
                   name="registrationOpenDate"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                      <FormLabel>Registration Start</FormLabel>
+                    <FormLabel>Registration Start</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                              variant={"outline"}
+                            variant={"outline"}
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -684,11 +742,11 @@ const CreateTournamentForm: React.FC = () => {
                             ) : (
                               <span>Pick a date</span>
                             )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}
@@ -703,15 +761,31 @@ const CreateTournamentForm: React.FC = () => {
               />
               <FormField
                 control={form.control}
-                  name="registrationCloseDate"
+                name="registrationOpenTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Registration Start Time</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="time"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="registrationCloseDate"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                      <FormLabel>Registration End</FormLabel>
+                    <FormLabel>Registration End</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
-                              variant={"outline"}
+                            variant={"outline"}
                             className={cn(
                               "pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -722,23 +796,39 @@ const CreateTournamentForm: React.FC = () => {
                             ) : (
                               <span>Pick a date</span>
                             )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                            disabled={(date) =>
-                              date < form.getValues("registrationOpenDate") ||
-                              date > form.getValues("startDate")
+                          disabled={(date) =>
+                            date < form.getValues("registrationOpenDate") ||
+                            date > form.getValues("startDate")
                           }
                           initialFocus
                         />
                       </PopoverContent>
                     </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="registrationCloseTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Registration End Time</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="time"
+                        {...field}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -970,7 +1060,6 @@ const CreateTournamentForm: React.FC = () => {
                             className="mb-6 p-4 border rounded-md"
                           >
                             <div className="flex justify-between items-center mb-2">
-                              <div className="flex items-center">
                     <Input
                                   value={team.name}
                                   onChange={(e) =>

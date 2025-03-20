@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/Button";
-import { TrophyIcon, ChevronRight, ActivityIcon } from "lucide-react";
+import { TrophyIcon, ChevronRight, ActivityIcon, Loader2 } from "lucide-react";
 
 interface Match {
   id: number;
@@ -59,53 +59,63 @@ export default function LiveScoresCard() {
     return () => clearInterval(interval);
   }, []);
 
+  function getStatusBadgeStyles(status: string) {
+    switch(status) {
+      case 'live':
+        return 'bg-green-500 text-white hover:bg-green-600';
+      case 'upcoming':
+        return 'bg-blue-500 text-white hover:bg-blue-600';
+      case 'completed':
+        return 'bg-gray-500 text-white hover:bg-gray-600';
+      default:
+        return 'bg-gray-500 text-white hover:bg-gray-600';
+    }
+  }
+
   return (
-    <Card className="bg-gray-800 border-gray-700">
+    <Card className="border-border shadow-md hover:shadow-lg transition-shadow duration-300">
       <CardHeader className="pb-3">
-        <CardTitle className="text-white text-lg flex items-center">
-          <ActivityIcon className="h-5 w-5 mr-2 text-[#27D3C3]" />
+        <CardTitle className="flex items-center">
+          <ActivityIcon className="h-5 w-5 mr-2 text-blue-500" />
           Live Scores
         </CardTitle>
-        <CardDescription className="text-gray-400">
+        <CardDescription>
           Current tournament matches
         </CardDescription>
       </CardHeader>
       
       <CardContent className="pb-2">
         {loading ? (
-          <div className="space-y-3">
-            {[1, 2].map((i) => (
-              <div key={i} className="h-16 bg-gray-700 animate-pulse rounded-md"></div>
-            ))}
+          <div className="space-y-3 py-4">
+            <div className="flex justify-center items-center">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            </div>
           </div>
         ) : matches.length > 0 ? (
           <div className="space-y-3">
             {matches.map((match) => (
               <div 
                 key={match.id} 
-                className="p-3 bg-gray-700/50 rounded-md border border-gray-600"
+                className="p-3 bg-accent/10 rounded-md border border-accent/20 hover:bg-accent/20 transition-colors duration-200"
               >
-                <div className="text-xs text-gray-400 mb-1">
+                <div className="text-xs text-muted-foreground mb-1">
                   {match.tournamentName} • {match.round}
                 </div>
                 
                 <div className="flex justify-between items-center">
                   <div className="flex-1">
-                    <div className="font-medium text-white">{match.teamA.name}</div>
-                    <div className="font-medium text-white mt-1">{match.teamB.name}</div>
+                    <div className="font-medium">{match.teamA.name}</div>
+                    <div className="font-medium mt-1">{match.teamB.name}</div>
                   </div>
                   
                   <div className="flex flex-col items-end">
-                    <div className="text-lg font-bold text-white">{match.teamA.score}</div>
-                    <div className="text-lg font-bold text-white">{match.teamB.score}</div>
+                    <div className="text-lg font-bold">{match.teamA.score}</div>
+                    <div className="text-lg font-bold">{match.teamB.score}</div>
                   </div>
                   
                   <Badge 
-                    className={
-                      match.status === "live" 
-                        ? "ml-3 bg-green-600 text-white" 
-                        : "ml-3 bg-gray-600 text-white"
-                    }
+                    variant={match.status === "live" ? "success" : "secondary"}
+                    className="ml-3"
                   >
                     {match.status === "live" ? "LIVE" : match.status.toUpperCase()}
                   </Badge>
@@ -115,9 +125,9 @@ export default function LiveScoresCard() {
           </div>
         ) : (
           <div className="text-center py-6">
-            <TrophyIcon className="h-10 w-10 text-gray-500 mx-auto mb-2" />
-            <p className="text-gray-300 font-medium">No live matches</p>
-            <p className="text-gray-400 text-sm mt-1">Check back later for live scores</p>
+            <TrophyIcon className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+            <p className="font-medium">No live matches</p>
+            <p className="text-muted-foreground text-sm mt-1">Check back later for live scores</p>
           </div>
         )}
       </CardContent>
@@ -126,7 +136,7 @@ export default function LiveScoresCard() {
         <Link href="/fantasy/live-scores" className="w-full">
           <Button 
             variant="outline" 
-            className="w-full text-[#27D3C3] hover:text-[#27D3C3]/90 border-[#27D3C3]/20 hover:bg-[#27D3C3]/10"
+            className="w-full text-blue-500 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20"
           >
             View All Scores
             <ChevronRight className="h-4 w-4 ml-1" />

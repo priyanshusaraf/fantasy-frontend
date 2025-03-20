@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { Loader2 } from "lucide-react";
 
 // Define types to match the existing backend structure
 interface Player {
@@ -50,6 +51,22 @@ interface SetScore {
 }
 
 export default function RefereeScoring() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-full items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-[#00a1e0] mx-auto mb-4" />
+          <h2 className="text-2xl font-bold">Loading matches...</h2>
+          <p>Please wait while we fetch available matches</p>
+        </div>
+      </div>
+    }>
+      <RefereeScoringContent />
+    </Suspense>
+  );
+}
+
+function RefereeScoringContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("matchId");

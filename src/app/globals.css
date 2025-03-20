@@ -2,147 +2,103 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: oklch(0.995 0 0);
-    --foreground: oklch(0.145 0 0);
-    
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    
-    /* MatchUp teal-blue colors */
-    --primary: oklch(0.65 0.18 200); /* Blue */
-    --primary-foreground: oklch(0.985 0 0);
-    
-    --secondary: oklch(0.98 0 0);
-    --secondary-foreground: oklch(0.211 0.18 200);
-    
-    --muted: oklch(0.95 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    
-    --accent: oklch(0.7 0.16 170); /* Teal */
-    --accent-foreground: oklch(0.256 0.17 170);
-    
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.985 0 0);
-    
-    --border: oklch(0.92 0 0);
-    --input: oklch(0.92 0 0);
-    --ring: oklch(0.6 0.16 190);
-    
-    /* Chart colors - teal-blue palette */
-    --chart-1: oklch(0.65 0.18 200); /* Blue */
-    --chart-2: oklch(0.7 0.16 170);  /* Teal */
-    --chart-3: oklch(0.6 0.15 190);  /* Blue-Teal */
-    --chart-4: oklch(0.75 0.14 180); /* Light Teal */
-    --chart-5: oklch(0.55 0.19 210); /* Dark Blue */
-    
-    /* Sidebar styles */
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.65 0.18 200);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.7 0.16 170);
-    --sidebar-accent-foreground: oklch(0.256 0.17 170);
-    --sidebar-border: oklch(0.92 0 0);
-    --sidebar-ring: oklch(0.6 0.16 190);
-    
-    --radius-sm: 0.3125rem;
-    --radius-md: 0.5rem;
-    --radius-lg: 0.625rem;
-  }
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  
+  --card: #171717;
+  --card-foreground: #ffffff;
+  
+  --popover: #171717;
+  --popover-foreground: #ffffff;
+  
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  
+  --secondary: #1f2937;
+  --secondary-foreground: #ffffff;
+  
+  --muted: #1f2937;
+  --muted-foreground: #9ca3af;
+  
+  --accent: #0dc5c1;
+  --accent-foreground: #ffffff;
+  
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  
+  --border: #374151;
+  --input: #374151;
+  --ring: #3b82f6;
+  
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+}
 
-  .dark {
-    --background: oklch(0.12 0.02 200); /* Deep blue-black */
-    --foreground: oklch(0.985 0 0);
-    
-    --card: oklch(0.15 0.02 200);
-    --card-foreground: oklch(0.985 0 0);
-    
-    --popover: oklch(0.15 0.02 200);
-    --popover-foreground: oklch(0.985 0 0);
-    
-    --primary: oklch(0.65 0.22 200); /* Glowing blue */
-    --primary-foreground: oklch(0.105 0 0);
-    
-    --secondary: oklch(0.22 0.02 200);
-    --secondary-foreground: oklch(0.985 0 0);
-    
-    --muted: oklch(0.22 0.02 200);
-    --muted-foreground: oklch(0.708 0 0);
-    
-    --accent: oklch(0.7 0.20 170); /* Glowing teal */
-    --accent-foreground: oklch(0.105 0 0);
-    
-    --destructive: oklch(0.704 0.191 22.216);
-    --destructive-foreground: oklch(0.1 0 0);
-    
-    --border: oklch(1 0 0 / 15%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.6 0.18 190);
-    
-    /* Chart colors - vibrant against dark */
-    --chart-1: oklch(0.7 0.22 200);   /* Bright blue */
-    --chart-2: oklch(0.75 0.20 170);  /* Bright teal */
-    --chart-3: oklch(0.65 0.18 190);  /* Bright blue-teal */
-    --chart-4: oklch(0.8 0.16 180);   /* Light teal */
-    --chart-5: oklch(0.6 0.24 210);   /* Vivid deep blue */
-    
-    /* Sidebar styles */
-    --sidebar: oklch(0.15 0.02 200);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.65 0.22 200);
-    --sidebar-primary-foreground: oklch(0.105 0 0);
-    --sidebar-accent: oklch(0.7 0.20 170);
-    --sidebar-accent-foreground: oklch(0.105 0 0);
-    --sidebar-border: oklch(1 0 0 / 15%);
-    --sidebar-ring: oklch(0.6 0.18 190);
-  }
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+* {
+  border-color: var(--border);
+}
+
+/* Dark mode variables */
+.dark {
+  --background: hsl(224 71% 4%);
+  --foreground: hsl(210 20% 98%);
   
-  * {
-    border-color: var(--border);
-    outline-color: rgba(96, 165, 250, 0.5);
-  }
+  --card: hsl(224 71% 8%);
+  --card-foreground: hsl(210 20% 98%);
   
-  body {
-    background-color: var(--background);
-    color: var(--foreground);
-  }
+  --popover: hsl(224 71% 8%);
+  --popover-foreground: hsl(210 20% 98%);
   
-  h1, h2, h3, h4 {
-    scroll-margin-top: 80px;
-  }
+  --primary: hsl(217 91% 60%);
+  --primary-foreground: hsl(220 70% 2%);
   
-  h1 {
-    font-size: 2.25rem;
-    font-weight: 700;
-    letter-spacing: -0.025em;
-  }
+  --secondary: hsl(217 19% 27%);
+  --secondary-foreground: hsl(210 20% 98%);
   
-  h2 {
-    font-size: 1.875rem;
-    font-weight: 600;
-    letter-spacing: -0.025em;
-  }
+  --muted: hsl(217 19% 27%);
+  --muted-foreground: hsl(215 16% 74%);
   
-  h3 {
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: -0.025em;
-  }
+  --accent: hsl(180 70% 45%);
+  --accent-foreground: hsl(220 70% 2%);
   
-  h4 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    letter-spacing: -0.025em;
-  }
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 98%);
   
-  p {
-    line-height: 1.625;
-  }
+  --border: hsl(0 0% 100% / 15%);
+  --input: hsl(0 0% 100% / 15%);
+  --ring: hsl(224 83% 65%);
+}
+
+/* Basic typography */
+h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.875rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+p {
+  line-height: 1.625;
 }
 
 /* Beautiful scrollbar styling */
@@ -186,11 +142,11 @@
   /* Gradient text for headings */
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(to right, var(--primary), oklch(0.7 0.2 310));
+    background-image: linear-gradient(to right, var(--primary), hsl(175, 70%, 50%));
   }
   
   .dark .gradient-text {
-    background-image: linear-gradient(to right, oklch(0.65 0.24 270), oklch(0.75 0.22 310));
+    background-image: linear-gradient(to right, hsl(210, 90%, 60%), hsl(180, 70%, 45%));
   }
   
   /* Glowing effect for important elements */
@@ -228,4 +184,29 @@
     z-index: 70;
     position: relative;
   }
+}
+
+/* Landing page specific styles */
+.landing-page {
+  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('/images/court-texture.jpg');
+  background-size: cover;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.landing-header {
+  backdrop-filter: blur(8px);
+  background-color: rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gradient-badge {
+  background: linear-gradient(90deg, hsl(217, 91%, 60%), hsl(175, 70%, 50%));
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
 }

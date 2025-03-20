@@ -1,180 +1,95 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authMiddleware } from "@/middleware/auth";
+import { createRazorpayOrder } from "@/lib/razorpay";
 import prisma from "@/lib/db";
-import { createRazorpayOrder, calculatePaymentSplits } from "@/lib/razorpay";
-import { createOrderSchema, validateData } from "@/utils/validation";
-import LRUCache from 'lru-cache';
 
-// Inline rate limiter for payment endpoints
-function createPaymentRateLimiter() {
-  const tokenCache = new LRUCache<string, number[]>({
-    max: 100,
-    ttl: 60 * 1000, // 1 minute
-  });
-
-  return {
-    check: (limit: number, token: string) =>
-      new Promise<void>((resolve, reject) => {
-        const tokenCount = tokenCache.get(token) || [0];
-        if (tokenCount[0] === 0) {
-          tokenCache.set(token, [1]);
-        } else {
-          tokenCount[0] = tokenCount[0] + 1;
-          tokenCache.set(token, tokenCount);
-        }
-        
-        if (tokenCount[0] > limit) {
-          reject(new Error('Rate limit exceeded'));
-        } else {
-          resolve();
-        }
-      }),
-  };
-}
-
-/**
- * POST /api/payments/create-order
- * Create a new Razorpay order for fantasy tournament entry
- */
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+    const authResult = await authMiddleware(request);
+    if (authResult.status !== 200) {
+      return authResult;
     }
-
-    // Apply specific rate limiting for payment endpoints
-    const limiter = createPaymentRateLimiter();
     
-    // Use user ID for rate limiting to prevent abuse
-    const userId = session.user.id;
+    // Get authenticated user
+    const { user } = request as any;
     
-    try {
-      await limiter.check(3, `payment_${userId}`); // 3 payment requests per minute per user
-    } catch (error) {
-      return NextResponse.json(
-        { message: "Too many payment requests, please try again later" },
-        { status: 429 }
-      );
-    }
-
     // Parse request body
-    const body = await request.json();
+    const { amount, contestId, type, description } = await request.json();
     
-    // Validate input with Zod schema
-    const validation = validateData(createOrderSchema, body);
-    if (!validation.success) {
+    if (!amount || !contestId || !type) {
       return NextResponse.json(
-        { message: "Invalid request data", errors: validation.error },
+        { message: "Missing required parameters" },
         { status: 400 }
       );
     }
-
-    // Type assertion to ensure data is available and properly typed
-    const validData = validation.data!;
-    const { tournamentId, amount, currency = "INR" } = validData;
-
-    // Validate tournament exists
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: Number(tournamentId) }
+    
+    // Validate contest
+    const contest = await prisma.fantasyContest.findUnique({
+      where: { id: Number(contestId) },
+      include: { tournament: true },
     });
-
-    if (!tournament) {
+    
+    if (!contest) {
       return NextResponse.json(
-        { message: "Tournament not found" },
+        { message: "Contest not found" },
         { status: 404 }
       );
     }
     
-    // Get tournament organizer
-    const tournamentAdmin = await prisma.tournamentAdmin.findUnique({
-      where: { id: tournament.organizerId },
-      include: {
-        user: true
-      }
-    });
-
-    // Check if fantasy is enabled for this tournament
-    const fantasySettings = tournament.fantasySettings ? 
-      JSON.parse(tournament.fantasySettings as string) : null;
-    
-    if (!fantasySettings?.enableFantasy) {
+    if (contest.status !== "OPEN" && contest.status !== "DRAFT") {
       return NextResponse.json(
-        { message: "Fantasy is not enabled for this tournament" },
+        { message: "Contest is not open for registration" },
         { status: 400 }
       );
     }
-
-    // Check if amount is within the allowed range (security measure)
-    const minAmount = fantasySettings.minEntryFee || 0;
-    const maxAmount = fantasySettings.maxEntryFee || 100000;
     
-    if (amount < minAmount || amount > maxAmount) {
-      return NextResponse.json(
-        { message: `Payment amount must be between ${minAmount} and ${maxAmount}` },
-        { status: 400 }
-      );
-    }
-
-    // Create unique receipt ID with security hash
-    const timestamp = Date.now();
-    const securityHash = require('crypto')
-      .createHash('sha256')
-      .update(`${userId}-${tournamentId}-${timestamp}-${process.env.NEXTAUTH_SECRET}`)
-      .digest('hex')
-      .substring(0, 10);
-      
-    const receipt = `fantasy_${tournamentId}_${userId}_${timestamp}_${securityHash}`;
-
-    // Create order in Razorpay
+    // Generate receipt ID
+    const receipt = `order_${Date.now()}_${user.id}_${contestId}`;
+    
+    // Create Razorpay order
     const order = await createRazorpayOrder({
       amount: Number(amount),
-      currency,
+      currency: "INR",
       receipt,
       notes: {
-        userId: userId,
-        tournamentId: String(tournamentId),
-        type: "fantasy_entry"
-      }
+        userId: user.id,
+        contestId,
+        tournamentId: contest.tournamentId,
+        type,
+      },
     });
-
-    // For tracking purposes, we'll use a unique ID for the payment with additional security
-    const tempPaymentId = `temp_payment_${timestamp}_${securityHash}`;
     
-    // Calculate payment splits (will be applied after payment completion)
-    const splits = calculatePaymentSplits(Number(amount));
-
-    // Log payment attempt for audit
-    console.log(`Payment order created: ${order.id} for user: ${userId}, tournament: ${tournamentId}`);
-
-    // Return order details and payment info
-    // Note: Only return what's necessary for the frontend
-    return NextResponse.json({
-      orderId: order.id,
-      amount: order.amount / 100, // Convert back to main currency unit
-      currency: order.currency,
-      tempPaymentId,
-      receipt: order.receipt,
-      keyId: process.env.RAZORPAY_KEY_ID,
-      splits,
-      metadata: {
-        userId: userId,
-        tournamentId: Number(tournamentId),
-        timestamp
+    // Save order in database
+    const payment = await prisma.payment.create({
+      data: {
+        userId: user.id,
+        amount: amount.toString(),
+        currency: "INR",
+        status: "PENDING",
+        description: description || `Entry fee for contest #${contestId}`,
+        razorpayOrderId: order.id,
+        metadata: {
+          contestId,
+          tournamentId: contest.tournamentId,
+          type,
+        },
+        fantasyContestId: Number(contestId),
+      },
+    });
+    
+    return NextResponse.json({ 
+      order,
+      payment: {
+        id: payment.id,
+        status: payment.status,
       }
     });
     
   } catch (error) {
     console.error("Error creating payment order:", error);
-    
-    // Don't expose internal error details to the client
     return NextResponse.json(
-      { message: "Failed to create payment order. Please try again later." },
+      { message: "Failed to create payment order", error: String(error) },
       { status: 500 }
     );
   }

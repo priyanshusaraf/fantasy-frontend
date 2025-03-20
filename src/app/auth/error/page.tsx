@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/Button";
-import { AlertTriangle, ArrowRight, Info } from "lucide-react";
+import { AlertTriangle, ArrowRight, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 // Define error messages and solutions
@@ -38,6 +38,23 @@ const errorMessages: Record<string, { title: string; description: string; soluti
 };
 
 export default function AuthErrorPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <Card className="w-full max-w-lg">
+          <CardContent className="flex flex-col items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-[#00a1e0] mb-4" />
+            <p className="text-center text-gray-500">Loading error details...</p>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <AuthErrorContent />
+    </Suspense>
+  );
+}
+
+function AuthErrorContent() {
   const searchParams = useSearchParams();
   const [errorType, setErrorType] = useState<string>("Default");
   

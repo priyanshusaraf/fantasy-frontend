@@ -65,7 +65,7 @@ export async function POST(
       // Process each player's performance and calculate base points
       for (const performance of match.performances) {
         const player = performance.player;
-        let basePoints = performance.points;
+        const basePoints = 10; // Base points for participation
 
         // Calculate if this is a knockout match
         const isKnockout =

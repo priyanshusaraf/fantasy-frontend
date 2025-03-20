@@ -80,7 +80,7 @@ export default function FantasyEntryPayment({
           <div className="text-sm text-muted-foreground">
             <p>By proceeding with payment, you agree to the tournament rules and fantasy contest terms.</p>
             <p className="mt-2">
-              80% of the entry fee goes to the prize pool, 10% to the tournament organizer, and 10% to the platform.
+              77.64% of the entry fee goes to the prize pool, with the remainder covering platform fees and transaction costs.
             </p>
           </div>
         </div>

@@ -24,7 +24,40 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
+import { Textarea } from "@/components/ui/textarea";
+
+interface ContestData {
+  name: string;
+  description: string;
+  startDate: Date;
+  endDate: Date;
+  entryFee: number;
+  maxEntries: number;
+  isDynamicPrizePool: boolean;
+  useCustomFees: boolean;
+  fees: { name: string; amount: number; isEnabled: boolean }[];
+  rules: {
+    walletSize: number;
+    teamSize: number;
+    allowTeamChanges: boolean;
+    changeFrequency: string;
+    maxPlayersToChange: number;
+    changeWindowStart: string;
+    changeWindowEnd: string;
+  };
+}
+
+interface ContestPayload {
+  name: string;
+  description: string;
+  entryFee: number;
+  maxEntries: number;
+  startDate: Date;
+  endDate: Date;
+  isDynamicPrizePool: boolean;
+  rules: string;
+}
 
 interface ContestCreationFormProps {
   tournamentId: string;
@@ -40,14 +73,14 @@ export default function ContestCreationForm({
     endDate: Date;
   } | null>(null);
 
-  const [contestData, setContestData] = useState({
+  const [contestData, setContestData] = useState<ContestData>({
     name: "",
     description: "",
     startDate: new Date(),
     endDate: new Date(),
     entryFee: 0,
-    prizePool: 0,
     maxEntries: 100,
+    isDynamicPrizePool: true,
     useCustomFees: false,
     fees: [
       { name: "Free", amount: 0, isEnabled: true },
@@ -56,8 +89,8 @@ export default function ContestCreationForm({
       { name: "Elite", amount: 1500, isEnabled: true },
     ],
     rules: {
-      walletSize: 100000,
-      teamSize: 7,
+      walletSize: 60000,
+      teamSize: 11,
       allowTeamChanges: true,
       changeFrequency: "daily",
       maxPlayersToChange: 2,
@@ -96,6 +129,21 @@ export default function ContestCreationForm({
   }, [tournamentId]);
 
   const handleInputChange = (field: string, value: any) => {
+    // For numeric fields, ensure we handle empty strings and invalid inputs
+    if (field === "entryFee" || field === "maxEntries") {
+      // Convert to appropriate number type or default to 0 if invalid
+      value = typeof value === 'number' ? value : 0;
+      
+      // Set minimum values based on field
+      if (field === "maxEntries" && value < 1) {
+        value = 1; // Minimum entries should be at least 1
+      }
+      
+      if (field === "entryFee" && value < 0) {
+        value = 0; // Entry fee can't be negative
+      }
+    }
+    
     setContestData((prev) => ({
       ...prev,
       [field]: value,
@@ -103,6 +151,31 @@ export default function ContestCreationForm({
   };
 
   const handleRulesChange = (field: string, value: any) => {
+    // Handle numeric fields specially
+    if (field === "walletSize" || field === "teamSize" || field === "maxPlayersToChange") {
+      // Convert to number or use default values if invalid
+      if (typeof value !== 'number') {
+        value = parseFloat(value);
+        if (isNaN(value)) {
+          // Set default values based on field
+          if (field === "walletSize") value = 60000;
+          else if (field === "teamSize") value = 11;
+          else if (field === "maxPlayersToChange") value = 2;
+        }
+      }
+      
+      // Enforce minimum values
+      if (field === "walletSize" && value < 10000) value = 10000;
+      if (field === "teamSize" && value < 3) value = 3;
+      if (field === "maxPlayersToChange" && value < 1) value = 1;
+      
+      // Enforce maximum values
+      if (field === "teamSize" && value > 11) value = 11;
+      if (field === "maxPlayersToChange" && value > contestData.rules.teamSize) {
+        value = contestData.rules.teamSize;
+      }
+    }
+
     setContestData((prev) => ({
       ...prev,
       rules: {
@@ -123,15 +196,16 @@ export default function ContestCreationForm({
 
   const handleFeeAmountChange = (index: number, amount: number) => {
     const updatedFees = [...contestData.fees];
-    updatedFees[index].amount = amount;
+    updatedFees[index].amount = isNaN(amount) ? 0 : amount;
     setContestData((prev) => ({
       ...prev,
       fees: updatedFees,
     }));
   };
 
-  const calculatePrizePool = (entryFee: number) => {
-    return entryFee * 0.8; // 80% of entry fee goes to prize pool
+  const calculatePrizePool = (entryFee: number, entryCount: number = 0) => {
+    const totalFees = entryCount > 0 ? entryFee * entryCount : entryFee;
+    return Math.round(totalFees * 0.7764 * 100) / 100;
   };
 
   const handleSubmit = async () => {
@@ -155,13 +229,14 @@ export default function ContestCreationForm({
                 ? `${contestData.name} - ${fee.name}`
                 : `${contestData.name} - Free Entry`;
 
-            const contestPayload = {
+            const contestPayload: ContestPayload = {
               name: contestName,
+              description: contestData.description,
               entryFee: fee.amount,
-              prizePool: calculatePrizePool(fee.amount),
               maxEntries: contestData.maxEntries,
               startDate: contestData.startDate,
               endDate: contestData.endDate,
+              isDynamicPrizePool: true,
               rules: JSON.stringify({
                 ...contestData.rules,
                 contestType: fee.name,
@@ -173,14 +248,14 @@ export default function ContestCreationForm({
         );
       } else {
         // Create a single contest with custom fee
-        const contestPayload = {
+        const contestPayload: ContestPayload = {
           name: contestData.name,
+          description: contestData.description,
           entryFee: contestData.entryFee,
-          prizePool:
-            contestData.prizePool || calculatePrizePool(contestData.entryFee),
           maxEntries: contestData.maxEntries,
           startDate: contestData.startDate,
           endDate: contestData.endDate,
+          isDynamicPrizePool: true,
           rules: JSON.stringify(contestData.rules),
         };
 
@@ -189,6 +264,22 @@ export default function ContestCreationForm({
 
       // Success notification
       toast("Contest(s) created successfully!");
+      
+      // Force refresh of the contests list by triggering a fetch with cache-busting
+      try {
+        console.log("Refreshing contest list after creation");
+        const refreshResponse = await fetch(`/api/tournaments/${tournamentId}/contests?force=true&t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+        });
+        
+        if (refreshResponse.ok) {
+          console.log("Successfully refreshed contests data");
+        }
+      } catch (refreshError) {
+        console.error("Error refreshing contests data:", refreshError);
+        // Not blocking the flow even if refresh fails
+      }
 
       // Redirect back to tournament page
       router.push(`/tournaments/${tournamentId}/contests`);
@@ -201,24 +292,24 @@ export default function ContestCreationForm({
   };
 
   const createContest = async (contestData: any) => {
-    const response = await fetch(
-      `/api/tournaments/${tournamentId}/fantasy-contests`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify(contestData),
-      }
-    );
+    const response = await fetch(`/api/tournaments/${tournamentId}/contests`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...contestData,
+        tournamentId,
+      }),
+    });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Failed to create contest");
+      const errorData = await response.json();
+      throw new Error(errorData.message || "Failed to create contest");
     }
 
-    return response.json();
+    const result = await response.json();
+    return result;
   };
 
   return (
@@ -233,126 +324,58 @@ export default function ContestCreationForm({
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Basic Info */}
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="name">Contest Name</Label>
-            <Input
-              id="name"
-              value={contestData.name}
-              onChange={(e) => handleInputChange("name", e.target.value)}
-              placeholder="Enter contest name"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Start Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {contestData.startDate
-                      ? format(contestData.startDate, "PPP")
-                      : "Select date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={contestData.startDate}
-                    onSelect={(date) =>
-                      date && handleInputChange("startDate", date)
-                    }
-                    disabled={(date) => {
-                      if (!tournamentDates) return false;
-                      return (
-                        date < tournamentDates.startDate ||
-                        date > tournamentDates.endDate
-                      );
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+        {!contestData.useCustomFees ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">Contest Name</Label>
+                <Input
+                  id="name"
+                  placeholder="Enter contest name"
+                  value={contestData.name}
+                  onChange={(e) => handleInputChange("name", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="maxEntries">Max Entries</Label>
+                <Input
+                  id="maxEntries"
+                  type="number"
+                  placeholder="100"
+                  min="1"
+                  value={contestData.maxEntries === 0 ? "" : contestData.maxEntries}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    handleInputChange("maxEntries", isNaN(value) ? 0 : value);
+                  }}
+                />
+              </div>
             </div>
 
             <div>
-              <Label>End Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {contestData.endDate
-                      ? format(contestData.endDate, "PPP")
-                      : "Select date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={contestData.endDate}
-                    onSelect={(date) =>
-                      date && handleInputChange("endDate", date)
-                    }
-                    disabled={(date) => {
-                      if (!tournamentDates) return false;
-                      return (
-                        date < contestData.startDate ||
-                        date > tournamentDates.endDate
-                      );
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="Contest description"
+                value={contestData.description}
+                onChange={(e) =>
+                  handleInputChange("description", e.target.value)
+                }
+              />
             </div>
-          </div>
 
-          <div>
-            <Label htmlFor="maxEntries">Maximum Entries</Label>
-            <Input
-              id="maxEntries"
-              type="number"
-              min="1"
-              value={contestData.maxEntries}
-              onChange={(e) =>
-                handleInputChange("maxEntries", parseInt(e.target.value))
-              }
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Maximum number of teams allowed in this contest
-            </p>
-          </div>
-        </div>
-
-        {/* Entry Fee Setup */}
-        <div className="border-t pt-6">
-          <h3 className="text-lg font-medium mb-4">Entry Fees & Prize Pools</h3>
-
-          <Tabs defaultValue="preset">
-            <TabsList className="mb-4">
-              <TabsTrigger value="preset">Preset Categories</TabsTrigger>
-              <TabsTrigger
-                value="custom"
-                onClick={() => handleInputChange("useCustomFees", true)}
-              >
-                Custom Fee
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="preset">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-lg font-medium mb-2">Entry Fee Categories</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Select entry fee categories for this contest. A separate contest will be created for each selected category. 
+                Prize pools are calculated dynamically as 77.64% of total entry fees.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {contestData.fees.map((fee, index) => (
-                  <Card key={index}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <Label className="text-base font-medium">
-                          {fee.name} Entry
-                        </Label>
+                  <Card key={index} className={fee.isEnabled ? "border-primary" : ""}>
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-center">
+                        <CardTitle className="text-base">{fee.name}</CardTitle>
                         <Switch
                           checked={fee.isEnabled}
                           onCheckedChange={(checked) =>
@@ -360,24 +383,59 @@ export default function ContestCreationForm({
                           }
                         />
                       </div>
-
+                    </CardHeader>
+                    <CardContent>
                       <div className="space-y-2">
-                        <Label htmlFor={`fee-${index}`}>Entry Fee (₹)</Label>
-                        <Input
-                          id={`fee-${index}`}
-                          type="number"
-                          min="0"
-                          step="100"
-                          value={fee.amount}
-                          onChange={(e) =>
-                            handleFeeAmountChange(index, Number(e.target.value))
-                          }
-                          disabled={!fee.isEnabled}
-                        />
-                        {fee.isEnabled && fee.amount > 0 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            Prize Pool: ₹{Math.round(fee.amount * 0.8)} (80% of
-                            entry fee)
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">
+                            Entry Fee:
+                          </span>
+                          <span>
+                            {fee.amount === 0
+                              ? "Free"
+                              : `₹${fee.amount.toFixed(2)}`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">
+                            Est. Prize Pool (100 entries):
+                          </span>
+                          <span>
+                            {fee.amount === 0
+                              ? "₹0.00"
+                              : `₹${calculatePrizePool(fee.amount, 100).toFixed(2)}`}
+                          </span>
+                        </div>
+                        {fee.amount > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-sm text-muted-foreground">
+                              Prize Distribution:
+                            </span>
+                            <span className="text-xs">
+                              {contestData.maxEntries < 5 
+                                ? "Winner takes all" 
+                                : contestData.maxEntries <= 8 
+                                ? "Top 2" 
+                                : contestData.maxEntries <= 15 
+                                ? "Top 3" 
+                                : contestData.maxEntries <= 25 
+                                ? "Top 5" 
+                                : "Top 10"}
+                            </span>
+                          </div>
+                        )}
+                        {fee.amount > 0 && (
+                          <div className="mt-2">
+                            <Input
+                              type="number"
+                              placeholder="Amount"
+                              min="0"
+                              value={fee.amount === 0 ? "" : fee.amount}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value);
+                                handleFeeAmountChange(index, value);
+                              }}
+                            />
                           </div>
                         )}
                       </div>
@@ -385,47 +443,41 @@ export default function ContestCreationForm({
                   </Card>
                 ))}
               </div>
-            </TabsContent>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="entryFee">Entry Fee (₹)</Label>
+              <Input
+                id="entryFee"
+                type="number"
+                min="0"
+                step="100"
+                value={contestData.entryFee === 0 ? "" : contestData.entryFee}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value);
+                  handleInputChange("entryFee", isNaN(value) ? 0 : value);
+                }}
+              />
+            </div>
 
-            <TabsContent value="custom">
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="entryFee">Entry Fee (₹)</Label>
-                  <Input
-                    id="entryFee"
-                    type="number"
-                    min="0"
-                    step="100"
-                    value={contestData.entryFee}
-                    onChange={(e) =>
-                      handleInputChange("entryFee", Number(e.target.value))
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="prizePool">Prize Pool (₹)</Label>
-                  <Input
-                    id="prizePool"
-                    type="number"
-                    min="0"
-                    value={
-                      contestData.prizePool ||
-                      Math.round(contestData.entryFee * 0.8)
-                    }
-                    onChange={(e) =>
-                      handleInputChange("prizePool", Number(e.target.value))
-                    }
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Recommended: 80% of entry fee (₹
-                    {Math.round(contestData.entryFee * 0.8)})
-                  </p>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
+            <div>
+              <Label htmlFor="estimatedPrizePool">Estimated Prize Pool (₹)</Label>
+              <Input
+                id="estimatedPrizePool"
+                type="number"
+                min="0"
+                value={Math.round(contestData.entryFee * 0.7764 * 100)}
+                disabled={true}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                77.64% of total entry fees for 100 participants (₹
+                {Math.round(contestData.entryFee * 0.7764 * 100)})
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Fantasy Game Rules */}
         <div className="border-t pt-6">
@@ -440,10 +492,11 @@ export default function ContestCreationForm({
                   type="number"
                   min="10000"
                   step="5000"
-                  value={contestData.rules.walletSize}
-                  onChange={(e) =>
-                    handleRulesChange("walletSize", Number(e.target.value))
-                  }
+                  value={contestData.rules.walletSize === 0 ? "" : contestData.rules.walletSize}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    handleRulesChange("walletSize", value);
+                  }}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Virtual currency for team creation
@@ -457,10 +510,11 @@ export default function ContestCreationForm({
                   type="number"
                   min="3"
                   max="11"
-                  value={contestData.rules.teamSize}
-                  onChange={(e) =>
-                    handleRulesChange("teamSize", Number(e.target.value))
-                  }
+                  value={contestData.rules.teamSize === 0 ? "" : contestData.rules.teamSize}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    handleRulesChange("teamSize", value);
+                  }}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Number of players in each team
@@ -508,13 +562,11 @@ export default function ContestCreationForm({
                     type="number"
                     min="1"
                     max={contestData.rules.teamSize}
-                    value={contestData.rules.maxPlayersToChange}
-                    onChange={(e) =>
-                      handleRulesChange(
-                        "maxPlayersToChange",
-                        Number(e.target.value)
-                      )
-                    }
+                    value={contestData.rules.maxPlayersToChange === 0 ? "" : contestData.rules.maxPlayersToChange}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value);
+                      handleRulesChange("maxPlayersToChange", value);
+                    }}
                   />
                 </div>
 

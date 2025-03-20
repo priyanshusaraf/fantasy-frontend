@@ -35,10 +35,12 @@ export default function TournamentContestsPage({
   const [error, setError] = useState<string | null>(null);
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
+  const [refreshKey, setRefreshKey] = useState<number>(Date.now());
 
   useEffect(() => {
     const fetchTournament = async () => {
       try {
+        setLoading(true);
         const response = await fetch(`/api/tournaments/${tournamentId}`);
         if (!response.ok) {
           throw new Error("Failed to fetch tournament");
@@ -55,6 +57,34 @@ export default function TournamentContestsPage({
     };
 
     fetchTournament();
+    
+    // Force refresh of contests when the page mounts
+    const refreshContests = async () => {
+      try {
+        await fetch(`/api/tournaments/${tournamentId}/contests?force=true&t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+        });
+        // Update the key to force the ContestList component to re-render
+        setRefreshKey(Date.now());
+      } catch (error) {
+        console.error("Error refreshing contests:", error);
+      }
+    };
+    
+    refreshContests();
+    
+    // Set up focus event listener to refresh when returning to this page
+    const handleFocus = () => {
+      console.log("Window focused, refreshing contests");
+      refreshContests();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [tournamentId]);
 
   const handleCreateContest = () => {
@@ -103,49 +133,56 @@ export default function TournamentContestsPage({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card>
-          <CardContent className="p-6 flex items-center">
-            <Calendar className="h-8 w-8 text-blue-500 mr-4" />
-            <div>
-              <p className="text-sm text-gray-500">Tournament Dates</p>
-              <p className="font-medium">
-                {new Date(tournament.startDate).toLocaleDateString()} -{" "}
-                {new Date(tournament.endDate).toLocaleDateString()}
-              </p>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-md">Location</CardTitle>
+          </CardHeader>
+          <CardContent className="text-lg">{tournament.location}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-md">Dates</CardTitle>
+          </CardHeader>
+          <CardContent className="text-lg flex items-center">
+            <Calendar className="mr-2 h-4 w-4 text-blue-500" />
+            {new Date(tournament.startDate).toLocaleDateString()} -
+            {new Date(tournament.endDate).toLocaleDateString()}
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-6 flex items-center">
-            <Trophy className="h-8 w-8 text-blue-500 mr-4" />
-            <div>
-              <p className="text-sm text-gray-500">Status</p>
-              <p className="font-medium">
-                {tournament.status.replace("_", " ")}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6 flex items-center">
-            <Users className="h-8 w-8 text-blue-500 mr-4" />
-            <div>
-              <p className="text-sm text-gray-500">Fantasy Contests</p>
-              <p className="font-medium">Join Now</p>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-md">Status</CardTitle>
+          </CardHeader>
+          <CardContent className="text-lg">
+            <span
+              className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                tournament.status === "UPCOMING"
+                  ? "bg-blue-100 text-blue-800"
+                  : tournament.status === "IN_PROGRESS"
+                  ? "bg-green-100 text-green-800"
+                  : tournament.status === "COMPLETED"
+                  ? "bg-purple-100 text-purple-800"
+                  : "bg-gray-100 text-gray-800"
+              }`}
+            >
+              {tournament.status}
+            </span>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="mb-10">
-        <CardHeader>
-          <CardTitle className="text-2xl">Available Fantasy Contests</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ContestList tournamentId={tournamentId} showAll={true} />
-        </CardContent>
-      </Card>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold mb-4">Fantasy Contests</h2>
+        <p className="text-muted-foreground mb-6">
+          Join fantasy contests for this tournament and compete with other fans!
+        </p>
+
+        <ContestList 
+          tournamentId={tournamentId}
+          key={refreshKey} // Use a key to force re-rendering when refreshed
+        />
+      </div>
 
       <div className="bg-gradient-to-r from-blue-500/5 to-teal-500/5 rounded-lg p-6 mb-6 border border-blue-200 dark:border-blue-800/30">
         <h2 className="text-xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-500">

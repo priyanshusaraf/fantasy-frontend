@@ -48,6 +48,8 @@ interface Tournament {
   imageUrl?: string;
   rules?: string[];
   sponsors?: { name: string; logo?: string }[];
+  registrationOpenDate: string;
+  registrationCloseDate: string;
 }
 
 interface Match {
@@ -64,13 +66,23 @@ interface Match {
 
 export default function TournamentDetailPage({ params }: TournamentDetailProps) {
   const tournamentId = parseInt(params.id);
-  const [tournament, setTournament] = useState<Tournament | null>(null);
-  const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
-  const [completedMatches, setCompletedMatches] = useState<Match[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { isAuthenticated, user } = useAuth();
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const { isAuthenticated, user } = useAuth();
+
+  // Format date with time
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   useEffect(() => {
     const fetchTournamentData = async () => {
@@ -95,13 +107,11 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
             const upcoming = matchesData.matches.filter((match: Match) => !match.isCompleted);
             const completed = matchesData.matches.filter((match: Match) => match.isCompleted);
             
-            setUpcomingMatches(upcoming);
-            setCompletedMatches(completed);
+            setMatches(upcoming);
           }
         }
       } catch (error) {
         console.error("Error fetching tournament data:", error);
-        setError(error instanceof Error ? error.message : "An unknown error occurred");
       } finally {
         setLoading(false);
       }
@@ -150,12 +160,11 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
     );
   }
 
-  if (error || !tournament) {
+  if (!tournament) {
     return (
       <div className="container mx-auto px-4 py-12">
         <div className="bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 p-6 rounded-lg border border-red-200 dark:border-red-800/30">
           <p className="font-bold text-lg mb-2">Error loading tournament</p>
-          <p>{error || "Tournament not found"}</p>
           <Button className="mt-4" variant="outline" onClick={() => router.push('/tournaments')}>
             Back to Tournaments
           </Button>
@@ -194,7 +203,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
                 <div className="flex items-center">
                   <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
                   <span>
-                    {new Date(tournament.startDate).toLocaleDateString()} - {new Date(tournament.endDate).toLocaleDateString()}
+                    {formatDateTime(tournament.startDate)} - {formatDateTime(tournament.endDate)}
                   </span>
                 </div>
                 
@@ -301,11 +310,11 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
                       <ul className="space-y-2">
                         <li className="flex justify-between">
                           <span className="text-muted-foreground">Start Date:</span>
-                          <span className="font-medium">{new Date(tournament.startDate).toLocaleDateString()}</span>
+                          <span className="font-medium">{formatDateTime(tournament.startDate)}</span>
                         </li>
                         <li className="flex justify-between">
                           <span className="text-muted-foreground">End Date:</span>
-                          <span className="font-medium">{new Date(tournament.endDate).toLocaleDateString()}</span>
+                          <span className="font-medium">{formatDateTime(tournament.endDate)}</span>
                         </li>
                         <li className="flex justify-between">
                           <span className="text-muted-foreground">Duration:</span>
@@ -323,14 +332,14 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
                 </CardContent>
               </Card>
               
-              {upcomingMatches.length > 0 && (
+              {matches.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Upcoming Matches</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {upcomingMatches.slice(0, 3).map((match) => (
+                      {matches.slice(0, 3).map((match) => (
                         <div key={match.id} className="flex justify-between items-center p-3 rounded-md bg-muted/50">
                           <div>
                             <p className="font-medium">{match.player1} vs {match.player2}</p>
@@ -347,7 +356,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
                         </div>
                       ))}
                       
-                      {upcomingMatches.length > 3 && (
+                      {matches.length > 3 && (
                         <Button variant="outline" className="w-full" onClick={() => document.querySelector('[data-value="matches"]')?.click()}>
                           View All Matches
                           <ArrowRight className="ml-2 h-4 w-4" />
@@ -387,62 +396,29 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
                   <CardTitle>Tournament Matches</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {upcomingMatches.length === 0 && completedMatches.length === 0 ? (
+                  {matches.length === 0 ? (
                     <div className="text-center py-8">
                       <Clock className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
                       <p className="text-muted-foreground">No matches available yet. Check back later.</p>
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {upcomingMatches.length > 0 && (
-                        <div>
-                          <h3 className="text-lg font-medium mb-3">Upcoming Matches</h3>
-                          <div className="space-y-3">
-                            {upcomingMatches.map((match) => (
-                              <div key={match.id} className="flex justify-between items-center p-4 rounded-md bg-muted/50">
-                                <div>
-                                  <p className="font-medium">{match.player1} vs {match.player2}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {match.round} • Court {match.court}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-medium">{new Date(match.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {new Date(match.startTime).toLocaleDateString()}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
+                      {matches.map((match) => (
+                        <div key={match.id} className="flex justify-between items-center p-4 rounded-md bg-muted/50">
+                          <div>
+                            <p className="font-medium">{match.player1} vs {match.player2}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {match.round} • Court {match.court}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium">{new Date(match.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(match.startTime).toLocaleDateString()}
+                            </p>
                           </div>
                         </div>
-                      )}
-                      
-                      {completedMatches.length > 0 && (
-                        <div>
-                          <h3 className="text-lg font-medium mb-3">Completed Matches</h3>
-                          <div className="space-y-3">
-                            {completedMatches.map((match) => (
-                              <div key={match.id} className="flex justify-between items-center p-4 rounded-md bg-muted/50">
-                                <div>
-                                  <p className="font-medium">{match.player1} vs {match.player2}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {match.round} • Court {match.court}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-medium text-lg">
-                                    {match.player1Score} - {match.player2Score}
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Final Score
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </CardContent>
@@ -598,26 +574,50 @@ export default function TournamentDetailPage({ params }: TournamentDetailProps) 
           
           <Card>
             <CardHeader>
-              <CardTitle>Tournament Venue</CardTitle>
+              <CardTitle>Registration</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center text-center">
-                <div className="w-full h-40 bg-muted rounded-md mb-4 flex items-center justify-center">
-                  <MapPin className="h-10 w-10 text-muted-foreground" />
-                </div>
-                <p className="font-medium">{tournament.venue || tournament.location}</p>
-                <p className="text-sm text-muted-foreground mt-1 mb-4">
-                  {tournament.location}
-                </p>
-                
-                <Button variant="outline" className="w-full" onClick={() => window.open(`https://maps.google.com/?q=${encodeURIComponent(tournament.location)}`, '_blank')}>
-                  View on Maps
-                </Button>
+            <CardContent className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Registration Fee</span>
+                <span className="font-bold">${tournament.registrationFee}</span>
               </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Registration Status</span>
+                <Badge variant="outline" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800/30">
+                  Open
+                </Badge>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Spots Remaining</span>
+                <span className="font-medium">
+                  {tournament.maxPlayers - tournament.registeredPlayers} of {tournament.maxPlayers}
+                </span>
+              </div>
+              
+              <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
+                <div 
+                  className="bg-primary h-full rounded-full" 
+                  style={{ width: `${(tournament.registeredPlayers / tournament.maxPlayers) * 100}%` }}
+                ></div>
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                {Math.round((tournament.registeredPlayers / tournament.maxPlayers) * 100)}% full
+              </p>
             </CardContent>
+            <CardFooter>
+              <Button 
+                className="w-full"
+                onClick={handleRegister}
+              >
+                <Ticket className="mr-2 h-4 w-4" />
+                Register Now
+              </Button>
+            </CardFooter>
           </Card>
         </div>
       </div>
     </div>
   );
-} 
+}

@@ -37,7 +37,7 @@ import {
   Server,
   AlertCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 // Mock data - in a real app this would come from API
 const revenueData = [

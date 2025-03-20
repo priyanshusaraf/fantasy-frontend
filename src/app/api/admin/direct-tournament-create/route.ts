@@ -199,13 +199,62 @@ export async function POST(request: NextRequest) {
                   // Convert BigInt to Number if needed
                   player = {
                     id: Number((playerIdResult as any)[0].id),
-                    name: playerData.name
+                    name: playerData.name,
+                    email: playerData.email
                   };
                 }
                 
                 // Add player to the processed set
                 if (player.id) {
                   processedPlayerIds.add(player.id);
+                }
+                
+                // Create user account for players with Gmail addresses if needed
+                if (playerData.email && playerData.email.toLowerCase().endsWith('@gmail.com')) {
+                  console.log(`Checking for user account with email: ${playerData.email}`);
+                  
+                  // Check if user already exists
+                  const existingUser = await prisma.user.findUnique({
+                    where: { email: playerData.email.toLowerCase() },
+                    include: { player: true }
+                  });
+                  
+                  if (!existingUser) {
+                    console.log(`Creating new user account for ${playerData.name} with email ${playerData.email}`);
+                    
+                    // Create new user with PLAYER role and ACTIVE status
+                    const newUser = await prisma.user.create({
+                      data: {
+                        name: playerData.name,
+                        email: playerData.email.toLowerCase(),
+                        emailVerified: new Date(),
+                        role: 'PLAYER',
+                        status: 'ACTIVE',
+                        username: playerData.email.split('@')[0].toLowerCase() + Math.floor(Math.random() * 1000),
+                        player: {
+                          connect: { id: player.id }
+                        }
+                      }
+                    });
+                    
+                    console.log(`Created user account with ID: ${newUser.id} for player ${player.id}`);
+                  } else {
+                    console.log(`User account already exists for email ${playerData.email}`);
+                    
+                    // If user exists but not linked to this player, link them
+                    if (!existingUser.player) {
+                      await prisma.user.update({
+                        where: { id: existingUser.id },
+                        data: {
+                          player: {
+                            connect: { id: player.id }
+                          },
+                          role: existingUser.role === 'USER' ? 'PLAYER' : existingUser.role
+                        }
+                      });
+                      console.log(`Linked existing user ${existingUser.id} to player ${player.id}`);
+                    }
+                  }
                 }
                 
                 // Connect player to team
@@ -276,7 +325,8 @@ export async function POST(request: NextRequest) {
                 // Convert BigInt to Number if needed
                 player = {
                   id: Number((playerIdResult as any)[0].id),
-                  name: playerData.name
+                  name: playerData.name,
+                  email: playerData.email
                 };
               } else {
                 console.log(`Found existing player: ${player.id} - ${player.name}`);
@@ -296,6 +346,54 @@ export async function POST(request: NextRequest) {
             // Add player to the processed set
             if (player.id) {
               processedPlayerIds.add(player.id);
+            }
+            
+            // Create user account for players with Gmail addresses if needed
+            if (playerData.email && playerData.email.toLowerCase().endsWith('@gmail.com')) {
+              console.log(`Checking for user account with email: ${playerData.email}`);
+              
+              // Check if user already exists
+              const existingUser = await prisma.user.findUnique({
+                where: { email: playerData.email.toLowerCase() },
+                include: { player: true }
+              });
+              
+              if (!existingUser) {
+                console.log(`Creating new user account for ${playerData.name} with email ${playerData.email}`);
+                
+                // Create new user with PLAYER role and ACTIVE status
+                const newUser = await prisma.user.create({
+                  data: {
+                    name: playerData.name,
+                    email: playerData.email.toLowerCase(),
+                    emailVerified: new Date(),
+                    role: 'PLAYER',
+                    status: 'ACTIVE',
+                    username: playerData.email.split('@')[0].toLowerCase() + Math.floor(Math.random() * 1000),
+                    player: {
+                      connect: { id: player.id }
+                    }
+                  }
+                });
+                
+                console.log(`Created user account with ID: ${newUser.id} for player ${player.id}`);
+              } else {
+                console.log(`User account already exists for email ${playerData.email}`);
+                
+                // If user exists but not linked to this player, link them
+                if (!existingUser.player) {
+                  await prisma.user.update({
+                    where: { id: existingUser.id },
+                    data: {
+                      player: {
+                        connect: { id: player.id }
+                      },
+                      role: existingUser.role === 'USER' ? 'PLAYER' : existingUser.role
+                    }
+                  });
+                  console.log(`Linked existing user ${existingUser.id} to player ${player.id}`);
+                }
+              }
             }
             
             // Create tournament entry

@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { ContestFilters, ContestFilters as ContestFiltersType } from "@/components/fantasy-pickleball/ContestFilters";
 import { Users, Trophy, Calendar, TrendingUp, Clock, Loader2 } from "lucide-react";
 
@@ -50,124 +50,23 @@ export default function ContestsPage() {
       try {
         setLoading(true);
         
-        // Replace with your API call
-        // const response = await fetch('/api/contests');
-        // if (!response.ok) throw new Error('Failed to fetch contests');
-        // const data = await response.json();
+        const response = await fetch('/api/contests');
+        if (!response.ok) throw new Error('Failed to fetch contests');
+        const data = await response.json();
         
-        // Mock data for demonstration
-        const mockContests: Contest[] = [
-          {
-            id: '1',
-            name: 'Summer Slam Fantasy Challenge',
-            description: 'Join the ultimate pickleball fantasy contest of the summer!',
-            entryFee: 25,
-            prizePool: 5000,
-            maxEntries: 500,
-            currentEntries: 320,
-            startDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'UPCOMING',
-            tournamentId: 'tournament-1',
-            tournamentName: 'Summer Slam Championship',
-            skillLevel: 'Pro',
-            isGuaranteed: true,
-          },
-          {
-            id: '2',
-            name: 'Beginner Friendly Fantasy Cup',
-            description: 'Perfect for newcomers to pickleball fantasy!',
-            entryFee: 5,
-            prizePool: 500,
-            maxEntries: 200,
-            currentEntries: 150,
-            startDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'UPCOMING',
-            tournamentId: 'tournament-2',
-            tournamentName: 'Spring Beginners Cup',
-            skillLevel: 'Beginner',
-            isGuaranteed: false,
-          },
-          {
-            id: '3',
-            name: 'Pro Tour Fantasy League',
-            description: 'Test your skills against the best fantasy players!',
-            entryFee: 50,
-            prizePool: 10000,
-            maxEntries: 300,
-            currentEntries: 300,
-            startDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'IN_PROGRESS',
-            tournamentId: 'tournament-3',
-            tournamentName: 'Professional Pickleball Tour',
-            skillLevel: 'Pro',
-            isGuaranteed: true,
-          },
-          {
-            id: '4',
-            name: 'Weekend Warrior Contest',
-            description: 'Weekend-only fantasy contest with quick results!',
-            entryFee: 15,
-            prizePool: 1500,
-            maxEntries: 150,
-            currentEntries: 75,
-            startDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'UPCOMING',
-            tournamentId: 'tournament-4',
-            tournamentName: 'Weekend Championships',
-            skillLevel: 'Intermediate',
-            isGuaranteed: false,
-          },
-          {
-            id: '5',
-            name: 'Advanced Players Challenge',
-            description: 'For experienced pickleball fantasy managers only!',
-            entryFee: 35,
-            prizePool: 7000,
-            maxEntries: 250,
-            currentEntries: 100,
-            startDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'IN_PROGRESS',
-            tournamentId: 'tournament-5',
-            tournamentName: 'Advanced Cup',
-            skillLevel: 'Advanced',
-            isGuaranteed: true,
-          },
-          {
-            id: '6',
-            name: 'Championship Fantasy Final',
-            description: 'The ultimate test of pickleball knowledge!',
-            entryFee: 100,
-            prizePool: 20000,
-            maxEntries: 400,
-            currentEntries: 400,
-            startDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'COMPLETED',
-            tournamentId: 'tournament-6',
-            tournamentName: 'National Championship',
-            skillLevel: 'Pro',
-            isGuaranteed: true,
-          },
-        ];
+        setContests(data);
+        setFilteredContests(data);
         
-        setContests(mockContests);
-        setFilteredContests(mockContests);
+        // Extract unique tournament names and skill levels for filters
+        const uniqueTournaments = Array.from(new Set(data.map((c: Contest) => c.tournamentName)));
+        const uniqueSkillLevels = Array.from(new Set(data.map((c: Contest) => c.skillLevel)));
         
-        // Extract unique tournaments and skill levels for filters
-        const uniqueTournaments = Array.from(new Set(mockContests.map(c => c.tournamentName)));
-        const uniqueSkillLevels = Array.from(new Set(mockContests.map(c => c.skillLevel)));
+        setTournaments(uniqueTournaments as string[]);
+        setSkillLevels(uniqueSkillLevels as string[]);
         
-        setTournaments(uniqueTournaments);
-        setSkillLevels(uniqueSkillLevels);
-      } catch (err) {
-        console.error('Error fetching contests:', err);
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-        toast.error('Failed to load contests');
+      } catch (error) {
+        console.error('Error fetching contests:', error);
+        setError('Failed to load contests. Please try again later.');
       } finally {
         setLoading(false);
       }

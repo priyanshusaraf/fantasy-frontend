@@ -32,6 +32,7 @@ import {
   Moon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import LeaderboardTabs from "@/components/leaderboard/LeaderboardTabs";
 
 interface FantasyGame {
   id: number;
@@ -428,6 +429,9 @@ export default function UserDashboard() {
 
           {/* Right Column - Live Scores & Upcoming Contests */}
           <div className="space-y-8">
+            {/* User Leaderboard Section */}
+            <LeaderboardTabs />
+
             {/* Live Match Scores */}
             <Card>
               <CardHeader className="pb-3">

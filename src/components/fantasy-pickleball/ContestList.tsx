@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, FC } from "react";
+import React, { useState, useEffect, FC, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Trophy, Calendar, Users, TrendingUp, AlertCircle, Loader2 } from "lucide-react";
+import { Trophy, Calendar, Users, TrendingUp, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 interface Contest {
@@ -20,7 +20,7 @@ interface Contest {
   currentEntries: number;
   startDate: string;
   endDate: string;
-  status: "UPCOMING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  status: "UPCOMING" | "OPEN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "CLOSED" | "ONGOING" | "DRAFT";
   tournament: {
     id: number;
     name: string;
@@ -51,41 +51,102 @@ const ContestList: FC<ContestListProps> = ({
   const router = useRouter();
   const [joiningContestId, setJoiningContestId] = useState<string | null>(null);
   const { toast } = useToast();
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchContests = async () => {
-      try {
-        setLoading(true);
-
-        let url = `/api/fantasy-pickleball/contests?page=${page}&limit=${limit}`;
-
-        if (tournamentId) {
-          url += `&tournamentId=${tournamentId}`;
-        }
-
-        const res = await fetch(url);
-
-        if (!res.ok) {
-          throw new Error("Failed to fetch contests");
-        }
-
-        const data = await res.json();
-        console.log("Fetched contests data:", data);
-
-        setContests(data.contests || []);
-        setTotalPages(data.totalPages || 1);
-      } catch (err) {
-        console.error("Error fetching contests:", err);
-        setError(
-          err instanceof Error ? err.message : "An unknown error occurred"
-        );
-      } finally {
-        setLoading(false);
+  const fetchContests = useCallback(async (showLoading = true) => {
+    try {
+      if (showLoading) {
+        setIsRefreshing(true);
       }
+
+      let url = `/api/fantasy-pickleball/contests?page=${page}&limit=${limit}`;
+
+      if (tournamentId) {
+        url += `&tournamentId=${tournamentId}`;
+      }
+
+      // More aggressive cache-busting with force parameter
+      url += `&force=true&timestamp=${new Date().getTime()}`;
+
+      const res = await fetch(url, { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        next: { revalidate: 0 }
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch contests");
+      }
+
+      const data = await res.json();
+      console.log("Fetched contests data:", data);
+
+      setContests(data.contests || []);
+      setTotalPages(data.totalPages || 1);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Error fetching contests:", err);
+      setError(
+        err instanceof Error ? err.message : "An unknown error occurred"
+      );
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [tournamentId, page, limit]);
+
+  // Initial data load
+  useEffect(() => {
+    fetchContests();
+  }, [fetchContests]);
+
+  // Set up auto-refresh every 30 seconds
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      fetchContests(false); // Don't show loading indicator for auto-refresh
+    }, 30000);
+
+    return () => clearInterval(refreshInterval);
+  }, [fetchContests]);
+
+  // Add global event listener for contest creation/updates
+  useEffect(() => {
+    // Define the event handler function
+    const handleContestUpdate = () => {
+      console.log("ContestList: Detected contest update event, refreshing data");
+      fetchContests(false);
     };
 
-    fetchContests();
-  }, [tournamentId, page, limit]);
+    // Create custom event for contest updates
+    if (typeof window !== 'undefined') {
+      window.addEventListener('fantasy-contest-updated', handleContestUpdate);
+      
+      // Also refresh on visibility change (when user returns to tab)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          console.log("ContestList: Tab became visible, refreshing data");
+          fetchContests(false);
+        }
+      });
+    }
+
+    // Cleanup function
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('fantasy-contest-updated', handleContestUpdate);
+        document.removeEventListener('visibilitychange', () => {});
+      }
+    };
+  }, [fetchContests]);
+
+  const handleManualRefresh = () => {
+    fetchContests(true); // Show loading indicator for manual refresh
+  };
 
   const handleJoinContest = async (contestId: string) => {
     try {
@@ -130,15 +191,17 @@ const ContestList: FC<ContestListProps> = ({
   const getStatusBadge = (status: Contest["status"]) => {
     switch (status) {
       case "UPCOMING":
+      case "OPEN":
         return (
           <Badge className="bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border-blue-500/20">
             <div className="flex items-center gap-1">
               <Calendar className="w-3 h-3" />
-              <span>Upcoming</span>
+              <span>Open</span>
             </div>
           </Badge>
         );
       case "IN_PROGRESS":
+      case "ONGOING":
         return (
           <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-green-500/20">
             <div className="flex items-center gap-1">
@@ -219,17 +282,34 @@ const ContestList: FC<ContestListProps> = ({
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-end">
-        <h2 className="text-3xl font-bold text-white">
-          {tournamentId ? "Tournament Contests" : "Fantasy Contests"}
-        </h2>
-        {isAuthenticated && isAdmin && !tournamentId && (
+        <div>
+          <h2 className="text-3xl font-bold text-white">
+            {tournamentId ? "Tournament Contests" : "Fantasy Contests"}
+          </h2>
+          <p className="text-sm text-gray-400 mt-1">
+            Last updated: {lastUpdated.toLocaleTimeString()}
+          </p>
+        </div>
+        <div className="flex gap-2 items-center">
           <Button 
-            onClick={() => router.push('/fantasy/contests/create')}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            onClick={handleManualRefresh}
+            variant="outline"
+            size="sm"
+            disabled={isRefreshing}
+            className="flex items-center gap-1 border-gray-700 text-gray-400 hover:text-white"
           >
-            Create Contest
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </Button>
-        )}
+          {isAuthenticated && isAdmin && !tournamentId && (
+            <Button 
+              onClick={() => router.push('/fantasy/contests/create')}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              Create Contest
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -287,15 +367,19 @@ const ContestList: FC<ContestListProps> = ({
                     </span>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {Math.round((contest.currentEntries / contest.maxEntries) * 100)}% Full
+                    {contest.maxEntries > 0 
+                      ? `${Math.round((contest.currentEntries / contest.maxEntries) * 100)}% Full`
+                      : '0% Full'}
                   </span>
                 </div>
                 <Progress 
-                  value={(contest.currentEntries / contest.maxEntries) * 100} 
+                  value={contest.maxEntries > 0 
+                    ? (contest.currentEntries / contest.maxEntries) * 100
+                    : 0} 
                   className={`h-2 bg-gray-700 ${
-                    contest.currentEntries / contest.maxEntries > 0.8 
+                    contest.currentEntries / Math.max(contest.maxEntries, 1) > 0.8 
                       ? "[&>div]:bg-red-500" 
-                      : contest.currentEntries / contest.maxEntries > 0.5 
+                      : contest.currentEntries / Math.max(contest.maxEntries, 1) > 0.5 
                       ? "[&>div]:bg-yellow-500" 
                       : "[&>div]:bg-green-500"
                   }`}
@@ -306,7 +390,7 @@ const ContestList: FC<ContestListProps> = ({
             <CardFooter className="pt-2">
               <Button 
                 onClick={() => handleJoinContest(contest.id.toString())}
-                disabled={contest.status !== "UPCOMING" || joiningContestId === contest.id.toString()} 
+                disabled={!['UPCOMING', 'OPEN'].includes(contest.status) || joiningContestId === contest.id.toString()} 
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-all duration-200 transform hover:translate-y-[-2px]"
               >
                 {joiningContestId === contest.id.toString() ? (
@@ -315,7 +399,7 @@ const ContestList: FC<ContestListProps> = ({
                     Joining...
                   </>
                 ) : (
-                  contest.status === "UPCOMING" ? "Join Contest" : "Contest Closed"
+                  ['UPCOMING', 'OPEN'].includes(contest.status) ? "Join Contest" : "Contest Closed"
                 )}
               </Button>
             </CardFooter>

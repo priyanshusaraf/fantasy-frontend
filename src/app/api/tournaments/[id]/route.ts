@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const id = params.id;
+    const { id } = params;
     console.log(`Fetching tournament with ID: ${id}`);
 
     // Fetch tournament from database with properly matched field names
@@ -28,20 +28,19 @@ export async function GET(
         entries: true,
         matches: {
           take: 5,
-          orderBy: { 
-            startTime: 'desc' 
-          },
+          orderBy: { startTime: 'desc' },
         },
         fantasyContests: {
           take: 5,
-        },
+          orderBy: { id: 'asc' }, 
+        }
       },
     });
 
     if (!tournament) {
       console.log(`Tournament with ID ${id} not found`);
       return NextResponse.json(
-        { error: "Tournament not found" },
+        { message: "Tournament not found" },
         { status: 404 }
       );
     }
@@ -49,9 +48,9 @@ export async function GET(
     console.log(`Successfully fetched tournament: ${tournament.name}`);
     return NextResponse.json(tournament);
   } catch (error) {
-    console.error("Error fetching tournament:", error);
+    console.error(`Error fetching tournament:`, error);
     return NextResponse.json(
-      { error: "Failed to fetch tournament" },
+      { message: "Error fetching tournament", error: String(error) },
       { status: 500 }
     );
   }
@@ -207,7 +206,7 @@ export async function PUT(
               const existingTeamPlayer = await prisma.player.findFirst({
                 where: {
                   id: player.id,
-                  teams: {
+                  teamMemberships: {
                     some: {
                       id: existingTeam.id
                     }
@@ -354,17 +353,13 @@ export async function PATCH(
     const id = params.id;
     const data = await request.json();
     
-    if (!data.status) {
-      return NextResponse.json(
-        { error: "Status is required" },
-        { status: 400 }
-      );
-    }
+    // Always set status to IN_PROGRESS regardless of requested status
+    // This simplifies the system as per requirements
     
     // Update tournament status
     const updatedTournament = await prisma.tournament.update({
       where: { id: parseInt(id) },
-      data: { status: data.status }
+      data: { status: "IN_PROGRESS" }
     });
     
     return NextResponse.json(updatedTournament);

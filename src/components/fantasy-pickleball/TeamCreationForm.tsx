@@ -31,7 +31,7 @@ interface Player {
   id: number;
   name: string;
   imageUrl?: string;
-  skillLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PROFESSIONAL";
+  skillLevel?: string;
   country?: string;
   price: number;
 }
@@ -195,6 +195,30 @@ export default function TeamCreationForm({ contestId }: TeamCreationFormProps) {
     }
     
     console.groupEnd();
+  };
+
+  // Calculate player price based on skill level
+  const getPlayerPrice = (skillLevel: string) => {
+    switch (skillLevel) {
+      case 'A+':
+        return 12000;
+      case 'A':
+        return 11500;
+      case 'A-':
+        return 11000;
+      case 'B+':
+        return 10500;
+      case 'B':
+        return 10000;
+      case 'B-':
+        return 9500;
+      case 'C':
+        return 9000;
+      case 'D':
+        return 9000;
+      default:
+        return 9000;
+    }
   };
 
   const handleCreateTeam = async () => {
@@ -437,7 +461,7 @@ export default function TeamCreationForm({ contestId }: TeamCreationFormProps) {
               </div>
 
               <div className="mb-4 flex flex-wrap gap-2">
-                {["PROFESSIONAL", "ADVANCED", "INTERMEDIATE", "BEGINNER"].map(
+                {["A+", "A", "A-", "B+", "B", "B-", "C", "D"].map(
                   (level) => (
                     <Badge
                       key={level}
@@ -455,7 +479,7 @@ export default function TeamCreationForm({ contestId }: TeamCreationFormProps) {
                         )
                       }
                     >
-                      {level.toLowerCase()}
+                      {level}
                     </Badge>
                   )
                 )}
@@ -507,7 +531,7 @@ export default function TeamCreationForm({ contestId }: TeamCreationFormProps) {
                         )}
                         {player.skillLevel && (
                           <Badge variant="secondary" className="bg-gray-700 text-gray-300">
-                            {player.skillLevel.toLowerCase()}
+                            {player.skillLevel}
                           </Badge>
                         )}
                       </div>

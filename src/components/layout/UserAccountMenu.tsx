@@ -28,7 +28,7 @@ import {
   Users,
   ShieldCheck,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 export default function UserAccountMenu() {
   const router = useRouter();

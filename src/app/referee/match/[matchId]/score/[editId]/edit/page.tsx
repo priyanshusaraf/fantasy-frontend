@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Player {
   id: number;

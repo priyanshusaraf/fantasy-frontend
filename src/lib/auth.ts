@@ -12,21 +12,25 @@ export function createPrismaAdapter(prisma: PrismaClient): Adapter {
   return {
     // CREATE USER - Handle the 'image' to 'profileImage' mapping
     async createUser(data) {
+      console.log("Creating new user from auth provider:", data);
       const user = await prisma.user.create({
         data: {
           name: data.name,
           email: data.email,
-          profileImage: data.image, // Map 'image' to 'profileImage'
+          profilePicture: data.image, // Map 'image' to 'profilePicture'
           emailVerified: data.emailVerified,
           role: "USER", // Default role
-          isApproved: true, // Auto approve regular users
+          status: "ACTIVE", // Use status field instead of isApproved
         },
       });
 
+      console.log("Created user:", user);
+      
       return {
         ...user,
         id: user.id.toString(),
-        image: user.profileImage, // Map back for NextAuth
+        image: user.profilePicture, // Map back for NextAuth
+        isApproved: user.status === "ACTIVE", // Map status to isApproved for backward compatibility
       };
     },
 
@@ -41,7 +45,8 @@ export function createPrismaAdapter(prisma: PrismaClient): Adapter {
       return {
         ...user,
         id: user.id.toString(),
-        image: user.profileImage, // Map for NextAuth
+        image: user.profilePicture, // Map for NextAuth
+        isApproved: user.status === "ACTIVE", // Map status to isApproved for backward compatibility
       };
     },
 
@@ -56,7 +61,8 @@ export function createPrismaAdapter(prisma: PrismaClient): Adapter {
       return {
         ...user,
         id: user.id.toString(),
-        image: user.profileImage, // Map for NextAuth
+        image: user.profilePicture, // Map for NextAuth
+        isApproved: user.status === "ACTIVE", // Map status to isApproved for backward compatibility
       };
     },
 
@@ -79,26 +85,29 @@ export function createPrismaAdapter(prisma: PrismaClient): Adapter {
       return {
         ...user,
         id: user.id.toString(),
-        image: user.profileImage, // Map for NextAuth
+        image: user.profilePicture, // Map for NextAuth
+        isApproved: user.status === "ACTIVE", // Map status to isApproved for backward compatibility
       };
     },
 
     // UPDATE USER
     async updateUser(user) {
-      const { id, image, ...data } = user;
+      const { id, image, isApproved, ...data } = user;
 
       const updatedUser = await prisma.user.update({
         where: { id: parseInt(id) },
         data: {
           ...data,
-          profileImage: image, // Map for our DB
+          profilePicture: image, // Map for our DB
+          status: isApproved ? "ACTIVE" : "PENDING", // Convert isApproved to status
         },
       });
 
       return {
         ...updatedUser,
         id: updatedUser.id.toString(),
-        image: updatedUser.profileImage, // Map for NextAuth
+        image: updatedUser.profilePicture, // Map for NextAuth
+        isApproved: updatedUser.status === "ACTIVE", // Map status to isApproved for backward compatibility
       };
     },
 
@@ -152,7 +161,8 @@ export function createPrismaAdapter(prisma: PrismaClient): Adapter {
         user: {
           ...user,
           id: user.id.toString(),
-          image: user.profileImage, // Map for NextAuth
+          image: user.profilePicture, // Map for NextAuth
+          isApproved: user.status === "ACTIVE", // Map status to isApproved for backward compatibility
         },
       };
     },
@@ -231,7 +241,8 @@ declare module "next-auth" {
     id: string;
     role: string;
     isApproved: boolean;
-    username: string;
+    status?: string;
+    username?: string;
   }
 
   interface Session {
@@ -242,7 +253,7 @@ declare module "next-auth" {
       image?: string | null;
       role: string;
       isApproved: boolean;
-      username: string;
+      username?: string;
     };
   }
 }
@@ -252,7 +263,7 @@ declare module "next-auth/jwt" {
     id: string;
     role: string;
     isApproved: boolean;
-    username: string;
+    username?: string;
   }
 }
 
@@ -276,7 +287,8 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role || "USER";
-        token.isApproved = user.isApproved || false;
+        // Use status field to determine approval
+        token.isApproved = user.status === "ACTIVE" || user.isApproved || false;
         token.username = user.username || "";
       }
       return token;
@@ -286,7 +298,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id;
         session.user.role = token.role;
         session.user.isApproved = token.isApproved;
-        session.user.username = token.username;
+        session.user.username = token.username || "";
       }
       return session;
     },

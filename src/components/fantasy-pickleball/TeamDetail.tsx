@@ -28,6 +28,7 @@ import {
   ArrowUpRight,
   Share2,
 } from "lucide-react";
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 
 // Updated Player interface to match the FantasyPointsCard requirements
 interface Player {
@@ -51,6 +52,8 @@ interface Player {
   totalPoints: number;
   matchesPlayed: number;
   ownership: number;
+  teamId?: number;
+  teamName?: string;
 }
 
 interface FantasyTeam {
@@ -93,122 +96,16 @@ export function TeamDetail({
       try {
         setLoading(true);
         
-        // This would be an API call in a real application
-        // Simulating API response with mock data
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const response = await fetch(`/api/fantasy/teams/${teamId}`);
+        if (!response.ok) {
+          throw new Error("Failed to fetch team details");
+        }
         
-        // Mock data for demonstration with updated player structure
-        const mockTeam: FantasyTeam = {
-          id: teamId,
-          name: "Pickleball Wizards",
-          ownerName: "John Smith",
-          ownerAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=John",
-          contestId: "contest-123",
-          contestName: "Summer Slam Fantasy Contest",
-          tournamentId: "tournament-456",
-          tournamentName: "Summer Slam Open",
-          rank: 3,
-          previousRank: 5,
-          totalPoints: 342,
-          players: [
-            {
-              id: 1,
-              name: "Alex Johnson",
-              position: "Singles Specialist",
-              skillLevel: "Pro",
-              price: 12.5,
-              isCaptain: true,
-              isViceCaptain: false,
-              matchesPlayed: 10,
-              totalPoints: 120,
-              ownership: 45,
-              stats: {
-                points: 60,
-                wins: 8,
-                losses: 2,
-                aces: 15,
-                errors: 6,
-                killShots: 25,
-                dinks: 40,
-                returnsWon: 30
-              }
-            },
-            {
-              id: 2,
-              name: "Sarah Williams",
-              position: "Doubles Player",
-              skillLevel: "Advanced",
-              price: 10.0,
-              isCaptain: false,
-              isViceCaptain: true,
-              matchesPlayed: 10,
-              totalPoints: 95,
-              ownership: 38,
-              stats: {
-                points: 63,
-                wins: 7,
-                losses: 3,
-                aces: 12,
-                errors: 8,
-                killShots: 18,
-                dinks: 35,
-                returnsWon: 25
-              }
-            },
-            {
-              id: 3,
-              name: "Mike Thompson",
-              position: "Mixed Doubles Expert",
-              skillLevel: "Advanced",
-              price: 9.5,
-              isCaptain: false,
-              isViceCaptain: false,
-              matchesPlayed: 10,
-              totalPoints: 82,
-              ownership: 30,
-              stats: {
-                points: 82,
-                wins: 6,
-                losses: 4,
-                aces: 10,
-                errors: 7,
-                killShots: 20,
-                dinks: 28,
-                returnsWon: 22
-              }
-            },
-            {
-              id: 4,
-              name: "Emily Davis",
-              position: "All-Around Player",
-              skillLevel: "Intermediate",
-              price: 8.0,
-              isCaptain: false,
-              isViceCaptain: false,
-              matchesPlayed: 10,
-              totalPoints: 45,
-              ownership: 25,
-              stats: {
-                points: 45,
-                wins: 4,
-                losses: 6,
-                aces: 8,
-                errors: 10,
-                killShots: 12,
-                dinks: 20,
-                returnsWon: 15
-              }
-            }
-          ],
-          createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        setTeam(mockTeam);
-      } catch (err) {
-        console.error("Error fetching team details:", err);
+        const data = await response.json();
+        setTeam(data);
+      } catch (error) {
+        console.error("Error fetching team details:", error);
         setError("Failed to load team details. Please try again.");
-        toast.error("Failed to load team details");
       } finally {
         setLoading(false);
       }
@@ -365,88 +262,102 @@ export function TeamDetail({
                   totalPoints={player.totalPoints}
                   matchesPlayed={player.matchesPlayed}
                   ownership={player.ownership}
+                  teamName={player.teamName}
                 />
               ))}
             </div>
           </TabsContent>
           
           <TabsContent value="stats" className="pt-4">
-            <Card>
-              <CardContent className="pt-6">
-                <h3 className="text-lg font-medium mb-4">Team Performance</h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm font-medium">Captain Contribution</span>
-                      <span className="text-sm text-muted-foreground">
-                        {Math.round((team.players.find(p => p.isCaptain)?.totalPoints || 0) / team.totalPoints * 100)}%
-                      </span>
-                    </div>
-                    <Progress 
-                      value={(team.players.find(p => p.isCaptain)?.totalPoints || 0) / team.totalPoints * 100} 
-                      className="h-2" 
-                    />
-                  </div>
-                  
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm font-medium">Vice-Captain Contribution</span>
-                      <span className="text-sm text-muted-foreground">
-                        {Math.round((team.players.find(p => p.isViceCaptain)?.totalPoints || 0) / team.totalPoints * 100)}%
-                      </span>
-                    </div>
-                    <Progress 
-                      value={(team.players.find(p => p.isViceCaptain)?.totalPoints || 0) / team.totalPoints * 100} 
-                      className="h-2" 
-                    />
-                  </div>
-                  
-                  <Separator className="my-4" />
-                  
-                  <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-6">
+              <TopPerformersCard players={team.players} />
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Points Breakdown</CardTitle>
+                  <CardDescription>Team points by player contribution</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={team.players.map(p => ({ 
+                        name: p.name, 
+                        points: p.totalPoints,
+                        role: p.isCaptain ? 'Captain' : p.isViceCaptain ? 'Vice-Captain' : 'Player'
+                      }))}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
+                    >
+                      <XAxis 
+                        dataKey="name" 
+                        angle={-45} 
+                        textAnchor="end" 
+                        height={70} 
+                        tick={{ fontSize: 12 }} 
+                      />
+                      <YAxis />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => {
+                          return [`${value} pts`, props.payload.role];
+                        }}
+                      />
+                      <Bar 
+                        dataKey="points" 
+                        fill="hsl(var(--primary))" 
+                        radius={[4, 4, 0, 0]} 
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Team Performance</CardTitle>
+                  <CardDescription>Overall statistics</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
                     <div>
-                      <h4 className="text-sm font-medium mb-2">Player Skill Distribution</h4>
-                      <div className="space-y-2">
-                        {['Pro', 'Advanced', 'Intermediate', 'Beginner'].map(level => {
-                          const count = team.players.filter(p => p.skillLevel === level).length;
-                          return (
-                            <div key={level} className="flex justify-between items-center">
-                              <span className="text-xs">{level}</span>
-                              <div className="flex items-center gap-2">
-                                <Progress 
-                                  value={count / team.players.length * 100} 
-                                  className="h-2 w-24" 
-                                />
-                                <span className="text-xs text-muted-foreground">{count}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <h4 className="text-sm font-medium mb-2">Wins Distribution</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col">
+                          <span className="text-3xl font-bold">
+                            {team.players.reduce((acc, p) => acc + p.stats.wins, 0)}
+                          </span>
+                          <span className="text-sm text-muted-foreground">Total Wins</span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-3xl font-bold">
+                            {Math.round(team.players.reduce((acc, p) => acc + p.stats.wins, 0) / team.players.length)}
+                          </span>
+                          <span className="text-sm text-muted-foreground">Avg Wins per Player</span>
+                        </div>
                       </div>
                     </div>
                     
+                    <Separator />
+                    
                     <div>
-                      <h4 className="text-sm font-medium mb-2">Budget Allocation</h4>
-                      <div className="text-sm">
-                        <div className="flex justify-between">
-                          <span>Total Spent:</span>
-                          <span>${team.players.reduce((sum, p) => sum + p.price, 0).toFixed(1)}</span>
+                      <h4 className="text-sm font-medium mb-2">Points Distribution</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="flex flex-col p-2 bg-muted rounded">
+                          <span className="text-sm text-muted-foreground">Avg Pts</span>
+                          <span className="font-medium">{(team.totalPoints / team.players.length).toFixed(1)}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span>Avg. per Player:</span>
-                          <span>${(team.players.reduce((sum, p) => sum + p.price, 0) / team.players.length).toFixed(1)}</span>
+                        <div className="flex flex-col p-2 bg-muted rounded">
+                          <span className="text-sm text-muted-foreground">Max Pts</span>
+                          <span className="font-medium">{Math.max(...team.players.map(p => p.totalPoints))}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span>Most Expensive:</span>
-                          <span>${Math.max(...team.players.map(p => p.price)).toFixed(1)}</span>
+                        <div className="flex flex-col p-2 bg-muted rounded">
+                          <span className="text-sm text-muted-foreground">Min Pts</span>
+                          <span className="font-medium">{Math.min(...team.players.map(p => p.totalPoints))}</span>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -460,6 +371,46 @@ export function TeamDetail({
           <ArrowUpRight className="ml-2 h-4 w-4" />
         </Button>
       </CardFooter>
+    </Card>
+  );
+}
+
+function TopPerformersCard({ players }: { players: Player[] }) {
+  // Sort players by points in descending order and take the top 3
+  const topPlayers = [...players]
+    .sort((a, b) => b.totalPoints - a.totalPoints)
+    .slice(0, 3);
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Top Performers</CardTitle>
+        <CardDescription>Players contributing the most points</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {topPlayers.map((player, index) => (
+          <div key={player.id} className="mb-4 last:mb-0">
+            <div className="flex justify-between items-center mb-1">
+              <div className="flex items-center">
+                <Badge variant="outline" className="mr-2">
+                  {index + 1}
+                </Badge>
+                <div>
+                  <div className="font-medium">{player.name}</div>
+                  <div className="text-xs text-muted-foreground">{player.position}</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-bold text-primary">{player.totalPoints} pts</div>
+                <div className="text-xs text-muted-foreground">
+                  {player.isCaptain ? 'Captain (2x)' : player.isViceCaptain ? 'Vice-Captain (1.5x)' : 'Player'}
+                </div>
+              </div>
+            </div>
+            <Progress value={(player.totalPoints / (topPlayers[0]?.totalPoints || 1)) * 100} className="h-2" />
+          </div>
+        ))}
+      </CardContent>
     </Card>
   );
 }

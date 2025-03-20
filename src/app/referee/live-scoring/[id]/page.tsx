@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import LiveScoring from "@/components/live-scoring/LiveScoring";
-import { useAuth } from "@/hooks/useAuth";
+import { Loader2 } from "lucide-react";
+import SimplifiedScoring from "@/components/live-scoring/SimplifiedScoring";
 
 interface LiveScoringPageProps {
   params: {
@@ -12,33 +13,42 @@ interface LiveScoringPageProps {
 }
 
 export default function LiveScoringPage({ params }: LiveScoringPageProps) {
-  const matchId = parseInt(params.id, 10);
-  const { user, isAuthenticated } = useAuth();
+  const { id } = params;
+  const { data: session, status } = useSession();
   const router = useRouter();
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  // Check authentication and referee role
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push("/login");
-    } else if (user && user.role !== "REFEREE") {
-      router.push("/dashboard");
-    } else {
-      setLoadingAuth(false);
-    }
-  }, [isAuthenticated, user, router]);
+    // Wait for auth to be determined
+    if (status === "loading") return;
 
-  if (loadingAuth) {
+    // Check if user is authenticated
+    if (status === "unauthenticated") {
+      router.push("/auth");
+      return;
+    }
+
+    // Verify the user is a referee
+    if (session && session.user.role !== "REFEREE") {
+      router.push("/unauthorized");
+      return;
+    }
+
+    setLoading(false);
+  }, [session, status, router]);
+
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen px-4">
-        <p className="text-lg font-medium">Checking authentication...</p>
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
+        <p>Verifying authentication...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <LiveScoring matchId={matchId} isReferee={true} />
+    <div className="container mx-auto px-4 py-8">
+      <SimplifiedScoring matchId={parseInt(id)} isReferee={true} />
     </div>
   );
 }

@@ -17,6 +17,22 @@ import { PlayerCard } from "@/components/player/PlayerCard";
 import { PlayerSearch } from "@/components/player/PlayerSearch";
 import { NewPlayerDialog } from "@/components/player/NewPlayerDialog";
 import { Player, NewPlayerData } from "@/types/player";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// Helper function to simplify toast calls
+const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  if (type === 'success') {
+    toast(message);
+  } else {
+    toast.error(message);
+  }
+};
 
 interface PlayerSelectionFormProps {
   tournamentId: string;
@@ -34,9 +50,9 @@ export function PlayerSelectionForm({
   const [isNewPlayerDialogOpen, setIsNewPlayerDialogOpen] = useState(false);
   const [newPlayer, setNewPlayer] = useState<NewPlayerData>({
     name: "",
-    skillLevel: "INTERMEDIATE",
+    skillLevel: "B",
     country: "",
-    dominantHand: "RIGHT",
+    gender: "MALE",
   });
 
   // Fetch existing players from DB
@@ -57,11 +73,7 @@ export function PlayerSelectionForm({
         setExistingPlayers(data.players);
       } catch (error) {
         console.error("Error fetching players:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load existing players.",
-          variant: "destructive",
-        });
+        showToast("Failed to load existing players.", "error");
       } finally {
         setLoading(false);
       }
@@ -90,11 +102,7 @@ export function PlayerSelectionForm({
   // Handler for creating a new player
   const handleCreatePlayer = async () => {
     if (!newPlayer.name.trim()) {
-      toast({
-        title: "Missing Information",
-        description: "Player name is required.",
-        variant: "destructive",
-      });
+      showToast("Player name is required.", "error");
       return;
     }
 
@@ -117,34 +125,23 @@ export function PlayerSelectionForm({
       setSelectedPlayers([...selectedPlayers, createdPlayer]);
       setNewPlayer({
         name: "",
-        skillLevel: "INTERMEDIATE",
+        skillLevel: "B",
         country: "",
-        dominantHand: "RIGHT",
+        gender: "MALE",
       });
       setIsNewPlayerDialogOpen(false);
 
-      toast({
-        title: "Success",
-        description: "Player created successfully.",
-      });
+      showToast("Player created successfully.");
     } catch (error) {
       console.error("Error creating player:", error);
-      toast({
-        title: "Error",
-        description: "Failed to create player.",
-        variant: "destructive",
-      });
+      showToast("Failed to create player.", "error");
     }
   };
 
   // Submit selected players to tournament
   const handleSubmit = async () => {
     if (selectedPlayers.length === 0) {
-      toast({
-        title: "No Players Selected",
-        description: "Please select at least one player for the tournament.",
-        variant: "destructive",
-      });
+      showToast("Please select at least one player for the tournament.", "error");
       return;
     }
 
@@ -165,20 +162,13 @@ export function PlayerSelectionForm({
         throw new Error("Failed to add players to tournament");
       }
 
-      toast({
-        title: "Success",
-        description: `${selectedPlayers.length} players added to the tournament.`,
-      });
+      showToast(`${selectedPlayers.length} players added to the tournament.`);
 
       // Navigate to fantasy setup
       router.push(`/tournaments/${tournamentId}/setup-fantasy`);
     } catch (error) {
       console.error("Error adding players:", error);
-      toast({
-        title: "Error",
-        description: "Failed to add players to the tournament.",
-        variant: "destructive",
-      });
+      showToast("Failed to add players to the tournament.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -278,7 +268,28 @@ export function PlayerSelectionForm({
         playerData={newPlayer}
         onPlayerDataChange={setNewPlayer}
         onSubmit={handleCreatePlayer}
-      />
+      >
+        <Select
+          value={newPlayer.skillLevel}
+          onValueChange={(value) =>
+            setNewPlayer({ ...newPlayer, skillLevel: value as any })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select skill level" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="A+">A+</SelectItem>
+            <SelectItem value="A">A</SelectItem>
+            <SelectItem value="A-">A-</SelectItem>
+            <SelectItem value="B+">B+</SelectItem>
+            <SelectItem value="B">B</SelectItem>
+            <SelectItem value="B-">B-</SelectItem>
+            <SelectItem value="C">C</SelectItem>
+            <SelectItem value="D">D</SelectItem>
+          </SelectContent>
+        </Select>
+      </NewPlayerDialog>
     </Card>
   );
 }

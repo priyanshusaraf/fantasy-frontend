@@ -128,8 +128,8 @@ export const updatePasswordSchema = z.object({
   password: z.string().min(8, { message: "Password must be at least 8 characters" }),
 });
 
-// Tournament validation schemas
-export const createTournamentSchema = z.object({
+// Base tournament schema without refinements
+const baseTournamentSchema = z.object({
   name: z.string().min(3, { message: "Tournament name must be at least 3 characters" }),
   description: z.string().optional(),
   startDate: z.string().refine(
@@ -140,6 +140,14 @@ export const createTournamentSchema = z.object({
     (date) => !isNaN(Date.parse(date)),
     { message: "Invalid end date format" }
   ),
+  registrationOpenDate: z.string().refine(
+    (date) => !isNaN(Date.parse(date)),
+    { message: "Invalid registration open date format" }
+  ),
+  registrationCloseDate: z.string().refine(
+    (date) => !isNaN(Date.parse(date)),
+    { message: "Invalid registration close date format" }
+  ),
   location: z.string().optional(),
   type: z.string(),
   status: z.string().default("UPCOMING"),
@@ -148,7 +156,30 @@ export const createTournamentSchema = z.object({
   prize: z.number().nonnegative().optional(),
 });
 
-export const updateTournamentSchema = createTournamentSchema.partial();
+// Tournament validation schemas with refinements
+export const createTournamentSchema = baseTournamentSchema.refine(
+  (data) => {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    return endDate >= startDate;
+  },
+  {
+    message: "End date must be after or equal to start date",
+    path: ["endDate"],
+  }
+).refine(
+  (data) => {
+    const startDate = new Date(data.startDate);
+    const registrationCloseDate = new Date(data.registrationCloseDate);
+    return registrationCloseDate <= startDate;
+  },
+  {
+    message: "Registration close date must be before or equal to tournament start date",
+    path: ["registrationCloseDate"],
+  }
+);
+
+export const updateTournamentSchema = baseTournamentSchema.partial();
 
 // Player validation schemas
 export const createPlayerSchema = z.object({

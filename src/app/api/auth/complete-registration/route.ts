@@ -16,12 +16,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, role, username } = await request.json();
+    const { email, role, username, skillLevel } = await request.json();
 
     // Validate input
     if (!email || !username || !role) {
       return NextResponse.json(
         { message: "Email, username, and role are required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate skill level for PLAYER role
+    if (role === "PLAYER" && !skillLevel) {
+      return NextResponse.json(
+        { message: "Skill level is required for players" },
         { status: 400 }
       );
     }
@@ -52,8 +60,8 @@ export async function POST(request: NextRequest) {
       data: {
         username,
         role,
-        // Auto approve USER and PLAYER roles
-        isApproved: role === "USER" || role === "PLAYER",
+        // Set appropriate status based on role - only TOURNAMENT_ADMIN needs approval
+        status: role === "TOURNAMENT_ADMIN" ? "PENDING_APPROVAL" : "ACTIVE",
       },
     });
 
@@ -70,6 +78,15 @@ export async function POST(request: NextRequest) {
             userId: user.id,
             name: user.name || username,
             isActive: true,
+            skillLevel, // Store the player's skill level
+          },
+        });
+      } else {
+        // Update existing player with skill level
+        await prisma.player.update({
+          where: { userId: user.id },
+          data: {
+            skillLevel,
           },
         });
       }
@@ -124,7 +141,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         username: user.username,
         role: user.role,
-        isApproved: user.isApproved,
+        status: user.status,
       },
     });
   } catch (error) {

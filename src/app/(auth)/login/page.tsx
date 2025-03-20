@@ -1,11 +1,25 @@
 // src/app/(auth)/login/page.tsx
 "use client";
 
+import { Suspense } from "react";
 import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 export default function LoginRedirectPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-[#00a1e0]" />
+        <p className="mt-4">Loading...</p>
+      </div>
+    }>
+      <LoginRedirectContent />
+    </Suspense>
+  );
+}
+
+function LoginRedirectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 

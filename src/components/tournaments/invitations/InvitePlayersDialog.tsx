@@ -45,33 +45,22 @@ export default function InvitePlayersDialog({
   const [inviteCopied, setInviteCopied] = useState(false);
 
   const handleSendInvite = async () => {
-    if (!email) {
-      toast({
-        title: "Email Required",
-        description: "Please enter an email address to send the invitation.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+    if (!email) return;
+    
     setIsLoading(true);
-
+    
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/invitations`, {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({ email, role, message }),
-      // });
+      const response = await fetch(`/api/tournaments/${tournamentId}/invitations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, role, message }),
+      });
 
-      // if (!response.ok) {
-      //   throw new Error("Failed to send invitation");
-      // }
-
-      // Mock successful response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!response.ok) {
+        throw new Error("Failed to send invitation");
+      }
 
       toast({
         title: "Invitation Sent",
@@ -103,26 +92,20 @@ export default function InvitePlayersDialog({
     setIsLoading(true);
 
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/invitations/link`, {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({ role }),
-      // });
+      const response = await fetch(`/api/tournaments/${tournamentId}/invitations/link`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role }),
+      });
 
-      // if (!response.ok) {
-      //   throw new Error("Failed to generate invitation link");
-      // }
+      if (!response.ok) {
+        throw new Error("Failed to generate invitation link");
+      }
 
-      // const data = await response.json();
-      // setInviteLink(data.inviteLink);
-
-      // Mock successful response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const mockInviteLink = `https://matchup.com/tournaments/${tournamentId}/join?code=${Math.random().toString(36).substring(2, 10)}`;
-      setInviteLink(mockInviteLink);
+      const data = await response.json();
+      setInviteLink(data.inviteLink);
     } catch (error) {
       console.error("Error generating invitation link:", error);
       toast({

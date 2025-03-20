@@ -3,7 +3,73 @@ import { NextRequest, NextResponse } from "next/server";
 import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 import prisma from "@/lib/prisma";
-import { ContestStatus } from "@prisma/client";
+
+// Add this helper function to calculate player prices
+const getPlayerPrice = (skillLevel: string): number => {
+  switch (skillLevel) {
+    case 'A+':
+      return 12000;
+    case 'A':
+      return 11500;
+    case 'A-':
+      return 11000;
+    case 'B+':
+      return 10500;
+    case 'B':
+      return 10000;
+    case 'B-':
+      return 9500;
+    case 'C':
+      return 9000;
+    case 'D':
+      return 9000;
+    default:
+      return 9000;
+  }
+};
+
+// Fix for the contest creation data - removing currentEntries field
+interface ContestSettings {
+  name: string;
+  entryFee?: number;
+  totalPrize?: number;
+  maxEntries?: number;
+  description?: string;
+  prizeBreakdown?: Array<any>;
+  rules?: Record<string, any>;
+}
+
+interface TournamentData {
+  id: number;
+  startDate: Date | string;
+  endDate: Date | string;
+}
+
+interface FantasySettings {
+  fantasyPoints?: string;
+  autoPublish?: boolean;
+}
+
+const prepareContestData = (
+  contest: ContestSettings, 
+  tournament: TournamentData, 
+  settings: FantasySettings
+) => {
+  // Create contest data without invalid currentEntries field
+  return {
+    name: contest.name,
+    tournamentId: tournament.id,
+    entryFee: contest.entryFee || 0,
+    prizePool: contest.totalPrize || 0,
+    maxEntries: contest.maxEntries || 100,
+    startDate: new Date(tournament.startDate),
+    endDate: new Date(tournament.endDate),
+    status: "OPEN",
+    description: contest.description || ""
+    // Rules field is not in the database schema
+    // We'll need to create a ContestPrizeRule object instead
+  };
+};
 
 export async function POST(
   request: NextRequest,
@@ -74,8 +140,9 @@ export async function POST(
       }
     }
 
-    // Only tournament admin or master admin can configure fantasy settings
-    if (!["TOURNAMENT_ADMIN", "MASTER_ADMIN"].includes(user.role)) {
+    // Check for permissions
+    const allowedRoles = ["MASTER_ADMIN", "TOURNAMENT_ADMIN"];
+    if (!allowedRoles.includes(user.role)) {
       console.error("User role not authorized:", user.role);
       return NextResponse.json(
         {
@@ -85,94 +152,111 @@ export async function POST(
       );
     }
 
+    // Parse request body and log for debugging
     const settings = await request.json();
-    console.log("Received fantasy settings:", JSON.stringify(settings, null, 2));
+    console.log("Fantasy settings received:", JSON.stringify(settings, null, 2));
 
-    // Validate tournament exists
+    // Get the tournament
     const tournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      include: {
-        tournamentAdmin: true,
+      where: {
+        id: tournamentId,
       },
     });
 
     if (!tournament) {
-      console.error(`Tournament not found: ${tournamentId}`);
+      console.error(`Tournament with ID ${tournamentId} not found`);
       return NextResponse.json(
-        {
-          message: "Tournament not found",
-        },
+        { message: `Tournament with ID ${tournamentId} not found` },
         { status: 404 }
       );
     }
 
-    // Check if user is the tournament admin
-    if (
-      tournament.tournamentAdmin.userId !== user.id &&
-      user.role !== "MASTER_ADMIN"
-    ) {
-      console.error(`User ${user.id} not authorized for tournament ${tournamentId}`);
+    // Check if the tournament end date has passed
+    if (tournament.endDate < new Date()) {
+      console.error(`Tournament with ID ${tournamentId} has already ended and cannot be updated`);
       return NextResponse.json(
-        {
-          message:
-            "Not authorized to configure fantasy settings for this tournament",
-        },
-        { status: 403 }
+        { message: "Cannot update fantasy settings for a completed tournament" },
+        { status: 400 }
       );
     }
 
-    // Make sure enableFantasy is true if it exists in the settings
-    if (settings.enableFantasy !== undefined) {
-      settings.enableFantasy = Boolean(settings.enableFantasy);
-      console.log("Ensured enableFantasy is a boolean:", settings.enableFantasy);
-    }
-
-    // Store settings in a separate fantasySettings field in tournament table
-    // This prevents overwriting the rules field which might contain tournament rules
-    console.log("Storing fantasy settings separately in the database");
+    // Initialize variables for response
+    let fantasyEnabled = false;
+    let contestResults: any[] = [];
+    
+    // Update tournament's fantasy enabled flag
     try {
-      // Use executeRaw to update the fantasySettings field directly
-      // This avoids the type error since fantasySettings is not in the Prisma schema
-      const settingsJson = JSON.stringify({
-        enableFantasy: settings.enableFantasy,
-        fantasyPoints: settings.fantasyPoints,
-        autoPublish: settings.autoPublish,
-        customPoints: settings.customPoints
+      await prisma.tournament.update({
+        where: { id: tournamentId },
+        data: {
+          fantasySettings: JSON.stringify({
+            enableFantasy: settings.enableFantasy || false,
+            fantasyPoints: settings.fantasyPoints || "STANDARD",
+            autoPublish: settings.autoPublish || true,
+            customPoints: settings.customPoints || null,
+          }),
+        },
       });
       
-      await prisma.$executeRaw`
-        UPDATE \`Tournament\`
-        SET \`fantasySettings\` = ${settingsJson}
-        WHERE id = ${tournamentId}
-      `;
-      
-      console.log("Tournament fantasy settings updated successfully:", tournamentId);
+      fantasyEnabled = settings.enableFantasy || false;
+      console.log(`Tournament fantasy enabled: ${fantasyEnabled}`);
     } catch (updateError) {
       console.error("Error updating tournament fantasy settings:", updateError);
-      throw updateError;
+      return NextResponse.json(
+        { message: "Failed to update tournament fantasy settings" },
+        { status: 500 }
+      );
     }
-
-    // Create contests based on the contests array in settings
-    let contestResults = [];
     
-    if (settings.enableFantasy && settings.contests && Array.isArray(settings.contests) && settings.contests.length > 0) {
-      console.log(`Creating/updating ${settings.contests.length} fantasy contests...`);
-      console.log("Contest data sample:", JSON.stringify(settings.contests[0], null, 2));
+    // Process contests if they exist
+    if (settings.enableFantasy && Array.isArray(settings.contests) && settings.contests.length > 0) {
+      console.log(`Processing ${settings.contests.length} contests`);
       
-      // Use a transaction to ensure all contest operations are atomic
       try {
-        // First get existing contests to avoid duplicates
+        // Get existing contests for this tournament for update/create decisions
         const existingContests = await prisma.fantasyContest.findMany({
           where: { tournamentId },
-          select: { id: true, name: true }
+        });
+        console.log(`Found ${existingContests.length} existing contests`);
+        
+        // Validate contests before processing
+        const validationErrors: string[] = [];
+        settings.contests.forEach((contest: any, index: number) => {
+          if (!contest.name || contest.name.trim() === "") {
+            validationErrors.push(`Contest at index ${index} is missing a name`);
+          }
+          
+          // Validate prize breakdown
+          if (!contest.prizeBreakdown || !Array.isArray(contest.prizeBreakdown) || contest.prizeBreakdown.length === 0) {
+            validationErrors.push(`Contest "${contest.name || `#${index}`}" is missing a valid prize breakdown`);
+          } else {
+            const prizeSum = contest.prizeBreakdown.reduce((sum: number, prize: any) => sum + (prize.percentage || 0), 0);
+            if (Math.abs(prizeSum - 100) > 1) { // Allow for small rounding errors up to 1%
+              validationErrors.push(`Contest "${contest.name || `#${index}`}" prize breakdown sum is ${prizeSum.toFixed(2)}%, must be 100%`);
+            }
+          }
+          
+          // Validate numeric values
+          if (contest.entryFee !== undefined && (isNaN(contest.entryFee) || contest.entryFee < 0)) {
+            validationErrors.push(`Contest "${contest.name || `#${index}`}" has an invalid entry fee`);
+          }
+          
+          if (contest.maxEntries !== undefined && (isNaN(contest.maxEntries) || contest.maxEntries < 1)) {
+            validationErrors.push(`Contest "${contest.name || `#${index}`}" has an invalid max entries value`);
+          }
         });
         
-        console.log(`Found ${existingContests.length} existing contests for tournament ${tournamentId}`);
-        if (existingContests.length > 0) {
-          console.log("Existing contest names:", existingContests.map(c => c.name));
+        // If there are validation errors, return them all at once
+        if (validationErrors.length > 0) {
+          console.error("Contest validation errors:", validationErrors);
+          return NextResponse.json(
+            { 
+              message: "Contest validation failed", 
+              errors: validationErrors 
+            },
+            { status: 400 }
+          );
         }
-        
-        const existingContestNames = existingContests.map(c => c.name.toLowerCase());
         
         // Prepare all contest operations
         const contestOperations = settings.contests.map((contest: any) => {
@@ -220,24 +304,7 @@ export async function POST(
           }
           
           // Prepare contest data
-          const contestData = {
-            name: contest.name,
-            tournamentId,
-            entryFee: contest.entryFee || 0,
-            prizePool: contest.totalPrize || 0,
-            maxEntries: contest.maxEntries || 100,
-            currentEntries: 0,
-            startDate: new Date(tournament.startDate),
-            endDate: new Date(tournament.endDate),
-            status: "UPCOMING" as ContestStatus,
-            description: contest.description || "",
-            rules: JSON.stringify({
-              prizeBreakdown: contest.prizeBreakdown || [],
-              contestRules: contest.rules || {},
-              fantasyPoints: settings.fantasyPoints || "STANDARD",
-              autoPublish: settings.autoPublish || true,
-            }),
-          };
+          const contestData = prepareContestData(contest, tournament, settings);
           
           console.log("Contest data prepared:", JSON.stringify(contestData, null, 2));
           
@@ -266,19 +333,63 @@ export async function POST(
           for (const operation of contestOperations) {
             try {
               if (operation.type === 'create') {
+                // Remove the currentEntries field which isn't in the schema
+                const { currentEntries, ...cleanData } = operation.data;
+                
+                // Extract the original contest from settings to access rules data
+                const originalContest = settings.contests.find(
+                  (c: any) => c.name === operation.data.name
+                );
+                
+                // Create the fantasy contest
                 const newContest = await tx.fantasyContest.create({
-                  data: operation.data
+                  data: cleanData
                 });
                 console.log("Contest created successfully:", newContest.id);
+                
+                // Now create the ContestPrizeRule with the rules
+                if (originalContest) {
+                  try {
+                    const prizeRule = await tx.contestPrizeRule.create({
+                      data: {
+                        tournamentId: tournamentId,
+                        contestId: newContest.id,
+                      }
+                    });
+                    console.log("Prize rule created for contest:", prizeRule.id);
+                    
+                    // Create prize distribution rules if prizeBreakdown is provided
+                    if (originalContest.prizeBreakdown && originalContest.prizeBreakdown.length > 0) {
+                      for (const prize of originalContest.prizeBreakdown) {
+                        await tx.prizeDistributionRule.create({
+                          data: {
+                            tournamentId: tournamentId,
+                            contestPrizeRuleId: prizeRule.id,
+                            position: prize.position,
+                            percentage: prize.percentage,
+                            minPosition: prize.position,
+                            maxPosition: prize.position
+                          }
+                        });
+                      }
+                      console.log(`Created ${originalContest.prizeBreakdown.length} prize distribution rules`);
+                    }
+                  } catch (ruleError) {
+                    console.error("Error creating prize rules:", ruleError);
+                  }
+                }
+                
                 results.push({ 
                   id: newContest.id, 
                   name: newContest.name, 
                   created: true 
                 });
               } else if (operation.type === 'update') {
+                // Remove the currentEntries field which isn't in the schema
+                const { currentEntries, ...cleanData } = operation.data;
                 const updatedContest = await tx.fantasyContest.update({
                   where: { id: operation.id },
-                  data: operation.data
+                  data: cleanData
                 });
                 console.log("Contest updated successfully:", updatedContest.id);
                 results.push({ 

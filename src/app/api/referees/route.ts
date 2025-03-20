@@ -89,11 +89,13 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    console.log("Creating new referee...");
+    
     // TEMPORARY: Skip authentication in development mode
     let user;
     if (process.env.NODE_ENV === 'development') {
       console.log("⚠️ DEVELOPMENT MODE: Bypassing auth for referee creation");
-      // Mock user with admin privileges
+      // Mock user with admin privileges - no need for actual user check
       user = { role: "MASTER_ADMIN", id: 1 };
     } else {
       // Check authentication and authorization
@@ -115,9 +117,11 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json();
+    console.log("Referee creation data:", data);
     
     // Validate required fields
     if (!data.userId) {
+      console.error("Missing userId in referee creation");
       return NextResponse.json(
         { message: "User ID is required" },
         { status: 400 }
@@ -130,11 +134,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (!existingUser) {
+      console.error(`User with ID ${data.userId} not found`);
       return NextResponse.json(
         { message: `User with ID ${data.userId} not found` },
         { status: 404 }
       );
     }
+
+    console.log(`Found user for referee creation: ${existingUser.id}, ${existingUser.email}, role: ${existingUser.role}`);
 
     // Update user role if they are not already a referee
     if (existingUser.role !== "REFEREE") {
@@ -168,7 +175,16 @@ export async function POST(request: NextRequest) {
     console.log(`Created new referee: ${referee.id} for user: ${existingUser.id}`);
 
     return NextResponse.json(referee);
-  } catch (error) {
-    return errorHandler(error as Error, request);
+  } catch (error: any) {
+    console.error("Error creating referee:", error);
+    return NextResponse.json(
+      { 
+        message: "Failed to create referee", 
+        error: error.message,
+        details: error.toString(),
+        stack: error.stack
+      },
+      { status: 500 }
+    );
   }
 } 

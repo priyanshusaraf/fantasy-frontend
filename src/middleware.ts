@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { LRUCache } from 'lru-cache';
 import { addSecurityHeaders } from './utils/security';
+import { env } from '@/lib/env';
 
 // Rate limiting implementation (inlined to avoid module resolution issues)
 type RateLimitOptions = {
@@ -37,19 +38,23 @@ function createRateLimiter(options: RateLimitOptions) {
 
 // Public paths that don't require authentication
 const publicPaths = [
-  "/api/auth/login",
-  "/api/auth/register",
-  "/api/auth/reset-password",
-  "/api/auth/[...nextauth]",
+  "/api/auth",
+  "/auth",
   "/api/webhooks"
 ];
 
 // Allowed origins
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
   'https://final-fantasy-app.vercel.app',
-  // Add your production domains here
 ];
+
+// Add NEXTAUTH_URL to allowed origins if it exists and is not already included
+if (process.env.NEXTAUTH_URL && !allowedOrigins.includes(process.env.NEXTAUTH_URL)) {
+  allowedOrigins.push(process.env.NEXTAUTH_URL);
+}
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
@@ -62,7 +67,7 @@ export async function middleware(request: NextRequest) {
   addSecurityHeaders(response);
   
   // Add CORS headers if origin is allowed or in development
-  if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+  if (origin && (allowedOrigins.includes(origin) || env.NODE_ENV === 'development')) {
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -76,7 +81,7 @@ export async function middleware(request: NextRequest) {
   
   // Skip middleware for non-API routes and public paths
   if (!path.startsWith('/api') || 
-      publicPaths.some(publicPath => path.startsWith(publicPath))) {
+      publicPaths.some(publicPath => path.startsWith(publicPath) || path === publicPath)) {
     return response;
   }
   
@@ -104,7 +109,7 @@ export async function middleware(request: NextRequest) {
     addSecurityHeaders(errorResponse);
     
     // Add CORS headers to error response
-    if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+    if (origin && (allowedOrigins.includes(origin) || env.NODE_ENV === 'development')) {
       errorResponse.headers.set('Access-Control-Allow-Origin', origin);
     }
     
@@ -112,7 +117,7 @@ export async function middleware(request: NextRequest) {
   }
   
   // Get the session token
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getToken({ req: request, secret: env.NEXTAUTH_SECRET });
   
   // If no token and endpoint requires authentication
   if (!token) {
@@ -125,7 +130,7 @@ export async function middleware(request: NextRequest) {
     addSecurityHeaders(errorResponse);
     
     // Add CORS headers to error response
-    if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+    if (origin && (allowedOrigins.includes(origin) || env.NODE_ENV === 'development')) {
       errorResponse.headers.set('Access-Control-Allow-Origin', origin);
     }
     
@@ -133,7 +138,8 @@ export async function middleware(request: NextRequest) {
   }
   
   // Role-based access control checks
-  if (path.startsWith('/api/admin') && token.role !== 'MASTER_ADMIN') {
+  if (path.startsWith('/api/admin') && 
+      !['MASTER_ADMIN', 'TOURNAMENT_ADMIN'].includes(token.role as string)) {
     const errorResponse = NextResponse.json(
       { error: 'Access denied' },
       { status: 403 }
@@ -143,7 +149,7 @@ export async function middleware(request: NextRequest) {
     addSecurityHeaders(errorResponse);
     
     // Add CORS headers to error response
-    if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+    if (origin && (allowedOrigins.includes(origin) || env.NODE_ENV === 'development')) {
       errorResponse.headers.set('Access-Control-Allow-Origin', origin);
     }
     
@@ -161,7 +167,7 @@ export async function middleware(request: NextRequest) {
     addSecurityHeaders(errorResponse);
     
     // Add CORS headers to error response
-    if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+    if (origin && (allowedOrigins.includes(origin) || env.NODE_ENV === 'development')) {
       errorResponse.headers.set('Access-Control-Allow-Origin', origin);
     }
     
@@ -174,6 +180,6 @@ export async function middleware(request: NextRequest) {
 // Configure which routes use this middleware
 export const config = {
   matcher: [
-    '/api/:path*',
+    '/api/((?!auth|webhooks).*)',
   ],
 }; 

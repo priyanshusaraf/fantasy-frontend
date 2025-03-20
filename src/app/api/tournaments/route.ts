@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
         description,
         type,
         isTeamBased: isTeamBased || false,
-        status: 'DRAFT',
+        status: 'IN_PROGRESS',
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         registrationOpenDate: new Date(registrationOpenDate),

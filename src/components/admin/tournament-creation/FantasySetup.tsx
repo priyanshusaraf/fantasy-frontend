@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import { Plus, Trash2, CopyPlus } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
 
 // UI Components
 import {
@@ -84,12 +85,65 @@ export default function FantasySetup() {
       teamSize: 5,
     },
   });
+  const [existingContests, setExistingContests] = useState<any[]>([]);
   
   const contests = watch("fantasy.contests") || [];
   const enableFantasy = watch("fantasy.enableFantasy");
+  const tournamentId = getValues('id');
   
   // Add logging to see what values are being used
   const fantasyValues = watch("fantasy");
+  
+  // Fetch existing contests when component loads or tournamentId changes
+  useEffect(() => {
+    if (tournamentId) {
+      fetchExistingContests();
+    }
+  }, [tournamentId]);
+
+  // Also listen for the success toast that indicates form submission was successful
+  useEffect(() => {
+    // Add event listener for successful form submission
+    const handleSuccessEvent = () => {
+      if (tournamentId) {
+        console.log("Form submission success detected - fetching contests...");
+        // Add slight delay to ensure backend has processed the data
+        setTimeout(fetchExistingContests, 500);
+      }
+    };
+
+    // Listen for the custom success event or toast event
+    window.addEventListener('fantasy-settings-saved', handleSuccessEvent);
+    
+    return () => {
+      window.removeEventListener('fantasy-settings-saved', handleSuccessEvent);
+    };
+  }, [tournamentId]);
+
+  // Function to fetch existing contests from API
+  const fetchExistingContests = async () => {
+    if (!tournamentId) return;
+    
+    try {
+      console.log(`Fetching existing contests for tournament ${tournamentId}`);
+      const timestamp = Date.now();
+      const response = await fetch(`/api/tournaments/${tournamentId}/fantasy-contests?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Fetched contests:", data.contests);
+        setExistingContests(data.contests || []);
+      } else {
+        console.error("Failed to fetch contests:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching contests:", error);
+    }
+  };
+  
   useEffect(() => {
     console.log("Fantasy values in FantasySetup:", fantasyValues);
     console.log("Contests in FantasySetup:", fantasyValues?.contests || []);
@@ -100,24 +154,47 @@ export default function FantasySetup() {
     }
   }, [fantasyValues]);
   
+  const refreshContests = async () => {
+    // Force refresh of contests by calling the API with cache-busting
+    console.log("Refreshing fantasy contests list");
+    
+    try {
+      await fetchExistingContests();
+      console.log("Successfully refreshed contests data");
+      
+      // Trigger a refresh event using CustomEvent API
+      if (typeof window !== 'undefined') {
+        console.log("FantasySetup refreshContests: Dispatching fantasy-contest-updated event");
+        const refreshEvent = new CustomEvent('fantasy-contest-updated');
+        window.dispatchEvent(refreshEvent);
+      }
+    } catch (error) {
+      console.error("Error refreshing contests data:", error);
+    }
+  };
+  
   // Handle adding a new contest
   const handleAddContest = () => {
-    if (!newContest.name) {
+    // Validate the new contest
+    if (!newContest.name || newContest.name.trim() === '') {
       console.error("Contest name is required");
+      toast({
+        title: "Error",
+        description: "Contest name is required",
+        variant: "destructive"
+      });
       return;
     }
-    
-    console.log("Adding new contest:", JSON.stringify(newContest, null, 2));
-    
-    // Ensure all required fields are set with defaults if needed
-    const contestToAdd = {
+
+    // Create a new contest object with a unique ID and ensure all required fields are present
+    const newContestWithId: ContestTemplate = {
       ...newContest,
       id: `contest-${Date.now()}`,
+      name: newContest.name.trim(),
       entryFee: newContest.entryFee || 0,
       maxEntries: newContest.maxEntries || 100,
       totalPrize: newContest.totalPrize || 0,
-      description: newContest.description || `Contest for ${newContest.name}`,
-      // Ensure prize breakdown exists
+      // Ensure prize breakdown exists and is valid
       prizeBreakdown: newContest.prizeBreakdown?.length > 0 
         ? newContest.prizeBreakdown 
         : [{ position: 1, percentage: 100 }],
@@ -126,21 +203,22 @@ export default function FantasySetup() {
         captainMultiplier: newContest.rules?.captainMultiplier || 2,
         viceCaptainMultiplier: newContest.rules?.viceCaptainMultiplier || 1.5,
         teamSize: newContest.rules?.teamSize || 5,
-        maxPlayersPerTeam: newContest.rules?.maxPlayersPerTeam || 3,
-        maxPlayersFromSameTeam: newContest.rules?.maxPlayersFromSameTeam || 3,
-        substitutionsAllowed: newContest.rules?.substitutionsAllowed || 0,
+        maxPlayersPerTeam: newContest.rules?.maxPlayersPerTeam,
+        maxPlayersFromSameTeam: newContest.rules?.maxPlayersFromSameTeam,
+        substitutionsAllowed: newContest.rules?.substitutionsAllowed
       }
     };
-    
-    console.log("Contest prepared for saving:", JSON.stringify(contestToAdd, null, 2));
-    
-    const updatedContests = [...(getValues("fantasy.contests") || [])];
-    updatedContests.push(contestToAdd);
-    
-    console.log("Updated contests array:", JSON.stringify(updatedContests, null, 2));
-    setValue("fantasy.contests", updatedContests);
-    
-    // Reset the form
+
+    // Get current contests array
+    const currentContests = getValues("fantasy.contests") || [];
+
+    // Add the new contest
+    setValue("fantasy.contests", [...currentContests, newContestWithId]);
+
+    // Close the dialog and reset the form
+    setShowAddContestDialog(false);
+
+    // Reset the new contest form
     setNewContest({
       name: "",
       entryFee: 0,
@@ -153,14 +231,17 @@ export default function FantasySetup() {
         teamSize: 5,
       },
     });
-    setShowAddContestDialog(false);
     
-    // Log the current fantasy values after update
-    setTimeout(() => {
-      const currentValues = getValues("fantasy");
-      console.log("Fantasy values after adding contest:", currentValues);
-      console.log("Number of contests after adding:", (currentValues.contests || []).length);
-    }, 100);
+    // Dispatch custom event to trigger refresh of contest lists on any open pages
+    if (typeof window !== 'undefined') {
+      console.log("FantasySetup: Dispatching fantasy-contest-updated event");
+      window.dispatchEvent(new Event('fantasy-contest-updated'));
+    }
+    
+    // Force refresh contests if there's an ID (meaning it's an existing tournament)
+    if (getValues('id')) {
+      refreshContests();
+    }
   };
   
   // Handle removing a contest
@@ -243,6 +324,55 @@ export default function FantasySetup() {
     
     const sum = newContest.prizeBreakdown.reduce((total, item) => total + item.percentage, 0);
     return Math.abs(sum - 100) < 0.01; // Allow for small floating-point errors
+  };
+
+  // Update contest template data
+  const handleTemplateChange = (index: number, field: string, value: any) => {
+    try {
+      // Validate and clean input values based on field
+      let cleanedValue = value;
+      
+      if (field === 'entryFee') {
+        // Ensure entry fee is a valid non-negative number
+        const numValue = parseFloat(value);
+        cleanedValue = !isNaN(numValue) && numValue >= 0 ? numValue : 0;
+      } else if (field === 'maxEntries') {
+        // Ensure max entries is a valid positive integer
+        const numValue = parseInt(value);
+        cleanedValue = !isNaN(numValue) && numValue > 0 ? numValue : 1;
+      } else if (field === 'totalPrize') {
+        // Ensure total prize is a valid non-negative number
+        const numValue = parseFloat(value);
+        cleanedValue = !isNaN(numValue) && numValue >= 0 ? numValue : 0;
+      }
+      
+      // Get current contests array (safely)
+      const currentContests = Array.isArray(contests) ? [...contests] : [];
+      if (!currentContests[index]) {
+        console.error(`Contest at index ${index} does not exist`);
+        return;
+      }
+      
+      // Update the specified field
+      const updatedContests = [...currentContests];
+      updatedContests[index] = {
+        ...updatedContests[index],
+        [field]: cleanedValue,
+      };
+      
+      setValue("fantasy.contests", updatedContests);
+      
+      // Log the change for debugging
+      console.log(`Updated ${field} to ${cleanedValue} for contest at index ${index}`);
+    } catch (error) {
+      console.error(`Error in handleTemplateChange:`, error);
+      // Show error in toast
+      toast({
+        title: "Error",
+        description: "Failed to update contest data",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -426,40 +556,54 @@ export default function FantasySetup() {
                         />
                       </div>
                       
-                      <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="entry-fee" className="text-right">Entry Fee (₹)</Label>
-                        <Input
-                          id="entry-fee"
-                          type="number"
-                          min={0}
-                          value={newContest.entryFee}
-                          onChange={(e) => setNewContest({...newContest, entryFee: parseFloat(e.target.value) || 0})}
-                          className="col-span-3"
-                        />
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <Label htmlFor="entry-fee">Entry Fee</Label>
+                          <Input
+                            id="entry-fee"
+                            type="number"
+                            min="0"
+                            value={newContest.entryFee}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = parseFloat(value);
+                              // Ensure it's a valid non-negative number
+                              const validValue = !isNaN(numValue) && numValue >= 0 ? numValue : 0;
+                              
+                              setNewContest({
+                                ...newContest, 
+                                entryFee: validValue
+                              });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="max-entries">Max Entries</Label>
+                          <Input
+                            id="max-entries"
+                            type="number"
+                            min="1"
+                            value={newContest.maxEntries}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = parseInt(value);
+                              // Ensure it's a valid positive integer
+                              const validValue = !isNaN(numValue) && numValue > 0 ? numValue : 1;
+                              
+                              setNewContest({
+                                ...newContest, 
+                                maxEntries: validValue
+                              });
+                            }}
+                          />
+                        </div>
                       </div>
                       
-                      <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="max-entries" className="text-right">Max Entries</Label>
-                        <Input
-                          id="max-entries"
-                          type="number"
-                          min={1}
-                          value={newContest.maxEntries}
-                          onChange={(e) => setNewContest({...newContest, maxEntries: parseInt(e.target.value) || 0})}
-                          className="col-span-3"
-                        />
-                      </div>
-                      
-                      <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="total-prize" className="text-right">Total Prize (₹)</Label>
-                        <Input
-                          id="total-prize"
-                          type="number"
-                          min={0}
-                          value={newContest.totalPrize}
-                          onChange={(e) => setNewContest({...newContest, totalPrize: parseFloat(e.target.value) || 0})}
-                          className="col-span-3"
-                        />
+                      <div className="mb-4">
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Prize pool will be calculated dynamically as 77.64% of all entry fees collected.
+                          It will update automatically as users register for the contest.
+                        </p>
                       </div>
                       
                       <div className="grid grid-cols-4 items-start gap-4">
@@ -648,7 +792,8 @@ export default function FantasySetup() {
               </Dialog>
             </div>
             
-            {contests.length > 0 ? (
+            {/* Display either form contests (for new tournaments) or existing contests from API (for existing tournaments) */}
+            {(contests.length > 0 || existingContests.length > 0) ? (
               <div className="border rounded-md">
                 <Table>
                   <TableHeader>
@@ -661,8 +806,9 @@ export default function FantasySetup() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {/* Display form contests (for new tournaments) */}
                     {contests.map((contest: ContestTemplate, index: number) => (
-                      <TableRow key={contest.id || index}>
+                      <TableRow key={`form-${contest.id || index}`}>
                         <TableCell className="font-medium">{contest.name}</TableCell>
                         <TableCell>₹{Number(contest.entryFee).toFixed(2)}</TableCell>
                         <TableCell>₹{Number(contest.totalPrize).toFixed(2)}</TableCell>
@@ -684,6 +830,30 @@ export default function FantasySetup() {
                               title="Delete"
                             >
                               <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    
+                    {/* Display existing API contests (for existing tournaments) */}
+                    {existingContests.map((contest: any) => (
+                      <TableRow key={`api-${contest.id}`}>
+                        <TableCell className="font-medium">{contest.name}</TableCell>
+                        <TableCell>₹{Number(contest.entryFee).toFixed(2)}</TableCell>
+                        <TableCell>₹{Number(contest.prizePool).toFixed(2)}</TableCell>
+                        <TableCell>{contest.maxEntries}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              title="View Contest"
+                              onClick={() => window.open(`/fantasy/contests/${contest.id}`, '_blank')}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                              </svg>
                             </Button>
                           </div>
                         </TableCell>

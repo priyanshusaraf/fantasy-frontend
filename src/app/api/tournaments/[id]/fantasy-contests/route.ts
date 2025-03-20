@@ -108,18 +108,56 @@ export async function POST(
         entryFee: entryFee || 0,
         prizePool: prizePool || 0,
         maxEntries: maxEntries || 100,
-        currentEntries: 0,
         startDate: startDate
           ? new Date(startDate)
           : new Date(tournament.startDate),
         endDate: endDate ? new Date(endDate) : new Date(tournament.endDate),
-        status: "UPCOMING",
+        status: "OPEN",
         tournament: {
           connect: { id: tournamentId },
         },
-        rules: rules || "{}",
       },
     });
+    
+    // Now create the ContestPrizeRule
+    if (contest) {
+      try {
+        const prizeRule = await prisma.contestPrizeRule.create({
+          data: {
+            tournamentId: tournamentId,
+            contestId: contest.id,
+          }
+        });
+        
+        // Parse and store prize distribution rules if provided
+        if (rules) {
+          let rulesObj;
+          try {
+            rulesObj = typeof rules === 'string' ? JSON.parse(rules) : rules;
+          } catch (e) {
+            console.error("Error parsing rules JSON:", e);
+            rulesObj = {};
+          }
+          
+          if (rulesObj.prizeBreakdown && Array.isArray(rulesObj.prizeBreakdown)) {
+            for (const prize of rulesObj.prizeBreakdown) {
+              await prisma.prizeDistributionRule.create({
+                data: {
+                  tournamentId: tournamentId,
+                  contestPrizeRuleId: prizeRule.id,
+                  position: prize.position,
+                  percentage: prize.percentage,
+                  minPosition: prize.position,
+                  maxPosition: prize.position
+                }
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error creating prize rules:", error);
+      }
+    }
 
     return NextResponse.json(contest, { status: 201 });
   } catch (error) {

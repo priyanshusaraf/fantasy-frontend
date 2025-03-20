@@ -39,19 +39,23 @@ export default function RegistrationCallback() {
           return;
         }
 
-        const { role, username } = JSON.parse(storedData);
+        const { role, username, skillLevel } = JSON.parse(storedData);
 
         if (session?.user?.email && role && username) {
+          // Include skillLevel in the request if role is PLAYER
+          const requestBody = {
+            email: session.user.email,
+            role,
+            username,
+            ...(role === "PLAYER" && skillLevel ? { skillLevel } : {})
+          };
+          
           const response = await fetch("/api/auth/complete-registration", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              email: session.user.email,
-              role,
-              username,
-            }),
+            body: JSON.stringify(requestBody),
           });
 
           if (!response.ok) {
@@ -72,7 +76,7 @@ export default function RegistrationCallback() {
 
           // Redirect after a delay
           setTimeout(() => {
-            if (role === "REFEREE" || role === "TOURNAMENT_ADMIN") {
+            if (data.user.status === "PENDING_APPROVAL") {
               router.push("/approval-pending");
             } else {
               router.push("/dashboard");

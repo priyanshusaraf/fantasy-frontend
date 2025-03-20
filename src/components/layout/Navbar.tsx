@@ -14,7 +14,8 @@ import {
   X,
   Bell,
   LogOut,
-  Clock
+  Clock,
+  TrendingUp
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -76,8 +77,8 @@ export default function Navbar() {
               </Button>
             </Link>
             <Link href="/leaderboard" passHref>
-              <Button variant="ghost" size="sm" className="flex items-center gap-1.5">
-                <Award className="h-4 w-4" />
+              <Button variant="ghost" className="hidden md:flex">
+                <TrendingUp className="h-4 w-4 mr-2" />
                 <span>Leaderboard</span>
               </Button>
             </Link>
@@ -179,7 +180,7 @@ export default function Navbar() {
             </Link>
             <Link href="/leaderboard" passHref>
               <Button variant="ghost" size="sm" className="w-full justify-start">
-                <Award className="h-4 w-4 mr-2" />
+                <TrendingUp className="h-4 w-4 mr-2" />
                 <span>Leaderboard</span>
               </Button>
             </Link>

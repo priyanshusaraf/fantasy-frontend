@@ -1,10 +1,33 @@
 // src/app/api/players/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { PlayerService } from "@/lib/services/player-service";
-import { adminMiddleware } from "@/middleware/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth/config";
 
 interface Params {
   id: string;
+}
+
+// Helper function to check if user is admin
+async function checkAdminStatus(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  
+  if (!session?.user) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  // Check if user is an admin
+  if (
+    session.user.role !== "MASTER_ADMIN" &&
+    session.user.role !== "TOURNAMENT_ADMIN"
+  ) {
+    return NextResponse.json(
+      { message: "Insufficient permissions" },
+      { status: 403 }
+    );
+  }
+
+  return NextResponse.json({ status: "ok" }, { status: 200 });
 }
 
 export async function GET(
@@ -46,7 +69,7 @@ export async function PUT(
 ) {
   try {
     // Only admins can update players
-    const authResponse = await adminMiddleware(request);
+    const authResponse = await checkAdminStatus(request);
     if (authResponse.status !== 200) {
       return authResponse;
     }
@@ -89,7 +112,7 @@ export async function DELETE(
 ) {
   try {
     // Only admins can delete players
-    const authResponse = await adminMiddleware(request);
+    const authResponse = await checkAdminStatus(request);
     if (authResponse.status !== 200) {
       return authResponse;
     }

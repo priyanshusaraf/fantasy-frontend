@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import {
@@ -13,12 +13,26 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/Input";
 import { signIn } from "next-auth/react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+// Player skill levels from the database schema
+const PLAYER_SKILL_LEVELS = [
+  { value: "A_PLUS", label: "A+" },
+  { value: "A", label: "A" },
+  { value: "A_MINUS", label: "A-" },
+  { value: "B_PLUS", label: "B+" },
+  { value: "B", label: "B" },
+  { value: "B_MINUS", label: "B-" },
+  { value: "C", label: "C" },
+  { value: "D", label: "D" },
+];
 
 export default function PreRegistrationForm() {
   const [role, setRole] = useState("USER");
   const [username, setUsername] = useState("");
+  const [skillLevel, setSkillLevel] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -36,15 +50,21 @@ export default function PreRegistrationForm() {
       return;
     }
 
+    if (role === "PLAYER" && !skillLevel) {
+      setError("Please select your skill level");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
-    // Store the role and username in localStorage
+    // Store the role, username and skill level in localStorage
     localStorage.setItem(
       "pendingRegistration",
       JSON.stringify({
         role,
         username,
+        skillLevel: role === "PLAYER" ? skillLevel : undefined,
       })
     );
 
@@ -59,20 +79,29 @@ export default function PreRegistrationForm() {
       setIsLoading(false);
     }
   };
+  
+  const handleRoleChange = (value: string) => {
+    if (!isLoading) {
+      setRole(value);
+      if (value !== "PLAYER") {
+        setSkillLevel("");
+      }
+    }
+  };
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold text-center text-[#00a1e0]">
+    <Card className="border-0 bg-gray-900 text-white rounded-xl overflow-hidden">
+      <CardHeader className="text-center pb-2">
+        <CardTitle className="text-2xl font-bold text-[#0dc5c1]">
           Create Account
         </CardTitle>
-        <CardDescription className="text-center">
+        <CardDescription className="text-gray-400">
           Select your account type before continuing with Google
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="py-4">
         {error && (
-          <Alert variant="destructive" className="mb-4">
+          <Alert variant="destructive" className="mb-4 bg-red-900/40 border-red-800">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -80,7 +109,7 @@ export default function PreRegistrationForm() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username" className="text-white font-medium">Username</Label>
             <Input
               id="username"
               value={username}
@@ -88,102 +117,112 @@ export default function PreRegistrationForm() {
               placeholder="Enter a username"
               required
               disabled={isLoading}
+              className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-400">
               This will be your display name in the app
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label>Account Type</Label>
+          <div className="space-y-3">
+            <Label className="text-white font-medium">Account Type</Label>
             <RadioGroup
               value={role}
-              onValueChange={setRole}
-              className="space-y-2"
+              onValueChange={handleRoleChange}
+              className="space-y-3"
               disabled={isLoading}
             >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="USER" id="user" />
-                <Label htmlFor="user" className="cursor-pointer">
+              <label 
+                className={`flex items-center space-x-2 p-3 rounded-md bg-gray-800 border ${role === "USER" ? "border-[#3b82f6]" : "border-gray-700"} cursor-pointer hover:bg-gray-700 transition-colors`}
+                htmlFor="user-option"
+              >
+                <RadioGroupItem value="USER" id="user-option" className="border-[#3b82f6] text-[#3b82f6]" />
+                <span className="font-medium text-white flex-grow">
                   Fantasy Player
-                </Label>
-                <span className="text-xs text-green-600 ml-2">
-                  (Instantly approved)
                 </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="PLAYER" id="player" />
-                <Label htmlFor="player" className="cursor-pointer">
+              </label>
+
+              <label 
+                className={`flex items-center space-x-2 p-3 rounded-md bg-gray-800 border ${role === "PLAYER" ? "border-[#3b82f6]" : "border-gray-700"} cursor-pointer hover:bg-gray-700 transition-colors`}
+                htmlFor="player-option"
+              >
+                <RadioGroupItem value="PLAYER" id="player-option" className="border-[#3b82f6] text-[#3b82f6]" />
+                <span className="font-medium text-white flex-grow">
                   Tournament Player
-                </Label>
-                <span className="text-xs text-green-600 ml-2">
-                  (Instantly approved)
                 </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="REFEREE" id="referee" />
-                <Label htmlFor="referee" className="cursor-pointer">
+              </label>
+
+              <label 
+                className={`flex items-center space-x-2 p-3 rounded-md bg-gray-800 border ${role === "REFEREE" ? "border-[#3b82f6]" : "border-gray-700"} cursor-pointer hover:bg-gray-700 transition-colors`}
+                htmlFor="referee-option"
+              >
+                <RadioGroupItem value="REFEREE" id="referee-option" className="border-[#3b82f6] text-[#3b82f6]" />
+                <span className="font-medium text-white flex-grow">
                   Referee
-                </Label>
-                <span className="text-xs text-amber-600 ml-2">
-                  (Requires approval)
                 </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem
-                  value="TOURNAMENT_ADMIN"
-                  id="tournament-admin"
-                />
-                <Label htmlFor="tournament-admin" className="cursor-pointer">
+              </label>
+
+              <label 
+                className={`flex items-center space-x-2 p-3 rounded-md bg-gray-800 border ${role === "TOURNAMENT_ADMIN" ? "border-[#3b82f6]" : "border-gray-700"} cursor-pointer hover:bg-gray-700 transition-colors`}
+                htmlFor="admin-option"
+              >
+                <RadioGroupItem value="TOURNAMENT_ADMIN" id="admin-option" className="border-[#3b82f6] text-[#3b82f6]" />
+                <span className="font-medium text-white flex-grow">
                   Tournament Admin
-                </Label>
-                <span className="text-xs text-amber-600 ml-2">
-                  (Requires approval)
                 </span>
-              </div>
+                <span className="text-xs text-amber-500 ml-auto px-2 py-0.5 bg-amber-900/20 rounded-full">
+                  Requires approval
+                </span>
+              </label>
             </RadioGroup>
 
-            {(role === "REFEREE" || role === "TOURNAMENT_ADMIN") && (
+            {role === "TOURNAMENT_ADMIN" && (
               <Alert
-                variant="warning"
-                className="mt-2 bg-amber-50 border-amber-200"
+                className="mt-2 border-amber-800 bg-amber-900/20"
               >
-                <AlertCircle className="h-4 w-4 text-amber-600" />
-                <AlertDescription className="text-amber-800">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <AlertDescription className="text-amber-400">
                   This role requires administrator approval before you can
                   access all features.
                 </AlertDescription>
               </Alert>
             )}
+            
+            {/* Show skill level dropdown if PLAYER is selected */}
+            {role === "PLAYER" && (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="skillLevel" className="text-white font-medium">Skill Level</Label>
+                <Select
+                  value={skillLevel}
+                  onValueChange={setSkillLevel}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger id="skillLevel" className="bg-gray-800 border-gray-700 text-white">
+                    <SelectValue placeholder="Select your skill level" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-700">
+                    {PLAYER_SKILL_LEVELS.map((level) => (
+                      <SelectItem key={level.value} value={level.value} className="text-white">
+                        {level.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400">
+                  This will be used for matchmaking and tournament categories
+                </p>
+              </div>
+            )}
           </div>
 
           <Button
             type="submit"
-            className="w-full bg-[#00a1e0] hover:bg-[#0072a3]"
+            className="w-full bg-gradient-to-r from-[#3b82f6] to-[#0dc5c1] hover:opacity-90 text-white py-5 rounded-md"
             disabled={isLoading}
           >
             {isLoading ? (
               <>
-                <svg
-                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Processing...
               </>
             ) : (
@@ -218,7 +257,7 @@ export default function PreRegistrationForm() {
           </Button>
         </form>
       </CardContent>
-      <CardFooter className="text-center text-xs text-gray-500">
+      <CardFooter className="text-center text-sm text-gray-400 border-t border-gray-800 pt-4 px-8 pb-6">
         By continuing, you agree to our Terms of Service and Privacy Policy
       </CardFooter>
     </Card>

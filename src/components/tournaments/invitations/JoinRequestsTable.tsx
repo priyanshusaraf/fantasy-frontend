@@ -60,58 +60,12 @@ export default function JoinRequestsTable({
   const fetchJoinRequests = async () => {
     setLoading(true);
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/join-requests`);
-      // if (!response.ok) {
-      //   throw new Error("Failed to fetch join requests");
-      // }
-      // const data = await response.json();
-      // setJoinRequests(data);
-
-      // Mock data for demonstration
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const mockRequests: JoinRequest[] = [
-        {
-          id: 1,
-          userId: 101,
-          user: {
-            id: 101,
-            username: "johndoe",
-            email: "john.doe@example.com",
-          },
-          role: "PLAYER",
-          status: "PENDING",
-          message: "I'd like to join this tournament as a player.",
-          createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: 2,
-          userId: 102,
-          user: {
-            id: 102,
-            username: "sarahjones",
-            email: "sarah.jones@example.com",
-          },
-          role: "REFEREE",
-          status: "PENDING",
-          message: "I'm an experienced referee and would like to officiate matches in this tournament.",
-          createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: 3,
-          userId: 103,
-          user: {
-            id: 103,
-            username: "mikebrown",
-            email: "mike.brown@example.com",
-          },
-          role: "PLAYER",
-          status: "PENDING",
-          message: null,
-          createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ];
-      setJoinRequests(mockRequests);
+      const response = await fetch(`/api/tournaments/${tournamentId}/join-requests`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch join requests");
+      }
+      const data = await response.json();
+      setJoinRequests(data);
     } catch (error) {
       console.error("Error fetching join requests:", error);
       toast({
@@ -147,25 +101,21 @@ export default function JoinRequestsTable({
     setProcessingId(selectedRequest.id);
 
     try {
-      // In a real implementation, this would be an API call
-      // const response = await fetch(`/api/tournaments/${tournamentId}/join-requests`, {
-      //   method: "PUT",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({
-      //     requestId: selectedRequest.id,
-      //     status: action === "APPROVE" ? "APPROVED" : "REJECTED",
-      //     feedback,
-      //   }),
-      // });
+      const response = await fetch(`/api/tournaments/${tournamentId}/join-requests`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: selectedRequest.id,
+          status: action === "APPROVE" ? "APPROVED" : "REJECTED",
+          feedback,
+        }),
+      });
 
-      // if (!response.ok) {
-      //   throw new Error(`Failed to ${action.toLowerCase()} join request`);
-      // }
-
-      // Mock successful response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!response.ok) {
+        throw new Error(`Failed to ${action.toLowerCase()} join request`);
+      }
 
       // Update local state
       setJoinRequests((prev) =>

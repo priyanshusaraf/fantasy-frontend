@@ -66,6 +66,11 @@ general rules of the entire application:
 - minimise cost for the servers.
 - ensure that the entire app works very well and does not break at any given point, emphasise on dynamics of the site, such that it comes out as a b2b saas project.
 
+how razorpay works and payments in general:
+
+payment transfer to MatchUp (our account). we don’t need to have payment transfers to the tournament admin either, we can settle everything from our end. We don’t even need a payment transfer to the winning players, as the winning players can just be sent an email for the time being requesting them to share their bank account details, and we make a bank transfer manually. no need of code for the time being to manage this entire payment system as it is just one tournament right now that we are specifically catering to. after 24th march we can develop these things even more. we just need to monitor how many payments we are getting overall and we need the prize pool that is being formed after the 22.36% cut from razorpay, matchup and the tournament admin. again, this is just an absolute figure value that we need, so we really only just need 77.64% of the total amount paid by people to be displayed as the prize money.
+
+here we will be having some modifications. currently when the admin is creating the tournament, he is required to enter the prize money himself. but what i want to happen is that this prize pool is dynamic for this tournament (in the backend we will still make provisions for the admin to choose for this to be static, however no need for this to be there in the frontend, as the tournament admin only wants a dynamic prize pool option right now) in which the overall prize pool is dependent on the no. of registrations. so for example if only 5 registrations come for 1000 rupees category, then the prize pool becomes 77.64% of 5000 = 3882 rupees, and only this value is shown to the end user, however if we get 50 registrations then this no. goes to 38820 rupees. this is very important to be implemented.
 # PERSONALITY
 
 you are a debugger

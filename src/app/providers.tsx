@@ -4,7 +4,7 @@
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -12,6 +12,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // Only run on client side
   useEffect(() => {
     setMounted(true);
+    
+    // Polyfill for CustomEvent for older browsers (IE11, etc.)
+    if (typeof window !== 'undefined' && typeof window.CustomEvent !== 'function') {
+      console.log('Adding CustomEvent polyfill for older browsers');
+      
+      window.CustomEvent = function(event: string, params?: CustomEventInit) {
+        params = params || { bubbles: false, cancelable: false, detail: null };
+        const evt = document.createEvent('CustomEvent');
+        evt.initCustomEvent(event, params.bubbles || false, params.cancelable || false, params.detail || null);
+        return evt;
+      } as any;
+      
+      (window.CustomEvent as any).prototype = window.Event.prototype;
+    }
   }, []);
 
   // During SSR, render without ThemeProvider to avoid hydration mismatch
@@ -31,20 +45,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
     >
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
-        enableSystem={true}
+        defaultTheme="dark"
+        enableSystem={false}
+        forcedTheme="dark"
         disableTransitionOnChange={false}
       >
         {children}
         <Toaster 
           position="top-right"
+          closeButton
+          richColors
+          theme="dark"
           toastOptions={{
-            style: {
-              background: 'var(--card)',
-              color: 'var(--card-foreground)',
-              border: '1px solid var(--border)',
-            },
-            className: 'overflow-hidden rounded-lg shadow-lg',
+            // Custom toast component to handle objects safely
+            unstyled: true,
+            className: "bg-background text-foreground border border-border rounded-md p-4 shadow-lg",
           }}
         />
       </ThemeProvider>

@@ -72,7 +72,9 @@ export async function GET(request: NextRequest) {
         name: player.name,
         skillLevel: player.skillLevel,
         country: player.country,
-        dominantHand: player.dominantHand,
+        age: player.age,
+        gender: player.gender,
+        imageUrl: player.imageUrl,
         // Add more fields as needed
       });
     });
@@ -86,9 +88,10 @@ export async function GET(request: NextRequest) {
         const syntheticPlayer = {
           id: user.id * -1, // Use negative ID to avoid conflicts with real player IDs
           name: user.username || user.email?.split('@')[0] || "Player",
-          skillLevel: "INTERMEDIATE", // Default value
+          skillLevel: "B", // Updated default value
           country: null,
-          dominantHand: "RIGHT", // Default value
+          age: null,
+          gender: "MALE",
           userId: user.id,
           email: user.email || "",
           isUserOnly: true, // Flag to indicate this is a user without a player record
@@ -177,8 +180,9 @@ export async function POST(request: NextRequest) {
       data: {
         name: data.name,
         country: data.country || null,
-        skillLevel: data.skillLevel || "INTERMEDIATE",
-        dominantHand: data.dominantHand || "RIGHT",
+        skillLevel: data.skillLevel || "B",
+        age: data.age || null,
+        gender: data.gender || "MALE",
         imageUrl: data.imageUrl || null,
         isActive: true,
         ...(userId ? { userId } : {}), // Link to user if we have a userId

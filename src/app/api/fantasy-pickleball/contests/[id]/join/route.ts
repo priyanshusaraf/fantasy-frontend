@@ -209,6 +209,20 @@ export async function POST(
         where: {
           id: contestId,
         },
+        include: {
+          contestPrizeRule: {
+            include: {
+              prizeDistributionRules: true
+            }
+          },
+          tournament: {
+            select: {
+              id: true,
+              name: true,
+              startDate: true
+            }
+          }
+        }
       });
 
       if (!contest) {
@@ -226,10 +240,14 @@ export async function POST(
       );
     }
 
-    if (contest.status !== "UPCOMING") {
-      console.log(`Contest ${contestId} is not open for registration, status: ${contest.status}`);
+    // Check if tournament has already started instead of checking contest status
+    const currentDate = new Date();
+    const tournamentStartDate = new Date(contest.tournament.startDate);
+    
+    if (currentDate >= tournamentStartDate) {
+      console.log(`Tournament for contest ${contestId} has already started on ${tournamentStartDate}`);
       return NextResponse.json(
-        { message: "Contest is no longer open for registration" },
+        { message: "Tournament has already started. You can only join contests before the tournament begins." },
         { status: 400 }
       );
     }
@@ -386,43 +404,32 @@ export async function POST(
       console.log("Total Points:", 0);
       console.log("Player Records:", JSON.stringify(teamData.players.create, null, 2));
       
-      // Try to verify all referenced players exist in the database
-      console.log("Verifying players exist in database...");
+      // Verify all referenced players exist in the database and have proper skill categories
+      console.log("Verifying players exist in database and have proper skill categories...");
       
       try {
-        // Count how many of the selected players actually exist in the database
-        const playerCount = await prisma.player.count({
+        // Get the full player records to check skill levels
+        const validPlayers = await prisma.player.findMany({
           where: {
             id: {
               in: playerIds
             }
+          },
+          select: {
+            id: true,
+            name: true,
+            skillLevel: true
           }
         });
         
-        console.log(`Found ${playerCount} out of ${playerIds.length} players in the database`);
+        console.log(`Found ${validPlayers.length} out of ${playerIds.length} players in the database`);
         
-        if (playerCount !== playerIds.length) {
+        // Find which player IDs are missing
+        const validPlayerIds = validPlayers.map(p => p.id);
+        const missingPlayerIds = playerIds.filter(id => !validPlayerIds.includes(id));
+        
+        if (missingPlayerIds.length > 0) {
           console.error("One or more selected players do not exist in the database");
-          
-          // Get the list of valid player IDs
-          const validPlayers = await prisma.player.findMany({
-            where: {
-              id: {
-                in: playerIds
-              }
-            },
-            select: {
-              id: true,
-              name: true
-            }
-          });
-          
-          console.log("Valid players:", validPlayers);
-          
-          // Find which player IDs are missing
-          const validPlayerIds = validPlayers.map(p => p.id);
-          const missingPlayerIds = playerIds.filter(id => !validPlayerIds.includes(id));
-          
           console.log("Missing player IDs:", missingPlayerIds);
           
           return NextResponse.json(
@@ -437,8 +444,38 @@ export async function POST(
             { status: 400 }
           );
         }
+        
+        // Check if any players are using old skill level formats
+        const validSkillLevels = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C', 'D'];
+        const invalidCategoryPlayers = validPlayers.filter(player => 
+          !player.skillLevel || 
+          !validSkillLevels.includes(player.skillLevel as string)
+        );
+        
+        if (invalidCategoryPlayers.length > 0) {
+          console.error("Some players have invalid or outdated skill categories");
+          console.log("Invalid category players:", invalidCategoryPlayers);
+          
+          return NextResponse.json(
+            { 
+              message: "Some players have invalid or outdated skill categories. Please ensure all players use the A, B, C, D category format.", 
+              details: {
+                invalidPlayers: invalidCategoryPlayers.map(p => ({
+                  id: p.id,
+                  name: p.name,
+                  currentSkillLevel: p.skillLevel || 'not set'
+                }))
+              }
+            },
+            { status: 400 }
+          );
+        }
       } catch (verificationError) {
         console.error("Error verifying players:", verificationError);
+        return NextResponse.json(
+          { message: "Error verifying player categories", error: String(verificationError) },
+          { status: 500 }
+        );
       }
       
       // TEMPORARY: For debugging purposes, return success without actually creating the team

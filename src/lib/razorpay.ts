@@ -101,30 +101,26 @@ export const verifyRazorpaySignature = (
 };
 
 /**
- * Calculate payment splits for fantasy tournament
- * @param amount Total payment amount in currency's smallest unit (e.g., paise for INR)
- * @returns Object containing split amounts
+ * Calculate payment splits between prize pool and MatchUp platform
+ * PRIZE_POOL_PERCENTAGE is exactly 77.64% as specified
  */
-export const calculatePaymentSplits = (amount: number) => {
-  // Convert from paise to rupees if needed
-  const totalAmount = amount;
+export function calculatePaymentSplits(totalAmount: number) {
+  // The percentage that goes to prize pool (77.64%)
+  const PRIZE_POOL_PERCENTAGE = 77.64;
   
-  // Tournament admin gets 10%
-  const tournamentAdminShare = Math.round(totalAmount * 0.1);
+  // Calculate prize pool share (77.64% of total amount)
+  const prizePoolShare = (totalAmount * PRIZE_POOL_PERCENTAGE) / 100;
   
-  // Master admin gets 10%
-  const masterAdminShare = Math.round(totalAmount * 0.1);
-  
-  // Prize pool gets 80%
-  const prizePoolShare = totalAmount - tournamentAdminShare - masterAdminShare;
+  // Remaining amount (22.36%) stays with the platform
+  const remainingAmount = totalAmount - prizePoolShare;
   
   return {
-    tournamentAdminShare,
-    masterAdminShare,
-    prizePoolShare,
+    remainingAmount, // 22.36% split between platform, Razorpay fees, etc.
+    prizePoolShare,  // 77.64% goes to prize pool
     totalAmount,
+    prizePoolPercentage: PRIZE_POOL_PERCENTAGE
   };
-};
+}
 
 /**
  * Get payment details from Razorpay

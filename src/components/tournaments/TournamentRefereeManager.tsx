@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,7 +32,6 @@ interface TournamentRefereeManagerProps {
 }
 
 export default function TournamentRefereeManager({ tournamentId }: TournamentRefereeManagerProps) {
-  const { toast } = useToast();
   const [referees, setReferees] = useState<Referee[]>([]);
   const [tournamentReferees, setTournamentReferees] = useState<Referee[]>([]);
   const [selectedReferees, setSelectedReferees] = useState<Referee[]>([]);
@@ -63,6 +62,16 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
     }
   }, [isAddRefereeDialogOpen]);
 
+  // Modify all toast calls to ensure they don't pass objects as React children
+  const showToast = (title: string, description?: string, variant: "default" | "destructive" = "default") => {
+    // Call toast with the title and options separately
+    toast({
+      title,
+      description,
+      variant,
+    });
+  };
+
   // Fetch all available referees
   const fetchReferees = async () => {
     try {
@@ -88,21 +97,21 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         console.error("Invalid referee data format:", data);
         setReferees([]);
         
-        toast({
-          title: "Warning",
-          description: "Failed to load referee data in the expected format.",
-          variant: "destructive",
-        });
+        showToast(
+          "Warning", 
+          "Failed to load referee data in the expected format.", 
+          "destructive"
+        );
       }
     } catch (error) {
       console.error("Error fetching referees:", error);
       setReferees([]);
       
-      toast({
-        title: "Error",
-        description: "Something went wrong while loading referees. Please try again later.",
-        variant: "destructive",
-      });
+      showToast(
+        "Error", 
+        "Something went wrong while loading referees. Please try again later.", 
+        "destructive"
+      );
     } finally {
       setLoading(false);
     }
@@ -120,14 +129,19 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         console.error(`Failed to fetch tournament referees: ${response.status} ${response.statusText}`);
         
         if (response.status !== 404) {
-          const errorData = await response.text();
-          console.error("Error response:", errorData);
+          try {
+            const errorData = await response.json();
+            console.error("Error response JSON:", errorData);
+          } catch (e) {
+            const errorText = await response.text();
+            console.error("Error response text:", errorText);
+          }
           
-          toast({
-            title: "Warning",
-            description: "Failed to load tournament referees. Please try again later.",
-            variant: "destructive",
-          });
+          showToast(
+            "Warning",
+            "Failed to load tournament referees. Please try again later.",
+            "destructive"
+          );
         }
         
         setTournamentReferees([]);
@@ -151,46 +165,110 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
       console.error("Error fetching tournament referees:", error);
       setTournamentReferees([]);
       
-      toast({
-        title: "Error",
-        description: "Something went wrong while loading tournament referees.",
-        variant: "destructive",
-      });
+      showToast(
+        "Error",
+        "Something went wrong while loading tournament referees.",
+        "destructive"
+      );
     }
   };
 
   // Add a new referee to the system
   const handleAddNewReferee = async () => {
     if (!newReferee.name.trim() || !newReferee.email.trim()) {
-      toast({
-        title: "Error",
-        description: "Referee name and email are required",
-        variant: "destructive",
-      });
+      showToast(
+        "Error",
+        "Referee name and email are required",
+        "destructive"
+      );
       return;
     }
 
     try {
+      console.log("Creating new referee with data:", newReferee);
+      
+      // We need to first find or create a user
+      const createUserResponse = await fetch("/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: newReferee.name,
+          email: newReferee.email,
+          role: "REFEREE"
+        }),
+      });
+
+      let errorText = "";
+      if (!createUserResponse.ok) {
+        try {
+          const errorData = await createUserResponse.json();
+          errorText = JSON.stringify(errorData);
+          console.error("Error creating user:", errorData);
+        } catch (e) {
+          errorText = await createUserResponse.text();
+          console.error("Error response text:", errorText);
+        }
+        
+        showToast(
+          "Error",
+          `Failed to create user for referee: ${errorText}`,
+          "destructive"
+        );
+        return;
+      }
+
+      const user = await createUserResponse.json();
+      console.log("Created user:", user);
+      
+      // Now create the referee with the user ID
       const response = await fetch("/api/referees", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(newReferee),
+        body: JSON.stringify({
+          userId: user.id,
+          certificationLevel: newReferee.certificationLevel || "LEVEL_1"
+        }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add referee");
+        try {
+          const errorData = await response.json();
+          errorText = JSON.stringify(errorData);
+          console.error("Error creating referee:", errorData);
+        } catch (e) {
+          errorText = await response.text();
+          console.error("Error response text:", errorText);
+        }
+        
+        showToast(
+          "Error",
+          `Failed to add referee: ${errorText}`,
+          "destructive"
+        );
+        return;
       }
 
       const addedReferee = await response.json();
-      setReferees(prev => [...prev, addedReferee]);
-      setSelectedReferees(prev => [...prev, addedReferee]);
+      console.log("Created referee:", addedReferee);
       
-      toast({
-        title: "Success",
-        description: "Referee added successfully",
-      });
+      // Add user information to the referee object
+      const refereeWithUserInfo = {
+        ...addedReferee,
+        name: user.username || newReferee.name,
+        email: user.email || newReferee.email
+      };
+      
+      setReferees(prev => [...prev, refereeWithUserInfo]);
+      setSelectedReferees(prev => [...prev, refereeWithUserInfo]);
+      
+      showToast(
+        "Success",
+        "Referee added successfully"
+      );
       
       setIsNewRefereeDialogOpen(false);
       setNewReferee({
@@ -199,21 +277,12 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         certificationLevel: "LEVEL_1",
       });
     } catch (error: any) {
-      // If the API is not implemented, simulate successful addition
-      const mockReferee = {
-        id: Math.floor(Math.random() * 1000) + 10,
-        name: newReferee.name,
-        email: newReferee.email,
-        certificationLevel: newReferee.certificationLevel,
-      };
-      
-      setReferees(prev => [...prev, mockReferee]);
-      setSelectedReferees(prev => [...prev, mockReferee]);
-      
-      toast({
-        title: "Success",
-        description: "Referee added successfully (mock)",
-      });
+      console.error("Exception adding referee:", error);
+      showToast(
+        "Error",
+        `Exception adding referee: ${error.message || "Unknown error"}`,
+        "destructive"
+      );
       
       setIsNewRefereeDialogOpen(false);
       setNewReferee({
@@ -221,19 +290,17 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         email: "",
         certificationLevel: "LEVEL_1",
       });
-      
-      console.warn("Referee API not implemented, using mock data");
     }
   };
 
   // Handle adding selected referees to tournament
   const handleAddRefereesToTournament = async () => {
     if (selectedReferees.length === 0) {
-      toast({
-        title: "No referees selected",
-        description: "Please select at least one referee to add to the tournament",
-        variant: "destructive"
-      });
+      showToast(
+        "No referees selected",
+        "Please select at least one referee to add to the tournament",
+        "destructive"
+      );
       return;
     }
 
@@ -254,13 +321,17 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
       if (regularReferees.length > 0) {
         try {
           console.log("Regular referee IDs:", regularReferees.map(r => r.id));
+          console.log("Tournament ID:", tournamentId);
           
           const response = await fetch(`/api/tournaments/${tournamentId}/referees`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "Cache-Control": "no-cache, no-store"
             },
-            body: JSON.stringify({ refereeIds: regularReferees.map(r => r.id) }),
+            body: JSON.stringify({ 
+              refereeIds: regularReferees.map(r => r.id)
+            }),
           });
 
           console.log("Add regular referees response status:", response.status);
@@ -270,7 +341,7 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
             console.log("Add regular referees response data:", data);
             
             // Count successful additions
-            successCount += data.results?.filter((r: any) => r.status === "added").length || 0;
+            successCount += data.results?.filter((r: any) => r.status === "added" || r.status === "approved" || r.status === "already_approved").length || 0;
           } else {
             let errorText = "";
             try {
@@ -286,20 +357,20 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
             }
             
             console.error("Failed to add regular referees:", errorText);
-            toast({
-              title: "Warning",
-              description: `Some referees couldn't be added. ${errorText}`,
-              variant: "destructive",
-            });
+            showToast(
+              "Warning",
+              `Some referees couldn't be added. ${errorText}`,
+              "destructive"
+            );
             // Continue with user-only referees instead of throwing
           }
         } catch (error) {
           console.error("Exception adding regular referees:", error);
-          toast({
-            title: "Error",
-            description: "Failed to add regular referees due to a network error. Try again later.",
-            variant: "destructive",
-          });
+          showToast(
+            "Error",
+            "Failed to add regular referees due to a network error. Try again later.",
+            "destructive"
+          );
           // Continue with user-only referees
         }
       }
@@ -321,6 +392,7 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
+                "Cache-Control": "no-cache, no-store"
               },
               body: JSON.stringify({
                 userId: userId,
@@ -349,11 +421,11 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
               }
               
               console.error(`Failed to create referee for user ${userId}: ${errorText}`);
-              toast({
-                title: "Warning",
-                description: `Could not create referee for ${userReferee.name}. This user may already have a referee record.`,
-                variant: "destructive",
-              });
+              showToast(
+                "Warning",
+                `Could not create referee for ${userReferee.name}. This user may already have a referee record.`,
+                "destructive"
+              );
             }
           } catch (userError) {
             console.error(`Exception creating referee for ${userReferee.name}:`, userError);
@@ -369,6 +441,7 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
+                "Cache-Control": "no-cache, no-store"
               },
               body: JSON.stringify({ refereeIds: createdRefereeIds }),
             });
@@ -376,7 +449,7 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
             if (addResponse.ok) {
               const addData = await addResponse.json();
               console.log("Add new referees response data:", addData);
-              successCount += addData.results?.filter((r: any) => r.status === "added").length || 0;
+              successCount += addData.results?.filter((r: any) => r.status === "added" || r.status === "approved" || r.status === "already_approved").length || 0;
             } else {
               const errorText = await addResponse.text();
               console.error("Failed to add newly created referees to tournament:", errorText);
@@ -387,6 +460,9 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         }
       }
 
+      // Add a small delay to ensure backend processing completes
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Refresh the list of tournament referees
       await fetchTournamentReferees();
       
@@ -394,21 +470,21 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
       setSelectedReferees([]);
       
       // Show success message
-      toast({
-        title: `${successCount} Referee${successCount !== 1 ? 's' : ''} Added`,
-        description: `Successfully added ${successCount} referee${successCount !== 1 ? 's' : ''} to the tournament.`,
-        variant: successCount > 0 ? "default" : "destructive"
-      });
+      showToast(
+        `${successCount} Referee${successCount !== 1 ? 's' : ''} Added`,
+        `Successfully added ${successCount} referee${successCount !== 1 ? 's' : ''} to the tournament.`,
+        successCount > 0 ? "default" : "destructive"
+      );
       
       // Close the dialog
       setIsAddRefereeDialogOpen(false);
     } catch (error) {
       console.error("Error adding referees to tournament:", error);
-      toast({
-        title: "Error",
-        description: "Failed to add referees to tournament. Please try again.",
-        variant: "destructive"
-      });
+      showToast(
+        "Error",
+        "Failed to add referees to tournament. Please try again.",
+        "destructive"
+      );
     } finally {
       setIsAddingReferees(false);
     }
@@ -427,23 +503,19 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         throw new Error("Failed to remove referee from tournament");
       }
 
-      toast({
-        title: "Success",
-        description: "Referee removed from tournament",
-      });
+      showToast(
+        "Success",
+        "Referee removed from tournament"
+      );
 
       // Remove referee from list
       setTournamentReferees(prev => prev.filter(r => r.id !== refereeId));
     } catch (error: any) {
-      // If the API is not implemented, simulate successful removal
-      setTournamentReferees(prev => prev.filter(r => r.id !== refereeId));
-      
-      toast({
-        title: "Success",
-        description: "Referee removed from tournament (mock)",
-      });
-      
-      console.warn("Tournament referee API not implemented, using mock data");
+      showToast(
+        "Error",
+        error.message || "Failed to remove referee from tournament",
+        "destructive"
+      );
     }
   };
 
