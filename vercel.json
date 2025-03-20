@@ -1,5 +1,6 @@
 {
-  "buildCommand": "npm run build",
+  "version": 2,
+  "buildCommand": "npm install --no-save autoprefixer@10.4.21 postcss@8.4.35 tailwindcss@3.4.1 && npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
@@ -48,7 +49,8 @@
   ],
   "build": {
     "env": {
-      "PRISMA_GENERATE_DATAPROXY": "true"
+      "PRISMA_GENERATE_DATAPROXY": "true",
+      "NODE_ENV": "production"
     }
   }
 } 
