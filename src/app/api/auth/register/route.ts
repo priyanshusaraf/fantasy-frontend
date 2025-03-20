@@ -12,7 +12,7 @@ const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email format"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.string().default("USER"),
+  role: z.string().optional().default("USER"),
   skillLevel: z.string().optional(),
 });
 
@@ -147,7 +147,6 @@ export async function POST(req: NextRequest) {
             password: hashedPassword,
             role,
             status: "ACTIVE",
-            isActive: true,
             emailVerified: new Date(),
           },
         });
