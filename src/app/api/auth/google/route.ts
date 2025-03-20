@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { googleOAuthService } from "@/lib/oauth";
 import { UserService } from "@/lib/user-service";
-import { generateToken } from "@/lib/jwt";
+import { signJwtToken } from "@/lib/jwt";
 
 export async function GET() {
   // Generate Google OAuth URL
@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate JWT
-    const token = generateToken({
-      id: user.id,
+    const token = signJwtToken({
+      id: user.id || 0,
       email: user.email,
       role: user.role || "USER",
     });
