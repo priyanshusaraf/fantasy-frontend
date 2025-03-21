@@ -1,6 +1,20 @@
 import React from 'react';
 import Link from 'next/link';
 
+// Client component for the refresh button
+"use client";
+const RefreshButton = () => {
+  return (
+    <button
+      onClick={() => window.location.reload()}
+      className="flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-gray-700 transition hover:bg-gray-50"
+    >
+      Refresh Page
+    </button>
+  );
+};
+// End client component
+
 export default function MaintenancePage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white p-4">
@@ -54,12 +68,7 @@ export default function MaintenancePage() {
           >
             Return to Dashboard
           </Link>
-          <button
-            onClick={() => window.location.reload()}
-            className="flex w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-gray-700 transition hover:bg-gray-50"
-          >
-            Refresh Page
-          </button>
+          <RefreshButton />
         </div>
       </div>
     </div>

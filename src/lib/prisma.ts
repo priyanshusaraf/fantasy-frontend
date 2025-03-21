@@ -565,4 +565,8 @@ export async function diagnoseConnectionIssue(): Promise<string> {
   }
 }
 
+// Add named export for prisma
+export { prisma };
+
+// Default export remains unchanged
 export default prisma;
