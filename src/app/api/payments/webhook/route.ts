@@ -40,6 +40,13 @@ interface RazorpayPaymentEntity {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check if we're bypassing Razorpay
+    const bypassRazorpay = process.env.BYPASS_RAZORPAY === 'true';
+    if (bypassRazorpay) {
+      console.log("Razorpay webhook received but BYPASS_RAZORPAY is enabled - returning success without processing");
+      return NextResponse.json({ message: "Webhook received but not processed (BYPASS_RAZORPAY=true)" });
+    }
+    
     // Get Razorpay signature from headers
     const razorpaySignature = request.headers.get('x-razorpay-signature');
     

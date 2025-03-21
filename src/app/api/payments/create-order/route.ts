@@ -47,18 +47,45 @@ export async function POST(request: NextRequest) {
     // Generate receipt ID
     const receipt = `order_${Date.now()}_${user.id}_${contestId}`;
     
-    // Create Razorpay order
-    const order = await createRazorpayOrder({
-      amount: Number(amount),
-      currency: "INR",
-      receipt,
-      notes: {
-        userId: user.id,
-        contestId,
-        tournamentId: contest.tournamentId,
-        type,
-      },
-    });
+    // Check if we're bypassing Razorpay
+    const bypassRazorpay = process.env.BYPASS_RAZORPAY === 'true';
+    let order;
+    
+    if (bypassRazorpay) {
+      // Create a mock order when bypassing Razorpay
+      console.log("Creating mock order (BYPASS_RAZORPAY=true)");
+      order = {
+        id: `mock_order_${Date.now()}`,
+        entity: "order",
+        amount: Number(amount) * 100,
+        amount_paid: 0,
+        amount_due: Number(amount) * 100,
+        currency: "INR",
+        receipt,
+        status: "created",
+        attempts: 0,
+        notes: {
+          userId: user.id,
+          contestId,
+          tournamentId: contest.tournamentId,
+          type,
+        },
+        created_at: Math.floor(Date.now() / 1000)
+      };
+    } else {
+      // Create real Razorpay order
+      order = await createRazorpayOrder({
+        amount: Number(amount),
+        currency: "INR",
+        receipt,
+        notes: {
+          userId: user.id,
+          contestId,
+          tournamentId: contest.tournamentId,
+          type,
+        },
+      });
+    }
     
     // Save order in database
     const payment = await prisma.payment.create({
@@ -73,6 +100,7 @@ export async function POST(request: NextRequest) {
           contestId,
           tournamentId: contest.tournamentId,
           type,
+          isMock: bypassRazorpay
         },
         fantasyContestId: Number(contestId),
       },
@@ -83,7 +111,8 @@ export async function POST(request: NextRequest) {
       payment: {
         id: payment.id,
         status: payment.status,
-      }
+      },
+      bypassMode: bypassRazorpay
     });
     
   } catch (error) {
