@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -26,6 +26,15 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Sanitize the callback URL to prevent redirect loops
+  const sanitizedCallback = useMemo(() => {
+    // If it contains nested callbacks or percent encoding, use dashboard
+    if (callbackUrl.includes('callbackUrl=') || callbackUrl.includes('%25')) {
+      return '/dashboard';
+    }
+    return callbackUrl;
+  }, [callbackUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +61,7 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
         redirect: false,
         usernameOrEmail: username,
         password,
-        callbackUrl,
+        callbackUrl: sanitizedCallback, // Use sanitized URL
       });
       
       if (signInResult?.error) {
@@ -67,8 +76,8 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
       // Show success toast
       toast.success("Login successful");
       
-      // Redirect to the callback URL or dashboard
-      router.push(callbackUrl);
+      // Redirect to the sanitized callback URL or dashboard
+      router.push(sanitizedCallback);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
       toast.error(errorMessage);

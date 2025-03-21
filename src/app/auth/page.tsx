@@ -7,6 +7,38 @@ export interface AuthPageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
 
+// Helper to sanitize URLs to prevent redirect loops
+function sanitizeUrl(url: string | string[] | undefined): string {
+  // Default to dashboard if no URL provided
+  if (!url) return "/dashboard";
+  
+  // Handle array case
+  const urlStr = typeof url === 'string' ? url : url[0] || "/dashboard";
+  
+  // Check for nested callbackUrls which indicate a loop
+  if (urlStr.includes('callbackUrl=') && urlStr.includes('%')) {
+    return "/dashboard";
+  }
+  
+  // Check if it's a valid local path
+  if (urlStr.startsWith('/') && !urlStr.includes('://')) {
+    return urlStr;
+  }
+  
+  // Check if it's a valid absolute URL for our site
+  try {
+    const parsedUrl = new URL(urlStr);
+    if (parsedUrl.hostname === 'localhost' || 
+        parsedUrl.hostname === 'matchup.ltd') {
+      return parsedUrl.pathname + parsedUrl.search;
+    }
+  } catch {
+    // If URL parsing fails, return dashboard
+  }
+  
+  return "/dashboard";
+}
+
 export default async function AuthPage({ 
   searchParams 
 }: AuthPageProps) {
@@ -18,19 +50,17 @@ export default async function AuthPage({
     redirect("/dashboard");
   }
   
-  // Handle searchParams safely by awaiting them
+  // Handle search params properly by awaiting them
   const params = await Promise.resolve(searchParams);
-  
-  // Extract callbackUrl safely
-  const callbackUrl = params?.callbackUrl 
-    ? (typeof params.callbackUrl === 'string' ? params.callbackUrl : "/dashboard")
-    : "/dashboard";
   
   // Extract mode param safely
   const mode = params?.mode 
     ? (typeof params.mode === 'string' ? params.mode : "signin")
     : "signin";
     
+  // Sanitize callback URL to prevent loops
+  const callbackUrl = sanitizeUrl(params?.callbackUrl);
+  
   const showRegisterForm = mode === "register" || mode === "signup";
   
   return <AuthClientPage showRegisterForm={showRegisterForm} callbackUrl={callbackUrl} />;

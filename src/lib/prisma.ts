@@ -21,7 +21,7 @@ const DummyPrismaClient = {
 };
 
 // Track database connectivity status
-let isDatabaseConnected = false;
+let isDatabaseConnected = true; // Default to true to avoid initial false negatives
 let lastConnectionAttempt = 0;
 const CONNECTION_ATTEMPT_THRESHOLD = 10000; // Only try reconnecting every 10 seconds
 
@@ -501,49 +501,48 @@ export async function disconnectDB() {
 
 // Add a ping method to check database connectivity
 export async function pingDatabase(): Promise<boolean> {
+  // Browser environment check moved to top
   if (typeof window !== 'undefined') {
-    console.log('Running in browser, skipping DB ping');
-    return false;
+    // Running in browser, skip actual DB ping but allow the app to proceed
+    return true;
   }
   
   try {
     // Mark the attempt time
     lastConnectionAttempt = Date.now();
     
-    // Quick return if we recently checked
-    if (!isDatabaseConnected && (Date.now() - lastConnectionAttempt < 5000)) {
-      console.log('Database is known to be disconnected and recently checked');
-      return false;
-    }
-    
-    // Set a timeout for the ping
-    const timeoutDuration = process.env.NODE_ENV === 'production' ? 5000 : 3000;
-    
     // Simple query with timeout
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Database ping timeout')), timeoutDuration)
-    );
+    const timeoutDuration = process.env.NODE_ENV === 'production' ? 5000 : 3000;
     
     // The actual query - just select 1
     const queryPromise = prisma.$queryRaw`SELECT 1 as connected`;
     
-    // Race between the query and the timeout
-    await Promise.race([queryPromise, timeoutPromise]);
+    // Run the query with timeout
+    await Promise.race([
+      queryPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Database ping timeout')), timeoutDuration))
+    ]);
     
     // If we got here, the query succeeded
     isDatabaseConnected = true;
+    console.log('Database connection verified successfully');
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Database ping failed:', error);
-    isDatabaseConnected = false;
+    // Only set to false if we have a confirmed failure
+    if (error && typeof error === 'object' && 'message' in error && 
+        error.message !== 'Database is not initialized') {
+      isDatabaseConnected = false;
+    }
     return false;
   }
 }
 
 // Get the current database connection status
 export function isDatabaseAvailable(): boolean {
+  // In browser environment, return true to allow client operations
   if (typeof window !== 'undefined') {
-    return false;
+    return true;
   }
   return isDatabaseConnected;
 }

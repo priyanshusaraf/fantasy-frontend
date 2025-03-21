@@ -112,9 +112,6 @@ export function RegisterForm() {
         
         // Show success toast
         toast.success("Registration successful");
-        
-        // Force redirect to dashboard regardless of login state
-        router.push("/dashboard");
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Registration failed";
         
@@ -131,12 +128,7 @@ export function RegisterForm() {
           });
           
           // Show specialized toast for DB issues
-          toast.error("Database connection issue, but your registration data was sent. Redirecting to dashboard...");
-          
-          // After a delay, force redirect to dashboard
-          setTimeout(() => {
-            router.push("/dashboard");
-          }, 3000);
+          toast.error("Database connection issue. Please try again later.");
         } else {
           // Handle normal registration errors
           toast.error(errorMessage);

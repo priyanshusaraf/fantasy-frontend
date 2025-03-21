@@ -268,20 +268,21 @@ export const authOptions: NextAuthOptions = {
             // Use enhanced database query function
             const userStatus = await queryDatabaseWithRetry(
               () => prisma.user.findUnique({
-                where: { id: token.user!.id },
-                select: { isActive: true, isAdmin: true, role: true }
+                where: { id: parseInt(token.user!.id, 10) },
+                select: { status: true, role: true }
               }),
               2,  // 2 retries
               5000 // 5 second timeout
             );
             
             if (userStatus) {
-              token.user.isActive = userStatus.isActive;
+              // Map status field to isActive
+              token.user.isActive = userStatus.status === 'ACTIVE';
               
-              // Only set as admin if their email is admin email
+              // Only set as admin if their email is admin email and role is ADMIN
               const adminEmails = ['piku@gmail.com', 'admin@gmail.com'];
-              if (adminEmails.includes(token.user.email)) {
-                token.user.isAdmin = userStatus.isAdmin;
+              if (adminEmails.includes(token.user.email) && userStatus.role === 'ADMIN') {
+                token.user.isAdmin = true;
               } else {
                 token.user.isAdmin = false;
               }
@@ -333,10 +334,27 @@ export const authOptions: NextAuthOptions = {
       }
       return extendedSession;
     },
+    async redirect({ url, baseUrl }) {
+      // If the URL is an absolute URL that starts with the base URL
+      if (url.startsWith(baseUrl)) return url;
+      
+      // If the URL is a relative path
+      if (url.startsWith('/')) return new URL(url, baseUrl).toString();
+      
+      // If URL contains multiple nested callbackUrls, reset to dashboard
+      if (url.includes('callbackUrl') && url.includes('%252F')) {
+        return baseUrl + '/dashboard';
+      }
+      
+      // Default fallback - return to base
+      return baseUrl;
+    },
   },
   pages: {
-    signIn: "/auth",
-    error: "/auth/error",
+    signIn: '/auth?mode=signin',
+    signOut: '/auth?mode=signout',
+    error: '/auth?mode=error',
+    newUser: '/auth?mode=register'
   },
   // Make sure we never fail on auth operations by gracefully handling errors
   events: {

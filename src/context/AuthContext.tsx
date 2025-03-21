@@ -171,8 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // If database is disconnected, we'll still attempt registration with fallback
       if (!isDbConnected) {
-        console.warn('Registration attempted while database is disconnected - using fallback mechanism');
-        toast('You are registering in offline mode. Your account will be synced when connectivity is restored.');
+        console.info('Registration will proceed even if database connection is delayed');
       }
       
       const response = await fetch('/api/auth/register', {
@@ -213,29 +212,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           toast('Your account is saved locally and will be activated when database connectivity is restored.');
           router.push('/auth/pending');
         } else {
-          // Auto-login after registration - using direct NextAuth signIn to avoid delays
-          const result = await signIn('credentials', {
-            redirect: false,
-            usernameOrEmail: userData.email,
-            password: userData.password
-          });
-          
-          if (result?.error) {
-            console.error('Auto-login after registration failed:', result.error);
-            // If auto-login fails, we still consider registration successful
-            // Just redirect to login page
-            router.push(`/auth?mode=signin&email=${encodeURIComponent(userData.email)}`);
-          } else {
-            // Auto-login successful, update user state and redirect
-            const session = await getSession();
-            if (session?.user) {
-              setUser(session.user as User);
-              setStatus('authenticated');
-              router.push(userData.callbackUrl || '/dashboard');
+          // Auto-login the user after successful registration
+          try {
+            const loginResult = await signIn('credentials', {
+              redirect: false,
+              email: userData.email,
+              password: userData.password,
+            });
+            
+            if (loginResult?.error) {
+              // If auto-login fails, redirect to login page with email pre-filled
+              console.warn('Auto-login after registration failed:', loginResult.error);
+              toast('Account created! Please sign in with your credentials.');
+              router.push(`/auth?mode=signin&email=${encodeURIComponent(userData.email)}`);
             } else {
-              // Session not available yet, redirect anyway
+              // Successfully logged in after registration
+              toast.success('Account created and logged in successfully!');
               router.push('/dashboard');
             }
+          } catch (loginError) {
+            // If auto-login throws an error, redirect to login page
+            console.error('Auto-login error:', loginError);
+            toast('Account created! Please sign in with your credentials.');
+            router.push(`/auth?mode=signin&email=${encodeURIComponent(userData.email)}`);
           }
         }
       }
