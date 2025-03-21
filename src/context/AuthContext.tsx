@@ -99,15 +99,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ) => {
     setIsLoading(true);
     try {
+      console.log(`Starting registration for ${email} with role ${role}`);
+      
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password, role }),
+        body: JSON.stringify({ 
+          name: username,  // Map username to name for the API
+          username,        // Also keep username for backward compatibility
+          email, 
+          password, 
+          role 
+        }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || "Registration failed");
+        console.error(`Registration failed with status: ${response.status}`, error);
+        throw new Error(error.message || `Registration failed with status: ${response.status}`);
       }
 
       // After registration, login automatically

@@ -15,6 +15,7 @@ const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string().min(8, "Confirm password must be at least 8 characters"),
+  role: z.string().optional().default("USER"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -44,7 +45,13 @@ export function RegisterForm() {
     
     try {
       // Validate form
-      const result = registerSchema.safeParse({ username, email, password, confirmPassword });
+      const result = registerSchema.safeParse({ 
+        username, 
+        email, 
+        password, 
+        confirmPassword,
+        role 
+      });
       if (!result.success) {
         const formattedErrors = result.error.format();
         setErrors({
