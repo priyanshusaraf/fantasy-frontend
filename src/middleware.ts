@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { env } from '@/env.mjs';
 
+// Check database availability
+async function checkDbHealth() {
+  try {
+    const response = await fetch(new URL('/api/health', env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').toString());
+    if (!response.ok) return false;
+    
+    const data = await response.json();
+    return data.database === 'connected';
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    return false;
+  }
+}
+
 // Security headers to add to all responses
 function addSecurityHeaders(response: NextResponse) {
   // Set security headers
@@ -82,6 +96,7 @@ const publicPaths = [
   '/api/leaderboard',
   '/api/test',
   '/api/test-db',
+  '/api/health', // Add health check to public paths
 ];
 
 // Define allowed origins for CORS
@@ -103,6 +118,11 @@ export async function middleware(request: NextRequest) {
   }
   
   const path = request.nextUrl.pathname;
+  
+  // Skip maintenance redirect for health check endpoint and static files
+  if (path === '/api/health' || path.startsWith('/_next/') || path.startsWith('/images/')) {
+    return NextResponse.next();
+  }
   
   // Special handling for auth API routes to better handle database errors
   if (path.startsWith('/api/auth/')) {
@@ -145,6 +165,31 @@ export async function middleware(request: NextRequest) {
   // Handle preflight requests
   if (request.method === 'OPTIONS') {
     return response;
+  }
+  
+  // For critical paths that require database access, check database health
+  // This includes admin routes, wallet operations, and protected API routes
+  const criticalPaths = ['/admin', '/wallet', '/api/wallet', '/api/user', '/api/admin'];
+  if (criticalPaths.some(criticalPath => path.startsWith(criticalPath))) {
+    const isDbHealthy = await checkDbHealth();
+    
+    if (!isDbHealthy) {
+      // For API routes, return 503 Service Unavailable
+      if (path.startsWith('/api/')) {
+        return NextResponse.json(
+          { 
+            error: 'Database unavailable',
+            message: 'The database is currently unavailable. Please try again later.'
+          },
+          { status: 503 }
+        );
+      }
+      
+      // For web routes, redirect to maintenance page
+      const url = request.nextUrl.clone();
+      url.pathname = '/maintenance';
+      return NextResponse.redirect(url);
+    }
   }
   
   // Skip middleware for non-API routes and public paths
@@ -249,5 +294,6 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/api/((?!auth/register|auth/callback|auth|webhooks|test-db).*)',
+    '/((?!_next/static|_next/image|favicon.ico|images).*)', // Add matcher for web routes that need DB health checks
   ],
 }; 

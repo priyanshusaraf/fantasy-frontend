@@ -1,25 +1,30 @@
+"use client";
+
 import React, { useState } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { signIn } from "next-auth/react";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { z } from "zod";
 import { toast } from "sonner";
 
-// Form validation schema
+// Simple form validation schema - minimal requirements
 const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  username: z.string().min(1, "Username or email is required"),
+  password: z.string().min(1, "Password is required"),
 });
 
-export function LoginForm() {
+interface LoginFormProps {
+  callbackUrl?: string;
+}
+
+export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
   const router = useRouter();
-  const { login } = useAuth();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,12 +34,12 @@ export function LoginForm() {
     setErrors({});
     
     try {
-      // Validate form
-      const result = loginSchema.safeParse({ email, password });
+      // Basic validation
+      const result = loginSchema.safeParse({ username, password });
       if (!result.success) {
         const formattedErrors = result.error.format();
         setErrors({
-          email: formattedErrors.email?._errors[0],
+          username: formattedErrors.username?._errors[0],
           password: formattedErrors.password?._errors[0],
         });
         return;
@@ -42,20 +47,34 @@ export function LoginForm() {
       
       setIsSubmitting(true);
       
-      // Attempt login
-      await login(email, password);
+      // Use NextAuth signIn with credentials
+      const signInResult = await signIn("credentials", {
+        redirect: false,
+        usernameOrEmail: username,
+        password,
+        callbackUrl,
+      });
+      
+      if (signInResult?.error) {
+        toast.error("Invalid username or password");
+        setErrors({
+          username: "Invalid username or password",
+          password: "Invalid username or password",
+        });
+        return;
+      }
       
       // Show success toast
       toast.success("Login successful");
       
-      // Redirect to dashboard
-      router.push("/dashboard");
+      // Redirect to the callback URL or dashboard
+      router.push(callbackUrl);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
       toast.error(errorMessage);
       setErrors({
-        email: "Invalid email or password",
-        password: "Invalid email or password",
+        username: "Authentication failed",
+        password: "Authentication failed",
       });
     } finally {
       setIsSubmitting(false);
@@ -65,25 +84,25 @@ export function LoginForm() {
   return (
     <div className="mx-auto max-w-md space-y-6 rounded-lg border bg-card p-6 shadow-sm">
       <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-bold">Welcome back</h1>
-        <p className="text-muted-foreground">Enter your credentials to sign in</p>
+        <h1 className="text-3xl font-bold">Sign In</h1>
+        <p className="text-muted-foreground">Enter your credentials</p>
       </div>
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="username">Username or Email</Label>
           <Input
-            id="email"
-            type="email"
-            placeholder="name@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            id="username"
+            type="text"
+            placeholder="Enter username or email"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             required
             disabled={isSubmitting}
-            className={errors.email ? "border-destructive" : ""}
+            className={errors.username ? "border-destructive" : ""}
           />
-          {errors.email && (
-            <p className="text-sm text-destructive">{errors.email}</p>
+          {errors.username && (
+            <p className="text-sm text-destructive">{errors.username}</p>
           )}
         </div>
         
@@ -92,7 +111,7 @@ export function LoginForm() {
           <Input
             id="password"
             type="password"
-            placeholder="••••••••"
+            placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -102,12 +121,6 @@ export function LoginForm() {
           {errors.password && (
             <p className="text-sm text-destructive">{errors.password}</p>
           )}
-        </div>
-        
-        <div className="text-right">
-          <Link href="/auth/reset-password" className="text-sm text-primary hover:underline">
-            Forgot password?
-          </Link>
         </div>
         
         <Button type="submit" className="w-full" disabled={isSubmitting}>

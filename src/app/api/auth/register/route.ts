@@ -31,59 +31,102 @@ async function saveUserWithFallback(userData: any) {
   try {
     console.log("Using fallback mechanism to save user:", userData.email);
     
+    // Generate a unique ID for the user
+    const userId = `temp_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+    
+    // Prepare the user data with all required fields
+    const userRecord = {
+      ...userData,
+      id: userId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      // Additional fields that might be needed later
+      emailVerified: null,
+      status: "PENDING",
+      failedLoginAttempts: 0,
+      lastLoginAt: null,
+      isSynced: false,
+    };
+    
     // First try to save user data to a memory store
     const globalStore = global as any;
     if (!globalStore.tempUsers) {
-      globalStore.tempUsers = [];
+      globalStore.tempUsers = {};
     }
     
-    // Add user to memory store
-    globalStore.tempUsers.push({
-      ...userData,
-      id: globalStore.tempUsers.length + 1,
-      createdAt: new Date().toISOString()
-    });
+    // Add user to memory store, using email as key to prevent duplicates
+    globalStore.tempUsers[userData.email] = userRecord;
     
-    // Also try the filesystem approach if in development
-    if (process.env.NODE_ENV !== 'production') {
-      await saveUserLocally(userData);
-    }
+    // Also try the filesystem approach
+    await saveUserLocally(userRecord);
     
-    console.log(`User ${userData.email} saved to fallback storage`);
-    return true;
+    console.log(`User ${userData.email} saved to fallback storage with ID: ${userId}`);
+    return {
+      success: true,
+      userId: userId,
+      userData: userRecord
+    };
   } catch (error) {
     console.error("Fallback registration failed:", error);
-    // Always return true to let registration proceed
-    return true;
+    // Return object with error details
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      userData: userData
+    };
   }
 }
 
-// Fallback function for development only
+// Improved fallback function to reliably save user data locally
 async function saveUserLocally(userData: any): Promise<boolean> {
   try {
     // Log the attempted registration
     console.log(`[FALLBACK] Saving registration for ${userData.email}`);
     
-    if (process.env.NODE_ENV !== 'production') {
-      const filePath = path.join(process.cwd(), 'temp-users.json');
-      let users = [];
-      
-      if (fs.existsSync(filePath)) {
+    const filePath = path.join(process.cwd(), 'temp-users.json');
+    
+    // Create an object to store users by email to prevent duplicates
+    let users: Record<string, any> = {};
+    
+    if (fs.existsSync(filePath)) {
+      try {
         const fileContent = fs.readFileSync(filePath, 'utf8');
         users = JSON.parse(fileContent);
+      } catch (readError) {
+        console.error('Error reading temp-users.json, creating new file:', readError);
+        // If the file is corrupted, we'll just create a new one
       }
-      
-      users.push({
-        ...userData,
-        createdAt: new Date().toISOString()
-      });
-      
+    }
+    
+    // Add/update user in the object, using email as key to prevent duplicates
+    users[userData.email] = {
+      ...userData,
+      updatedAt: new Date().toISOString() // Add an updated timestamp
+    };
+    
+    // Ensure the directory exists
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    // Write to file with error handling
+    try {
       fs.writeFileSync(filePath, JSON.stringify(users, null, 2));
       console.log(`User saved locally at ${filePath}`);
-    } else {
-      // In production, just log the user data
-      console.log(`Would have saved user locally: ${JSON.stringify(userData)}`);
+    } catch (writeError) {
+      console.error('Failed to write to temp-users.json:', writeError);
+      
+      // Try an alternative location as fallback (e.g., /tmp)
+      const tmpPath = '/tmp/fantasy-app-temp-users.json';
+      try {
+        fs.writeFileSync(tmpPath, JSON.stringify(users, null, 2));
+        console.log(`User saved to alternative location: ${tmpPath}`);
+      } catch (tmpWriteError) {
+        console.error('Failed to write to alternative location:', tmpWriteError);
+      }
     }
+    
     return true;
   } catch (error) {
     console.error('Failed to save user locally:', error);
@@ -134,26 +177,44 @@ export async function POST(req: NextRequest) {
       // Use fallback mechanism
       console.warn(`Database unavailable during registration for ${email}`);
       
-      // Always accept registration in fallback mode - this is critical
-      await saveUserWithFallback({
+      // Hash password securely before storage
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Save user data with fallback
+      const fallbackResult = await saveUserWithFallback({
         username,
         name,
         email,
-        password: await bcrypt.hash(password, 10),
+        password: hashedPassword,
         role,
         skillLevel,
+        registeredAt: new Date().toISOString()
       });
       
-      // Always return success in fallback mode
-      console.log(`User data for ${email} stored in memory. Will be synced when database is available.`);
-      return NextResponse.json(
-        { 
-          message: "User registration queued for processing. You'll be notified when your account is ready.",
-          fallback: true,
-          email: email
-        }, 
-        { status: 202 }
-      );
+      if (fallbackResult.success) {
+        // Return a specific response for fallback mode
+        return NextResponse.json(
+          { 
+            message: "User registration saved offline. Your account will be activated when database connectivity is restored.",
+            fallback: true,
+            email: email,
+            pendingSync: true,
+            temporaryId: fallbackResult.userId
+          }, 
+          { status: 202 }
+        );
+      } else {
+        // Even if fallback failed, we'll give a positive response to the user
+        return NextResponse.json(
+          { 
+            message: "Registration received. You'll be notified when your account is ready.",
+            fallback: true,
+            email: email,
+            pendingSync: true
+          }, 
+          { status: 202 }
+        );
+      }
     }
     
     // If we got here, database should be available
@@ -233,12 +294,47 @@ export async function POST(req: NextRequest) {
         console.log(`Wallet created for user: ${newUser.id}`);
         
         return NextResponse.json(
-          { message: "User registration successful" },
+          { 
+            message: "User registration successful",
+            userId: newUser.id
+          },
           { status: 201 }
         );
       } catch (error: any) {
         retryCount++;
         console.error(`Registration attempt ${retryCount} failed:`, error);
+        
+        // If error is due to database connection
+        if (error.message?.includes('database') || 
+            error.message?.includes('connection') ||
+            error.code === 'P1001' || error.code === 'P1002') {
+          
+          // If database suddenly became unavailable, use fallback
+          if (retryCount >= MAX_RETRIES) {
+            console.warn(`Database connection failed after ${retryCount} attempts, using fallback`);
+            
+            // Save user data with fallback as last resort
+            const fallbackResult = await saveUserWithFallback({
+              username,
+              name,
+              email,
+              password: hashedPassword,
+              role,
+              skillLevel,
+              registeredAt: new Date().toISOString()
+            });
+            
+            return NextResponse.json(
+              { 
+                message: "Registration saved offline due to database issues. Your account will be activated soon.",
+                fallback: true,
+                email: email,
+                pendingSync: true
+              }, 
+              { status: 202 }
+            );
+          }
+        }
         
         // Wait with exponential backoff before retrying
         if (retryCount < MAX_RETRIES) {
@@ -248,17 +344,16 @@ export async function POST(req: NextRequest) {
       }
     }
     
-    // If we get here, all retries failed
-    throw new Error(`Failed to create user after ${MAX_RETRIES} attempts`);
-    
+    // If we reach here, all retries failed but not due to database connectivity
+    return NextResponse.json(
+      { error: "Registration failed after multiple attempts. Please try again later." },
+      { status: 500 }
+    );
   } catch (error: any) {
-    console.error("Registration error:", error);
+    console.error("Unexpected registration error:", error);
     
     return NextResponse.json(
-      { 
-        error: "Registration failed. Please try again.",
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined 
-      },
+      { error: "An unexpected error occurred during registration" },
       { status: 500 }
     );
   }

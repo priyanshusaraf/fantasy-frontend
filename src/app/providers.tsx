@@ -5,6 +5,7 @@ import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import ToastProvider from "@/providers/ToastProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -50,6 +51,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         forcedTheme="dark"
         disableTransitionOnChange={false}
       >
+        <ToastProvider />
         {children}
         <Toaster 
           position="top-right"

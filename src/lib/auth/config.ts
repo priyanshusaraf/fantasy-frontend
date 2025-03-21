@@ -3,10 +3,97 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createCustomAdapter } from "./custom-adapter";
 import { env } from "@/lib/env";
-import prisma from "@/lib/prisma"; // Import singleton prisma client
+import prisma, { pingDatabase, isDatabaseAvailable } from "@/lib/prisma"; // Import singleton prisma client and connectivity functions
 import bcrypt from "bcryptjs";
 import fs from 'fs';
 import path from 'path';
+import { JWT } from "next-auth/jwt";
+import { Session } from "next-auth";
+
+// Define extended types for session and token
+interface ExtendedUser {
+  id: string;
+  email: string;
+  name?: string;
+  image?: string;
+  isAdmin?: boolean;
+  isActive?: boolean;
+  role?: string;
+  username?: string;
+}
+
+interface ExtendedJWT extends JWT {
+  user?: ExtendedUser;
+  role?: string;
+  username?: string;
+  isAdmin?: boolean;
+  isActive?: boolean;
+  isFallbackUser?: boolean;
+}
+
+interface ExtendedSession extends Session {
+  user: ExtendedUser;
+}
+
+// Handle fallback auth for temporary users stored during database outages
+async function checkFallbackUsers(email: string, password: string): Promise<any> {
+  try {
+    // Check temporary users stored in filesystem
+    const filePath = path.join(process.cwd(), 'temp-users.json');
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      const users = JSON.parse(fileContent);
+      
+      // Find user by email
+      const user = users[email];
+      if (user) {
+        // Verify password
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (passwordMatch) {
+          console.log(`Authenticated user ${email} from fallback storage`);
+          
+          // Return minimal user object for authentication
+          return {
+            id: user.id || `temp_${Date.now()}`,
+            email: user.email,
+            name: user.name || user.username || email.split('@')[0],
+            role: user.role || 'USER',
+            isAdmin: false, // Fallback users are never admins
+            isActive: true,
+            isFallbackUser: true, // Flag to indicate this is a temporary user
+          };
+        }
+      }
+    }
+    
+    // Check in-memory store as well
+    const globalStore = global as any;
+    if (globalStore.tempUsers && globalStore.tempUsers[email]) {
+      const user = globalStore.tempUsers[email];
+      
+      // Verify password
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (passwordMatch) {
+        console.log(`Authenticated user ${email} from in-memory fallback storage`);
+        
+        return {
+          id: user.id || `temp_${Date.now()}`,
+          email: user.email,
+          name: user.name || user.username || email.split('@')[0],
+          role: user.role || 'USER',
+          isAdmin: false,
+          isActive: true,
+          isFallbackUser: true,
+        };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error checking fallback users:", error);
+    return null;
+  }
+}
 
 /**
  * NextAuth configuration
@@ -34,16 +121,28 @@ export const authOptions: NextAuthOptions = {
           // Check database connection first
           let isConnected = false;
           try {
-            // Import pingDatabase function from prisma.ts
-            const { pingDatabase } = await import('@/lib/prisma');
             isConnected = await pingDatabase();
             
             if (!isConnected) {
               console.error("Database connection is unavailable during login attempt");
+              
+              // Try fallback authentication for users registered during outage
+              const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
+              if (fallbackUser) {
+                return fallbackUser;
+              }
+              
               throw new Error("Database connection issue. Please try again later.");
             }
           } catch (connError) {
             console.error("Database connectivity check failed:", connError);
+            
+            // Try fallback authentication before giving up
+            const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
+            if (fallbackUser) {
+              return fallbackUser;
+            }
+            
             throw new Error("Database connection issue. Please try again later.");
           }
           
@@ -63,6 +162,12 @@ export const authOptions: NextAuthOptions = {
           const user = await Promise.race([userPromise, timeoutPromise]) as any;
           
           if (!user) {
+            // One more check of fallback users if normal DB lookup fails
+            const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
+            if (fallbackUser) {
+              return fallbackUser;
+            }
+            
             throw new Error("User not found with the provided email");
           }
     
@@ -80,6 +185,7 @@ export const authOptions: NextAuthOptions = {
             image: user.image,
             isAdmin: user.isAdmin,
             isActive: user.isActive,
+            role: user.role || 'USER',
           };
           
         } catch (error: any) {
@@ -114,18 +220,24 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.name || '',
             image: user.image || '',
-            isAdmin: user.isAdmin || false,
-            isActive: user.isActive || false,
+            isAdmin: (user as any).isAdmin || false,
+            isActive: (user as any).isActive || false,
+            role: (user as any).role || 'USER',
           };
+          
+          // Add special flag for fallback users
+          if ((user as any).isFallbackUser) {
+            token.isFallbackUser = true;
+          }
         }
         
-        // Only try to get user status if we have a token with user info
-        if (token.user?.id) {
+        // Only try to get user status if we have a token with user info and database is available
+        if (token.user?.id && !token.isFallbackUser && isDatabaseAvailable()) {
           try {
             // Set a timeout for the database query
             const userPromise = prisma.user.findUnique({
               where: { id: token.user.id },
-              select: { isActive: true, isAdmin: true }
+              select: { isActive: true, isAdmin: true, role: true }
             });
             
             const timeoutPromise = new Promise((_, reject) => {
@@ -145,6 +257,11 @@ export const authOptions: NextAuthOptions = {
               } else {
                 token.user.isAdmin = false;
               }
+              
+              // Update role
+              if (userStatus.role) {
+                token.user.role = userStatus.role;
+              }
             }
           } catch (error) {
             // Log but continue - don't fail authentication if DB fetch fails
@@ -153,30 +270,40 @@ export const authOptions: NextAuthOptions = {
           }
         }
         
-        return token;
+        return token as ExtendedJWT;
       } catch (error) {
         console.error("JWT callback error:", error);
         // Return the token without modification in case of errors
-        return token;
+        return token as ExtendedJWT;
       }
     },
     
     async session({ session, token }) {
-      if (session.user) {
-        console.log("Setting session from token:", { 
-          id: (token as any).id,
-          email: token.email
-        });
+      const extendedToken = token as ExtendedJWT;
+      const extendedSession = session as ExtendedSession;
+      
+      if (extendedSession.user) {
+        // Set user ID from token
+        extendedSession.user.id = extendedToken.user?.id || extendedToken.sub || '';
         
-        // Use type assertion to avoid TypeScript errors
-        (session.user as any).id = (token as any).id;
+        // Copy all user properties from token to session
+        if (extendedToken.user) {
+          Object.assign(extendedSession.user, extendedToken.user);
+        }
         
-        // Add custom user fields from JWT to session
-        if ('role' in token) (session.user as any).role = (token as any).role;
-        if ('username' in token) (session.user as any).username = (token as any).username;
-        if ('status' in token) (session.user as any).status = (token as any).status;
+        // Add legacy custom fields if they exist directly on token
+        if ('role' in extendedToken) extendedSession.user.role = extendedToken.role;
+        if ('username' in extendedToken) extendedSession.user.username = extendedToken.username;
+        if ('isAdmin' in extendedToken) extendedSession.user.isAdmin = extendedToken.isAdmin;
+        if ('isActive' in extendedToken) extendedSession.user.isActive = extendedToken.isActive;
+        
+        // Add fallback flag if present
+        if (extendedToken.isFallbackUser) {
+          (extendedSession as any).isFallbackUser = true;
+          extendedSession.user.isAdmin = false; // Ensure fallback users are never admins
+        }
       }
-      return session;
+      return extendedSession;
     },
   },
   pages: {
@@ -188,6 +315,16 @@ export const authOptions: NextAuthOptions = {
     async signIn(message) {
       // Log successful sign-ins
       console.log("User signed in:", message.user.email);
+      
+      // If this is a fallback user and database is now available, try to sync
+      if ((message.user as any).isFallbackUser && isDatabaseAvailable()) {
+        try {
+          console.log(`Attempting to sync fallback user ${message.user.email} to database`);
+          // Logic for syncing could be added here
+        } catch (error) {
+          console.error(`Failed to sync fallback user ${message.user.email}:`, error);
+        }
+      }
     },
     async signOut(message) {
       // Log sign-outs

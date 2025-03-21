@@ -120,3 +120,35 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 For support, please contact the development team at support@matchup.com
+
+## Database Health Monitoring and Maintenance
+
+This application includes a database health monitoring system that:
+
+1. **Checks database connectivity** - Using the `/api/health` endpoint to verify the database is accessible
+2. **Handles connection issues gracefully** - Redirects users to a maintenance page when the database is unavailable
+3. **Provides meaningful errors** - Returns appropriate HTTP status codes and helpful error messages for API requests
+
+### Key Features
+
+- **Health Check Endpoint**: The `/api/health` endpoint returns detailed information about database connectivity
+- **Automatic Redirection**: Critical routes that require database access redirect to maintenance page when the database is down
+- **Middleware Protection**: The middleware blocks access to protected routes when the database is unavailable
+- **Developer Mode with Auto-Restart**: Run `npm run dev:with-db-monitoring` to automatically restart the server when database connection issues occur
+
+### How to Use
+
+#### Running with Database Monitoring
+
+```bash
+npm run dev:with-db-monitoring
+```
+
+This will start the Next.js dev server with nodemon watching for changes in the database connectivity files.
+
+#### Testing Maintenance Mode
+
+You can test the maintenance mode by:
+1. Temporarily stopping your database server
+2. Visiting a protected route like `/admin` or `/wallet`
+3. You should be redirected to the `/maintenance` page

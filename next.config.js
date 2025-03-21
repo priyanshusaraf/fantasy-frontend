@@ -13,11 +13,27 @@ const nextConfig = {
     // Removed missingSuspenseWithCSRBailout as it's not recognized in Next.js 15.2.2
   },
   images: {
-    domains: [
-      'assets.razorpay.com',
-      'lh3.googleusercontent.com',
-      'avatars.githubusercontent.com',
-      'images.unsplash.com'
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'assets.razorpay.com',
+        pathname: '**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+        pathname: '**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'avatars.githubusercontent.com',
+        pathname: '**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '**',
+      },
     ],
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60

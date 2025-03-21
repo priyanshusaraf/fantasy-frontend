@@ -1,9 +1,11 @@
 // src/lib/auth.ts
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaClient } from "@prisma/client";
 import { Adapter } from "next-auth/adapters";
 import prisma from "@/lib/db";
+import { compare } from "bcryptjs";
 
 /**
  * This is a completely custom adapter to work directly with our Prisma schema
@@ -268,50 +270,134 @@ declare module "next-auth/jwt" {
 }
 
 export const authOptions: NextAuthOptions = {
-  adapter: createPrismaAdapter(prisma),
+  adapter: createPrismaAdapter(prisma as PrismaClient),
+  // Configure one or more authentication providers
   providers: [
+    CredentialsProvider({
+      id: "credentials",
+      name: "Credentials",
+      credentials: {
+        usernameOrEmail: { label: "Username or Email", type: "text" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.usernameOrEmail && !(credentials?.username || credentials?.email) || !credentials?.password) {
+          throw new Error("Missing credentials");
+        }
+
+        try {
+          // Check if database is available first
+          if (typeof window === 'undefined') {
+            try {
+              await prisma.$queryRaw`SELECT 1`;
+            } catch (e) {
+              console.error("Database not available during login");
+              throw new Error("Database connection issue. Please try again later.");
+            }
+          }
+
+          // Handle different credential formats (accept both usernameOrEmail and username/email)
+          const loginIdentifier = credentials.usernameOrEmail || credentials.username || credentials.email || '';
+          
+          // Check if the input is an email or username
+          const isEmail = loginIdentifier.includes('@');
+          
+          // Find user by email or username
+          const user = await prisma.user.findFirst({
+            where: isEmail 
+              ? { email: loginIdentifier } 
+              : { username: loginIdentifier }
+          });
+
+          if (!user || !user.password) {
+            throw new Error("Invalid credentials");
+          }
+
+          // Check if user account is active
+          if (user.status !== "ACTIVE") {
+            throw new Error("Account is not active");
+          }
+
+          // Verify password
+          const isValidPassword = await compare(credentials.password, user.password);
+          
+          if (!isValidPassword) {
+            throw new Error("Invalid credentials");
+          }
+
+          return {
+            id: user.id.toString(),
+            name: user.name || "",
+            email: user.email,
+            image: user.profilePicture || "",
+            role: user.role,
+            isApproved: user.status === "ACTIVE",
+            username: user.username || "",
+          };
+        } catch (error: any) {
+          console.error("Login error:", error);
+          throw error;
+        }
+      }
+    }),
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code",
-        },
+      // Add profile to get additional data like name and image
+      profile(profile) {
+        return {
+          id: profile.sub.toString(),
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          role: "USER",
+          isApproved: true,
+          username: profile.email.split("@")[0],
+        };
       },
     }),
   ],
+  pages: {
+    signIn: "/auth",
+    error: "/auth",
+  },
+  session: {
+    strategy: "jwt",
+    // Keep users logged in for a year
+    maxAge: 365 * 24 * 60 * 60, // 365 days
+  },
+  // Set long cookie expiration
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 365 * 24 * 60 * 60, // 365 days
+      },
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role || "USER";
-        // Use status field to determine approval
-        token.isApproved = user.status === "ACTIVE" || user.isApproved || false;
-        token.username = user.username || "";
+        token.role = user.role;
+        token.isApproved = user.isApproved;
+        token.username = user.username;
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.isApproved = token.isApproved;
-        session.user.username = token.username || "";
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.isApproved = token.isApproved as boolean;
+        session.user.username = token.username as string;
       }
       return session;
     },
   },
-  pages: {
-    signIn: "/auth",
-    error: "/auth?error=true",
-    newUser: "/registration-callback",
-  },
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
   debug: process.env.NODE_ENV === "development",
-  secret: process.env.NEXTAUTH_SECRET,
 };
