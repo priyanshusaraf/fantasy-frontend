@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createCustomAdapter } from "./custom-adapter";
 import { env } from "@/lib/env";
-import prisma, { pingDatabase, isDatabaseAvailable } from "@/lib/prisma"; // Import singleton prisma client and connectivity functions
+import { prisma, pingDatabase, isDatabaseAvailable } from "@/lib/prisma"; // Update to use named export
 import bcrypt from "bcryptjs";
 import fs from 'fs';
 import path from 'path';
@@ -95,6 +95,35 @@ async function checkFallbackUsers(email: string, password: string): Promise<any>
   }
 }
 
+// Enhanced database query function with retries
+async function queryDatabaseWithRetry(queryFn: () => Promise<any>, maxRetries = 3, timeout = 15000) {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Create a timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Database query timed out after ${timeout}ms`)), timeout);
+      });
+      
+      // Execute the query with timeout
+      return await Promise.race([queryFn(), timeoutPromise]);
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`Database query attempt ${attempt}/${maxRetries} failed:`, error.message);
+      
+      // Don't wait on the last attempt
+      if (attempt < maxRetries) {
+        // Exponential backoff: 500ms, 1000ms, 2000ms, etc.
+        const delay = Math.min(500 * Math.pow(2, attempt - 1), 5000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
 /**
  * NextAuth configuration
  */
@@ -118,13 +147,21 @@ export const authOptions: NextAuthOptions = {
         }
         
         try {
-          // Check database connection first
+          // Check database connection first with multiple attempts
           let isConnected = false;
+          
           try {
-            isConnected = await pingDatabase();
+            // Try to ping the database up to 3 times
+            for (let i = 0; i < 3; i++) {
+              isConnected = await pingDatabase();
+              if (isConnected) break;
+              
+              // Short delay between attempts
+              if (i < 2) await new Promise(r => setTimeout(r, 1000));
+            }
             
             if (!isConnected) {
-              console.error("Database connection is unavailable during login attempt");
+              console.warn("Database connection is unavailable during login attempt - using fallback auth");
               
               // Try fallback authentication for users registered during outage
               const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
@@ -132,7 +169,7 @@ export const authOptions: NextAuthOptions = {
                 return fallbackUser;
               }
               
-              throw new Error("Database connection issue. Please try again later.");
+              throw new Error("We're experiencing database connectivity issues. Please try again in a few moments.");
             }
           } catch (connError) {
             console.error("Database connectivity check failed:", connError);
@@ -143,23 +180,17 @@ export const authOptions: NextAuthOptions = {
               return fallbackUser;
             }
             
-            throw new Error("Database connection issue. Please try again later.");
+            throw new Error("We're having trouble connecting to our database. Please try again shortly.");
           }
           
-          // Get the user from database with timeout protection
-          const userPromise = prisma.user.findUnique({
-            where: {
-              email: credentials.email
-            }
-          });
-          
-          // Set a timeout for the database query
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error("Database request timed out")), 10000);
-          });
-          
-          // Race the user query against the timeout
-          const user = await Promise.race([userPromise, timeoutPromise]) as any;
+          // Get the user from database with retries and extended timeout
+          const user = await queryDatabaseWithRetry(
+            () => prisma.user.findUnique({
+              where: { email: credentials.email }
+            }),
+            3,  // 3 retries
+            15000 // 15 second timeout
+          );
           
           if (!user) {
             // One more check of fallback users if normal DB lookup fails
@@ -168,14 +199,14 @@ export const authOptions: NextAuthOptions = {
               return fallbackUser;
             }
             
-            throw new Error("User not found with the provided email");
+            throw new Error("No account found with this email address");
           }
     
           // Verify password
           const passwordMatch = await bcrypt.compare(credentials.password, user.password);
           
           if (!passwordMatch) {
-            throw new Error("Invalid password");
+            throw new Error("Incorrect password");
           }
           
           return {
@@ -194,13 +225,13 @@ export const authOptions: NextAuthOptions = {
           // Provide user-friendly error messages based on the error type
           if (error.message.includes("database") || error.message.includes("timed out") || 
               error.message.includes("connect") || error.message.includes("prisma")) {
-            throw new Error("Database connection issue. Please try again later.");
+            throw new Error("We're experiencing technical difficulties. Please try again in a few moments.");
           } else if (error.message.includes("password")) {
-            throw new Error("Invalid credentials");
-          } else if (error.message.includes("not found")) {
-            throw new Error("Invalid credentials");
+            throw new Error("Invalid email or password");
+          } else if (error.message.includes("not found") || error.message.includes("No account")) {
+            throw new Error("Invalid email or password");
           } else {
-            throw new Error("Authentication failed. Please try again.");
+            throw new Error("Authentication failed. Please check your credentials and try again.");
           }
         }
       }
@@ -234,18 +265,15 @@ export const authOptions: NextAuthOptions = {
         // Only try to get user status if we have a token with user info and database is available
         if (token.user?.id && !token.isFallbackUser && isDatabaseAvailable()) {
           try {
-            // Set a timeout for the database query
-            const userPromise = prisma.user.findUnique({
-              where: { id: token.user.id },
-              select: { isActive: true, isAdmin: true, role: true }
-            });
-            
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error("Database request timed out")), 5000);
-            });
-            
-            // Race the database query against the timeout
-            const userStatus = await Promise.race([userPromise, timeoutPromise]) as any;
+            // Use enhanced database query function
+            const userStatus = await queryDatabaseWithRetry(
+              () => prisma.user.findUnique({
+                where: { id: token.user!.id },
+                select: { isActive: true, isAdmin: true, role: true }
+              }),
+              2,  // 2 retries
+              5000 // 5 second timeout
+            );
             
             if (userStatus) {
               token.user.isActive = userStatus.isActive;
