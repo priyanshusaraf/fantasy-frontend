@@ -3,7 +3,7 @@ import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaClient } from "@prisma/client";
 import { Adapter } from "next-auth/adapters";
-import prisma from "@/lib/db";
+import { prisma } from "@/lib/prisma";
 
 /**
  * This is a completely custom adapter to work directly with our Prisma schema
