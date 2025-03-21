@@ -1,8 +1,9 @@
+"use client";
+
 import React from 'react';
 import Link from 'next/link';
 
 // Client component for the refresh button
-"use client";
 const RefreshButton = () => {
   return (
     <button
