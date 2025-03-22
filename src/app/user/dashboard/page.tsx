@@ -30,9 +30,11 @@ import {
   ActivityIcon,
   Sun,
   Moon,
+  RefreshCw,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import LeaderboardTabs from "@/components/leaderboard/LeaderboardTabs";
+import { env } from "@/env.mjs";
 
 interface FantasyGame {
   id: number;
@@ -74,6 +76,8 @@ export default function UserDashboard() {
   const [earnings, setEarnings] = useState(0);
   const [fantasyTier, setFantasyTier] = useState("Bronze");
   const [mounted, setMounted] = useState(false);
+  const [lastScoreUpdate, setLastScoreUpdate] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Wait for theme to mount
   useEffect(() => {
@@ -145,13 +149,6 @@ export default function UserDashboard() {
         setActiveContests(activeContests);
         setUpcomingContests(upcomingContests);
 
-        // Fetch live matches
-        const liveMatchesResponse = await fetch('/api/matches/live');
-        if (liveMatchesResponse.ok) {
-          const liveMatchesData = await liveMatchesResponse.json();
-          setLiveMatches(liveMatchesData.matches || []);
-        }
-
         // For a real app, fetch the user's wallet, earnings, and tier from an API
         // For now, we'll set them to 0 instead of using mock data
         setWalletBalance(0);
@@ -168,6 +165,80 @@ export default function UserDashboard() {
       fetchUserData();
     }
   }, [status]);
+
+  // Live match polling
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    console.log('Setting up polling for live matches every', env.NEXT_PUBLIC_POLLING_INTERVAL_MS, 'ms');
+    
+    const fetchLiveMatches = async () => {
+      try {
+        // Add timestamp to prevent caching
+        const timestamp = new Date().getTime();
+        const response = await fetch(`/api/matches/live?t=${timestamp}`, {
+          cache: 'no-store',
+          headers: {
+            'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch live matches");
+        }
+        
+        const data = await response.json();
+        console.log('Polling: Fetched live matches:', data.matches);
+        setLiveMatches(data.matches || []);
+        setLastScoreUpdate(new Date());
+      } catch (error) {
+        console.error("Error polling live matches:", error);
+      }
+    };
+    
+    // Fetch immediately on mount
+    fetchLiveMatches();
+    
+    // Set up polling interval
+    const intervalId = setInterval(fetchLiveMatches, Number(env.NEXT_PUBLIC_POLLING_INTERVAL_MS));
+    
+    // Clean up on unmount
+    return () => {
+      console.log('Clearing live matches polling interval');
+      clearInterval(intervalId);
+    };
+  }, [status]);
+
+  // Handle manual refresh of matches
+  const handleRefreshScores = async () => {
+    try {
+      setRefreshing(true);
+      
+      // Add timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/matches/live?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch live matches");
+      }
+      
+      const data = await response.json();
+      console.log('Manual refresh: Fetched live matches:', data.matches);
+      setLiveMatches(data.matches || []);
+      setLastScoreUpdate(new Date());
+    } catch (error) {
+      console.error("Error refreshing live matches:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (status === "loading" || loading) {
     return (
@@ -462,7 +533,14 @@ export default function UserDashboard() {
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
-                <CardDescription>Current tournament matches</CardDescription>
+                <CardDescription>
+                  Current tournament matches
+                  {lastScoreUpdate && (
+                    <span className="text-xs ml-2 text-muted-foreground">
+                      Last updated: {lastScoreUpdate.toLocaleTimeString()}
+                    </span>
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {liveMatches.length > 0 ? (
@@ -498,11 +576,11 @@ export default function UserDashboard() {
               <CardFooter className="pt-0">
                 <Button 
                   variant="outline"
-                  className="w-full text-[#27D3C3] hover:text-[#27D3C3]/90 border-[#27D3C3]/20 hover:bg-[#27D3C3]/10"
-                  onClick={() => router.push("/fantasy/live-scores")}
+                  className="w-full"
+                  onClick={handleRefreshScores}
                 >
-                  View All Scores
-                  <ChevronRight className="h-4 w-4 ml-1" />
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Scores
                 </Button>
               </CardFooter>
             </Card>

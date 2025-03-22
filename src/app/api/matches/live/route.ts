@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic'; // Never cache this route
+export const revalidate = 0; // Revalidate on every request
+
 export async function GET() {
   try {
+    console.log('[API] Fetching live matches'); // Add log
+
     // Fetch actual live matches from database
     const matches = await prisma.match.findMany({
       where: {
@@ -24,6 +29,8 @@ export async function GET() {
       take: 5, // Limit to 5 most recent matches
     });
 
+    console.log('[API] Found', matches.length, 'live matches'); // Add log
+
     // Transform data to expected format
     const formattedMatches = matches.map(match => ({
       id: match.id,
@@ -36,18 +43,37 @@ export async function GET() {
         score: match.player2Score || 0,
       },
       status: "live",
-      tournamentName: match.tournament.name,
+      tournamentName: match.tournament?.name || "Tournament",
       round: match.round || "Unknown Round",
     }));
 
-    return NextResponse.json({
-      matches: formattedMatches,
-    });
+    // Add cache control headers to prevent caching
+    return new NextResponse(
+      JSON.stringify({ matches: formattedMatches }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
+    );
   } catch (error) {
     console.error("Error fetching live matches:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch live matches", matches: [] },
-      { status: 500 }
+    
+    return new NextResponse(
+      JSON.stringify({ error: "Failed to fetch live matches", matches: [] }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 } 

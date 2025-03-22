@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { io, Socket } from "socket.io-client";
 import {
   Card,
   CardContent,
@@ -13,6 +12,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
+import { env } from "@/env.mjs";
+import { Badge } from "@/components/ui/badge";
 
 interface Player {
   id: number;
@@ -24,6 +25,16 @@ interface Team {
   id: number;
   name: string;
   players: Player[];
+}
+
+interface SetScore {
+  team1: number;
+  team2: number;
+}
+
+interface CurrentSetScore {
+  team1: number;
+  team2: number;
 }
 
 export interface Match {
@@ -57,15 +68,21 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
   const [match, setMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [team1Score, setTeam1Score] = useState<number>(0);
   const [team2Score, setTeam2Score] = useState<number>(0);
   const [currentSet, setCurrentSet] = useState<number>(1);
   const [sets, setSets] = useState<Array<{ team1: number; team2: number }>>([]);
   const [isLandscape, setIsLandscape] = useState<boolean>(false);
   const [confirmEndMatch, setConfirmEndMatch] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const { isAuthenticated } = useAuth();
   const router = useRouter();
+
+  // Add missing state variables
+  const [currentSetScores, setCurrentSetScores] = useState<CurrentSetScore>({
+    team1: 0,
+    team2: 0
+  });
 
   // Check device orientation for optimal live scoring experience
   useEffect(() => {
@@ -78,270 +95,185 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
     return () => window.removeEventListener("resize", checkOrientation);
   }, []);
 
-  // Fetch match details from the API
+  // Fetch match details from the API using HTTP polling
   useEffect(() => {
     if (!matchId) return;
 
-    const fetchMatch = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/matches/${matchId}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch match details");
-        }
-        const matchData = await res.json();
-        setMatch(matchData);
-        setTeam1Score(matchData.player1Score || 0);
-        setTeam2Score(matchData.player2Score || 0);
-
-        // Initialize sets array based on match.sets
-        if (matchData.sets > 0) {
-          const initialSets = Array(matchData.sets).fill({
-            team1: 0,
-            team2: 0,
-          });
-          if (matchData.scores && Array.isArray(matchData.scores)) {
-            matchData.scores.forEach((score: any, index: number) => {
-              if (index < initialSets.length) {
-                initialSets[index] = score;
-              }
-            });
-          }
-          setSets(initialSets);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "An unknown error occurred"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMatch();
-  }, [matchId]);
-
-  // Establish socket connection and join the match room
-  useEffect(() => {
-    if (!matchId) return;
-
-    const socketIo = io(
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-    );
-
-    socketIo.on("connect", () => {
-      console.log("Connected to socket server");
-      socketIo.emit("joinMatch", matchId);
-    });
-
-    socketIo.on("connect_error", (err) => {
-      console.error("Socket connection error:", err);
-      setError("Failed to connect to scoring server");
-    });
-
-    // Optionally, listen for external score updates here:
-    socketIo.on("scoreUpdate", (data: any) => {
-      console.log("Received score update:", data);
-      setTeam1Score(data.player1Score);
-      setTeam2Score(data.player2Score);
-    });
-
-    socketIo.on("matchEnd", (data: any) => {
-      console.log("Received match end event:", data);
-      setMatch(
-        (prev) =>
-          prev && { ...prev, status: "COMPLETED", winnerId: data.winnerId }
-      );
-    });
-
-    setSocket(socketIo);
+    // Initial match data fetch
+    fetchMatchData();
+    
+    // Set up polling using environment variable for interval
+    const pollingInterval = setInterval(() => {
+      fetchMatchData();
+    }, env.NEXT_PUBLIC_POLLING_INTERVAL_MS);
+    
     return () => {
-      socketIo.disconnect();
+      clearInterval(pollingInterval);
     };
   }, [matchId]);
-
-  // Update score handler (increments score for given team)
-  const updateScore = async (side: "team1" | "team2") => {
-    if (!match || match.status !== "IN_PROGRESS") return;
-
+  
+  // HTTP polling implementation for match data
+  const fetchMatchData = async () => {
     try {
-      const newTeam1Score = side === "team1" ? team1Score + 1 : team1Score;
-      const newTeam2Score = side === "team2" ? team2Score + 1 : team2Score;
-
-      // Determine if the set is finished (using win conditions)
-      const setFinished =
-        (newTeam1Score >= match.maxScore &&
-          newTeam1Score - newTeam2Score >= 2) ||
-        (newTeam2Score >= match.maxScore && newTeam2Score - newTeam1Score >= 2);
-
-      if (setFinished) {
-        // Update the sets array
-        const updatedSets = [...sets];
-        updatedSets[currentSet - 1] = {
-          team1: newTeam1Score,
-          team2: newTeam2Score,
-        };
-        setSets(updatedSets);
-
-        // If final set, finish match; otherwise, move to next set
-        if (currentSet >= match.sets) {
-          // Count sets won by each team
-          const team1SetsWon = updatedSets.filter(
-            (s) => s.team1 > s.team2
-          ).length;
-          const team2SetsWon = updatedSets.filter(
-            (s) => s.team2 > s.team1
-          ).length;
-          const winnerId =
-            team1SetsWon > team2SetsWon
-              ? match.team1Id || match.player1Id
-              : match.team2Id || match.player2Id;
-
-          // Update match status to COMPLETED
-          const response = await fetch(`/api/matches/${matchId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              status: "COMPLETED",
-              scores: updatedSets,
-              winnerId,
-            }),
+      setLoading(true);
+      const res = await fetch(`/api/matches/${matchId}`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch match data");
+      }
+      
+      const data = await res.json();
+      setMatch(data);
+      
+      // Update scores based on fetched data
+      if (data) {
+        setTeam1Score(data.player1Score || 0);
+        setTeam2Score(data.player2Score || 0);
+        
+        // Update sets if available
+        if (data.sets) {
+          setCurrentSetScores({
+            team1: data.sets[data.currentSet - 1]?.team1 || 0,
+            team2: data.sets[data.currentSet - 1]?.team2 || 0
           });
-          if (!response.ok) {
-            throw new Error("Failed to update match");
-          }
-
-          setMatch({
-            ...match,
-            status: "COMPLETED",
-            winnerId,
-            endTime: new Date(),
-          });
-          socket?.emit("matchEnd", { matchId, scores: updatedSets, winnerId });
-        } else {
-          // Move to next set
-          setCurrentSet(currentSet + 1);
-          setTeam1Score(0);
-          setTeam2Score(0);
-          const response = await fetch(`/api/matches/${matchId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              status: "IN_PROGRESS",
-              scores: updatedSets,
-              currentSet: currentSet + 1,
-            }),
-          });
-          if (!response.ok) {
-            throw new Error("Failed to update match");
-          }
+          setCurrentSet(data.currentSet || 1);
+          setSets(data.sets);
         }
-      } else {
-        // Update the current score
-        setTeam1Score(newTeam1Score);
-        setTeam2Score(newTeam2Score);
-
-        // Update match in backend
-        const response = await fetch(`/api/matches/${matchId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            player1Score: newTeam1Score,
-            player2Score: newTeam2Score,
-          }),
-        });
-        if (!response.ok) {
-          throw new Error("Failed to update match");
-        }
-
-        socket?.emit("scoreUpdate", {
-          matchId,
-          player1Score: newTeam1Score,
-          player2Score: newTeam2Score,
-        });
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred"
-      );
+      console.error("Error fetching match data:", err);
+      setError("Failed to fetch match data");
+    } finally {
+      setLoading(false);
     }
   };
+  
+  // Update score through API
+  const updateScore = async (matchId: string, team1Score: number, team2Score: number, currentSet: number) => {
+    try {
+      console.log(`Updating score: Match ${matchId}, Team1: ${team1Score}, Team2: ${team2Score}, Set: ${currentSet}`);
+      setIsUpdating(true);
+      setError(null);
 
-  // Start match handler
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/matches/${matchId}/score`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        body: JSON.stringify({
+          team1Score,
+          team2Score,
+          currentSet,
+          timestamp // Add timestamp to ensure fresh data
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update score');
+      }
+
+      const data = await response.json();
+      console.log('Score updated successfully:', data);
+      
+      // Refresh match data to show latest scores
+      await fetchMatchData();
+    } catch (error) {
+      console.error('Error updating score:', error);
+      setError('Failed to update score. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
+  // Update handler function for score changes 
+  const handleScoreChange = (team: 'team1' | 'team2', increment: boolean) => {
+    if (!match || match.status !== "IN_PROGRESS") return;
+    
+    // Calculate new scores
+    let newTeam1Score = team1Score;
+    let newTeam2Score = team2Score;
+    
+    if (team === 'team1') {
+      newTeam1Score = increment ? team1Score + 1 : Math.max(0, team1Score - 1);
+    } else {
+      newTeam2Score = increment ? team2Score + 1 : Math.max(0, team2Score - 1);
+    }
+    
+    // Update current set scores
+    const newCurrentSetScores = {
+      team1: team === 'team1' ? newTeam1Score : currentSetScores.team1,
+      team2: team === 'team2' ? newTeam2Score : currentSetScores.team2
+    };
+    
+    // Copy existing sets and update current set
+    const newSets = [...sets];
+    if (newSets[currentSet - 1]) {
+      newSets[currentSet - 1] = newCurrentSetScores;
+    }
+    
+    // Update UI immediately for responsiveness
+    setTeam1Score(newTeam1Score);
+    setTeam2Score(newTeam2Score);
+    setCurrentSetScores(newCurrentSetScores);
+    setSets(newSets);
+    
+    // Update through API with additional debugging
+    console.log(`Calling updateScore - Match: ${match.id}, Team1: ${newTeam1Score}, Team2: ${newTeam2Score}, Set: ${currentSet}`);
+    updateScore(match.id.toString(), newTeam1Score, newTeam2Score, currentSet);
+  };
+  
   const startMatch = async () => {
-    if (!match || match.status !== "SCHEDULED") return;
+    // ... existing code ...
+    
     try {
-      const response = await fetch(`/api/matches/${matchId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "IN_PROGRESS" }),
+      const response = await fetch(`/api/matches/${matchId}/start`, {
+        method: 'POST',
       });
+      
       if (!response.ok) {
-        throw new Error("Failed to start match");
+        throw new Error('Failed to start match');
       }
-      setMatch({ ...match, status: "IN_PROGRESS" });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred"
-      );
+      
+      // Update local state
+      setMatch(prev => prev && { ...prev, status: 'IN_PROGRESS' });
+      fetchMatchData(); // Refresh data after update
+    } catch (error) {
+      console.error('Error starting match:', error);
+      setError('Failed to start match. Please try again.');
     }
   };
-
-  // End match early
+  
   const endMatch = async () => {
-    if (!match || match.status !== "IN_PROGRESS") return;
+    // ... existing code ...
+    
     try {
-      let winnerId;
-      if (team1Score > team2Score) {
-        winnerId = match.team1Id || match.player1Id;
-      } else if (team2Score > team1Score) {
-        winnerId = match.team2Id || match.player2Id;
-      }
-      const response = await fetch(`/api/matches/${matchId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "COMPLETED", winnerId }),
+      const winnerId = team1Score > team2Score ? match?.player1Id || match?.team1Id : match?.player2Id || match?.team2Id;
+      
+      const response = await fetch(`/api/matches/${matchId}/end`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          player1Score: team1Score,
+          player2Score: team2Score,
+          sets: sets,
+          winnerId: winnerId
+        }),
       });
+      
       if (!response.ok) {
-        throw new Error("Failed to end match");
+        throw new Error('Failed to end match');
       }
-      setMatch({
-        ...match,
-        status: "COMPLETED",
-        winnerId,
-        endTime: new Date(),
-      });
-      socket?.emit("matchEnd", {
-        matchId,
-        player1Score: team1Score,
-        player2Score: team2Score,
-        winnerId,
-      });
-      setConfirmEndMatch(false);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred"
-      );
-    }
-  };
-
-  // Cancel match handler
-  const cancelMatch = async () => {
-    if (!match) return;
-    try {
-      const response = await fetch(`/api/matches/${matchId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "CANCELLED" }),
-      });
-      if (!response.ok) {
-        throw new Error("Failed to cancel match");
-      }
-      setMatch({ ...match, status: "CANCELLED" });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred"
-      );
+      
+      // Update local state
+      setMatch(prev => prev && { ...prev, status: 'COMPLETED', winnerId });
+      fetchMatchData(); // Refresh data after update
+    } catch (error) {
+      console.error('Error ending match:', error);
+      setError('Failed to end match. Please try again.');
     }
   };
 
@@ -470,7 +402,7 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
             </div>
           </CardContent>
           <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={cancelMatch}>
+            <Button variant="outline" onClick={() => router.back()}>
               Cancel Match
             </Button>
             <Button onClick={startMatch}>Start Match</Button>
@@ -479,6 +411,54 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
       </div>
     );
   }
+
+  // Display the appropriate match status based on match state
+  const renderMatchStatus = () => {
+    if (!match) return null;
+
+    const getStatusDisplay = () => {
+      switch (match.status) {
+        case "SCHEDULED":
+          return (
+            <Badge variant="outline" className="bg-blue-100 text-blue-700">
+              Scheduled
+            </Badge>
+          );
+        case "IN_PROGRESS":
+          return (
+            <Badge variant="outline" className="bg-green-100 text-green-700">
+              In Progress 
+              <span className="ml-2 animate-pulse">•</span>
+              <span className="ml-1 text-xs">(Polling)</span>
+            </Badge>
+          );
+        case "COMPLETED":
+          return (
+            <Badge variant="outline" className="bg-purple-100 text-purple-700">
+              Completed
+            </Badge>
+          );
+        case "CANCELLED":
+          return (
+            <Badge variant="outline" className="bg-red-100 text-red-700">
+              Canceled
+            </Badge>
+          );
+        default:
+          return (
+            <Badge variant="outline" className="bg-gray-100">
+              Unknown
+            </Badge>
+          );
+      }
+    };
+
+    return (
+      <div className="flex items-center">
+        {getStatusDisplay()}
+      </div>
+    );
+  };
 
   // Main scoring interface for in-progress matches
   return (
@@ -523,7 +503,7 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
         {/* Team 1 side */}
         <div
           className="w-1/2 h-full bg-blue-50 hover:bg-blue-100 transition-colors flex items-center justify-center cursor-pointer"
-          onClick={() => updateScore("team1")}
+          onClick={() => handleScoreChange("team1", true)}
         >
           <div className="text-center">
             <h2 className="text-2xl font-bold mb-2">
@@ -573,7 +553,7 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
         {/* Team 2 side */}
         <div
           className="w-1/2 h-full bg-red-50 hover:bg-red-100 transition-colors flex items-center justify-center cursor-pointer"
-          onClick={() => updateScore("team2")}
+          onClick={() => handleScoreChange("team2", true)}
         >
           <div className="text-center">
             <h2 className="text-2xl font-bold mb-2">
@@ -645,7 +625,7 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => team1Score > 0 && setTeam1Score(team1Score - 1)}
+              onClick={() => handleScoreChange("team1", false)}
             >
               -1
             </Button>
@@ -660,7 +640,7 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => team2Score > 0 && setTeam2Score(team2Score - 1)}
+              onClick={() => handleScoreChange("team2", false)}
             >
               -1
             </Button>
@@ -705,6 +685,14 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
           </button>
         </div>
       )}
+
+      {/* Match status display */}
+      <div className="absolute bottom-4 left-4 right-4 bg-white border border-gray-300 p-4 rounded">
+        <div className="flex items-center">
+          <span className="mr-2 text-sm font-semibold text-gray-500">Status:</span>
+          {renderMatchStatus()}
+        </div>
+      </div>
     </div>
   );
 };

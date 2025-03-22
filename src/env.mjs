@@ -20,9 +20,11 @@ export const env = createEnv({
     EMAIL_SERVER_PASSWORD: z.string().optional().default(""),
     EMAIL_FROM: z.string().optional().default("noreply@example.com"),
     BYPASS_RAZORPAY: z.string().transform((val) => val === "true" || val === "" ? true : false),
+    POLLING_INTERVAL_MS: z.string().transform(val => parseInt(val || "15000", 10)),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().min(1),
+    NEXT_PUBLIC_POLLING_INTERVAL_MS: z.string().transform(val => parseInt(val || "15000", 10)),
   },
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
@@ -43,6 +45,8 @@ export const env = createEnv({
     EMAIL_FROM: process.env.EMAIL_FROM || "noreply@example.com",
     BYPASS_RAZORPAY: process.env.BYPASS_RAZORPAY || "true",
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    POLLING_INTERVAL_MS: process.env.POLLING_INTERVAL_MS || "15000",
+    NEXT_PUBLIC_POLLING_INTERVAL_MS: process.env.NEXT_PUBLIC_POLLING_INTERVAL_MS || "15000",
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
 }); 

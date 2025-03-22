@@ -7,15 +7,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Trash, UserPlus, SearchIcon, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "react-hot-toast";
 
 export interface Player {
-  id: number;
+  id?: number;
   name: string;
   email?: string;
+  password?: string;
   phone?: string;
   skillLevel?: string;
+  status?: string;
   country?: string;
-  teamId?: string;
+  gender?: string;
+  imageUrl?: string;
+  isActive?: boolean;
 }
 
 interface PlayerManagementProps {
@@ -34,39 +39,93 @@ export default function PlayerManagement({
   isLoading = false 
 }: PlayerManagementProps) {
   const [newPlayer, setNewPlayer] = useState<Partial<Player>>({
-    name: "",
-    email: "",
-    phone: "",
-    skillLevel: "",
-    country: ""
+    name: '',
+    email: '',
+    password: '',
+    phone: '',
+    skillLevel: 'B',
+    country: '',
+    gender: 'MALE',
+    status: 'ACTIVE'
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<string>("add-new");
 
-  // Handle adding a new player with useCallback
-  const handleAddPlayer = useCallback(() => {
-    if (!newPlayer.name) return;
+  const handleAddPlayer = async () => {
+    if (!newPlayer.name) {
+      toast.error('Player name is required');
+      return;
+    }
     
-    const player: Player = {
-      id: Date.now(),
-      name: newPlayer.name,
-      email: newPlayer.email,
-      phone: newPlayer.phone,
-      skillLevel: newPlayer.skillLevel,
-      country: newPlayer.country
-    };
-    
-    onPlayersChange([...players, player]);
-    
-    // Reset form
-    setNewPlayer({
-      name: "",
-      email: "",
-      phone: "",
-      skillLevel: "",
-      country: ""
-    });
-  }, [newPlayer, players, onPlayersChange]);
+    if (!newPlayer.password && newPlayer.email) {
+      toast.error('Password is required when email is provided');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/players', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: newPlayer.name,
+          email: newPlayer.email,
+          password: newPlayer.password,
+          phone: newPlayer.phone,
+          skillLevel: newPlayer.skillLevel,
+          country: newPlayer.country,
+          gender: newPlayer.gender
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to add player');
+      }
+
+      const createdPlayer = await response.json();
+      
+      // If a password was generated automatically, show it in a toast
+      if (createdPlayer.generatedPassword) {
+        toast.success(
+          <div>
+            <p>Player created successfully!</p>
+            <p className="mt-2 font-bold">Login credentials:</p>
+            <p>Email: {createdPlayer.email}</p>
+            <p>Password: {createdPlayer.generatedPassword}</p>
+          </div>,
+          { duration: 10000 } // Keep it visible longer
+        );
+      } else {
+        toast.success('Player added successfully');
+      }
+
+      // Reset form
+      setNewPlayer({
+        name: '',
+        email: '',
+        password: '',
+        phone: '',
+        skillLevel: 'B',
+        country: '',
+        gender: 'MALE',
+        status: 'ACTIVE'
+      });
+
+      // Update players list
+      if (onPlayersChange) {
+        const newPlayerWithId = { 
+          ...createdPlayer, 
+          id: typeof createdPlayer.id === 'string' ? parseInt(createdPlayer.id, 10) : createdPlayer.id || Date.now() 
+        };
+        onPlayersChange([...players, newPlayerWithId]);
+      }
+    } catch (error) {
+      console.error('Error adding player:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to add player');
+    }
+  };
 
   // Handle adding an existing player with useCallback
   const handleAddExistingPlayer = useCallback((player: Player) => {
@@ -150,6 +209,20 @@ export default function PlayerManagement({
                     value={newPlayer.email || ""}
                     onChange={(e) => setNewPlayer({...newPlayer, email: e.target.value})}
                   />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="playerPassword">Password</Label>
+                  <Input
+                    id="playerPassword"
+                    type="password"
+                    placeholder="Enter password"
+                    value={newPlayer.password || ""}
+                    onChange={(e) => setNewPlayer({...newPlayer, password: e.target.value})}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    If not provided, a random password will be generated.
+                  </p>
                 </div>
                 
                 <div className="space-y-2">

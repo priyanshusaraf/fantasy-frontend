@@ -3,17 +3,28 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic'; // Never cache this route
+export const revalidate = 0; // Revalidate on every request
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    console.log(`[API] Fetching match details for ID: ${params.id}`);
     const matchId = parseInt(params.id);
     
     if (isNaN(matchId)) {
       return NextResponse.json(
         { error: "Invalid match ID" },
-        { status: 400 }
+        { 
+          status: 400,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        }
       );
     }
 
@@ -105,7 +116,14 @@ export async function GET(
     if (!match) {
       return NextResponse.json(
         { error: "Match not found" },
-        { status: 404 }
+        { 
+          status: 404,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        }
       );
     }
 
@@ -150,14 +168,30 @@ export async function GET(
           },
       referee: match.referee,
       setScores: match.setScores,
+      timestamp: Date.now() // Add timestamp to prevent caching
     };
 
-    return NextResponse.json(formattedMatch);
+    console.log(`[API] Successfully retrieved match ${matchId} details`);
+    
+    return NextResponse.json(formattedMatch, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
     console.error("Error fetching match:", error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 }

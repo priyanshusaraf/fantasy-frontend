@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { io, Socket } from "socket.io-client";
 import {
   Card,
   CardContent,
@@ -23,7 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useSocket } from "@/hooks/useSocket";
+import { env } from "@/env.mjs";
 
 interface Player {
   id: number;
@@ -78,7 +77,6 @@ export default function LiveScoreboard({
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const router = useRouter();
-  const { socket, isConnected } = useSocket();
 
   // Function to fetch matches from the server
   const fetchMatches = async () => {
@@ -122,87 +120,17 @@ export default function LiveScoreboard({
     }
   };
 
-  // Initial fetch and periodic refresh (fallback if socket fails)
+  // Initial fetch and set up polling for regular updates
   useEffect(() => {
     fetchMatches();
-    const interval = setInterval(fetchMatches, 30000); // every 30 seconds
-    return () => clearInterval(interval);
-  }, [tournamentId, maxMatches, currentPage]);
-
-  // Socket connection for real-time updates
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-
-    // Join match rooms upon connection
-    matches.forEach((match) => {
-      socket.emit("joinMatch", match.id);
-    });
-
-    // Handle real-time score updates
-    const handleScoreUpdate = (data: any) => {
-      setAllMatches((prevMatches) => {
-        const updatedMatches = prevMatches.map((match) =>
-          match.id === data.matchId
-            ? {
-                ...match,
-                player1Score: data.player1Score,
-                player2Score: data.player2Score,
-                currentSet: data.currentSet,
-                sets: data.sets,
-              }
-            : match
-        );
-        
-        // Update current page matches
-        const startIdx = (currentPage - 1) * maxMatches;
-        const endIdx = startIdx + maxMatches;
-        setMatches(updatedMatches.slice(startIdx, endIdx));
-        
-        return updatedMatches;
-      });
-      setLastUpdate(new Date());
-    };
-
-    // Handle match end events
-    const handleMatchEnd = (data: any) => {
-      setAllMatches((prevMatches) => {
-        const updatedMatches = prevMatches.map((match) =>
-          match.id === data.matchId 
-            ? { 
-                ...match, 
-                status: "COMPLETED" as const,
-                player1Score: data.player1Score,
-                player2Score: data.player2Score,
-                sets: data.sets,
-              } 
-            : match
-        );
-        
-        // Update current page matches
-        const startIdx = (currentPage - 1) * maxMatches;
-        const endIdx = startIdx + maxMatches;
-        setMatches(updatedMatches.slice(startIdx, endIdx));
-        
-        return updatedMatches;
-      });
-      setLastUpdate(new Date());
-    };
-
-    // When a new match starts, refresh the matches list
-    const handleMatchStart = () => {
-      fetchMatches();
-    };
-
-    socket.on("scoreUpdate", handleScoreUpdate);
-    socket.on("matchEnd", handleMatchEnd);
-    socket.on("matchStart", handleMatchStart);
-
+    
+    // Use polling interval from environment variable
+    const pollingInterval = setInterval(fetchMatches, env.NEXT_PUBLIC_POLLING_INTERVAL_MS);
+    
     return () => {
-      socket.off("scoreUpdate", handleScoreUpdate);
-      socket.off("matchEnd", handleMatchEnd);
-      socket.off("matchStart", handleMatchStart);
+      clearInterval(pollingInterval);
     };
-  }, [socket, isConnected, matches, currentPage, maxMatches]);
+  }, [tournamentId, maxMatches, currentPage]);
 
   // Handler for manual refresh
   const handleRefresh = async () => {
@@ -317,9 +245,7 @@ export default function LiveScoreboard({
           <CardTitle>Live Scoreboard</CardTitle>
           <CardDescription>
             Last updated: {lastUpdate.toLocaleTimeString()}
-            {isConnected && (
-              <span className="ml-2 text-green-500 text-xs">• Live</span>
-            )}
+            <span className="ml-2 text-yellow-500 text-xs">• Polling</span>
           </CardDescription>
         </div>
         <Button
