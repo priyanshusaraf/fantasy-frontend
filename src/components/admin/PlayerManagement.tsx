@@ -8,6 +8,7 @@ import { Plus, Trash, UserPlus, SearchIcon, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "react-hot-toast";
+import { SKILL_LEVELS } from "@/utils/constants";
 
 export interface Player {
   id?: number;
@@ -30,8 +31,6 @@ interface PlayerManagementProps {
   isLoading?: boolean;
 }
 
-const SKILL_LEVELS = ["Beginner", "Intermediate", "Advanced", "Professional"];
-
 export default function PlayerManagement({ 
   players, 
   onPlayersChange, 
@@ -50,6 +49,7 @@ export default function PlayerManagement({
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<string>("add-new");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAddPlayer = async () => {
     if (!newPlayer.name) {
@@ -57,26 +57,28 @@ export default function PlayerManagement({
       return;
     }
     
-    if (!newPlayer.password && newPlayer.email) {
-      toast.error('Password is required when email is provided');
-      return;
-    }
+    setIsSubmitting(true);
 
     try {
+      // Create the request data object with all fields properly formatted
+      const playerData = {
+        name: newPlayer.name,
+        skillLevel: newPlayer.skillLevel || 'B',
+        country: newPlayer.country || null,
+        gender: newPlayer.gender || 'MALE',
+        age: null,
+        // Only include email and password if they're not empty
+        ...(newPlayer.email ? { email: newPlayer.email } : {}),
+        ...(newPlayer.password ? { password: newPlayer.password } : {}),
+        ...(newPlayer.phone ? { phone: newPlayer.phone } : {})
+      };
+
       const response = await fetch('/api/players', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          name: newPlayer.name,
-          email: newPlayer.email,
-          password: newPlayer.password,
-          phone: newPlayer.phone,
-          skillLevel: newPlayer.skillLevel,
-          country: newPlayer.country,
-          gender: newPlayer.gender
-        })
+        body: JSON.stringify(playerData)
       });
 
       if (!response.ok) {
@@ -124,6 +126,8 @@ export default function PlayerManagement({
     } catch (error) {
       console.error('Error adding player:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to add player');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -138,8 +142,10 @@ export default function PlayerManagement({
   }, [players, onPlayersChange]);
 
   // Handle removing a player with useCallback
-  const handleRemovePlayer = useCallback((playerId: number) => {
-    onPlayersChange(players.filter(player => player.id !== playerId));
+  const handleRemovePlayer = useCallback((playerId: number | undefined) => {
+    if (playerId !== undefined) {
+      onPlayersChange(players.filter(player => player.id !== playerId));
+    }
   }, [players, onPlayersChange]);
 
   // Filter existing players based on search term - with useMemo
@@ -153,7 +159,7 @@ export default function PlayerManagement({
 
   // Track which existing players are already in the players list - with useMemo
   const playerIdsInList = useMemo(() => {
-    return new Set(players.map(player => player.id));
+    return new Set(players.filter(player => player.id !== undefined).map(player => player.id as number));
   }, [players]);
 
   return (
@@ -191,11 +197,23 @@ export default function PlayerManagement({
                     />
                     <Button 
                       onClick={handleAddPlayer}
-                      disabled={!newPlayer.name}
+                      disabled={!newPlayer.name || isSubmitting}
                       size="sm"
                     >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add
+                      {isSubmitting ? (
+                        <span className="flex items-center">
+                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Adding...
+                        </span>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -239,7 +257,7 @@ export default function PlayerManagement({
                 <div className="space-y-2">
                   <Label htmlFor="playerSkill">Skill Level (Optional)</Label>
                   <Select
-                    value={newPlayer.skillLevel || ""}
+                    value={newPlayer.skillLevel || "B"}
                     onValueChange={(value) => setNewPlayer({...newPlayer, skillLevel: value})}
                   >
                     <SelectTrigger id="playerSkill">
@@ -247,8 +265,8 @@ export default function PlayerManagement({
                     </SelectTrigger>
                     <SelectContent>
                       {SKILL_LEVELS.map(level => (
-                        <SelectItem key={level.toLowerCase()} value={level.toLowerCase()}>
-                          {level}
+                        <SelectItem key={level.value} value={level.value}>
+                          {level.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -299,7 +317,7 @@ export default function PlayerManagement({
                         <div 
                           key={player.id} 
                           className="p-2 hover:bg-muted/30 cursor-pointer flex justify-between items-center"
-                          onClick={() => !playerIdsInList.has(player.id) && handleAddExistingPlayer(player)}
+                          onClick={() => player.id !== undefined && !playerIdsInList.has(player.id) && handleAddExistingPlayer(player)}
                         >
                           <div>
                             <div className="font-medium">{player.name}</div>
@@ -309,7 +327,7 @@ export default function PlayerManagement({
                             </div>
                           </div>
                           
-                          {playerIdsInList.has(player.id) ? (
+                          {player.id !== undefined && playerIdsInList.has(player.id) ? (
                             <div className="text-xs text-muted-foreground">Already Added</div>
                           ) : (
                             <Plus className="h-4 w-4" />
