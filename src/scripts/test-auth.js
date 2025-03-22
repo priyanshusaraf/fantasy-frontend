@@ -1,117 +1,89 @@
-const bcrypt = require('bcryptjs');
+/**
+ * This script tests authentication with the updated NEXTAUTH_SECRET
+ */
+
+const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('🔍 Starting auth diagnostic script');
+async function testAuth() {
+  // Print environment variables (redacting sensitive values)
+  console.log('ENVIRONMENT VARIABLES:');
+  console.log(`- NEXTAUTH_SECRET: ${process.env.NEXTAUTH_SECRET ? '****' + process.env.NEXTAUTH_SECRET.slice(-4) : 'not set'}`);
+  console.log(`- DATABASE_URL: ${process.env.DATABASE_URL ? '****' + process.env.DATABASE_URL.slice(-20) : 'not set'}`);
+  console.log(`- NEXTAUTH_URL: ${process.env.NEXTAUTH_URL || 'not set'}`);
   
   try {
-    // 1. Test database connection
-    console.log('\n📊 Testing database connection...');
-    await prisma.$connect();
-    console.log('✅ Database connection successful');
-    
-    // 2. Check if user exists (test with your email)
-    const testEmail = process.argv[2] || 'test@example.com';
-    console.log(`\n🔎 Looking for user with email: ${testEmail}`);
-    
+    // Find the user
     const user = await prisma.user.findUnique({
-      where: { email: testEmail }
-    });
-    
-    if (!user) {
-      console.log(`❌ No user found with email: ${testEmail}`);
-      console.log('\nTry creating a test user:');
-      
-      // Create test password hash for demonstration
-      const hashedPassword = await bcrypt.hash('password123', 10);
-      console.log(`Hashed password: ${hashedPassword}`);
-      console.log(`
-      // Create a user with this command:
-      prisma.user.create({
-        data: {
-          name: "Test User",
-          email: "${testEmail}",
-          password: "${hashedPassword}",
-          role: "USER",
-          status: "ACTIVE"
-        }
-      })
-      `);
-      
-      // Exit early
-      await prisma.$disconnect();
-      return;
-    }
-    
-    console.log('✅ User found');
-    console.log(`User ID: ${user.id}`);
-    console.log(`Username: ${user.username || 'N/A'}`);
-    console.log(`Name: ${user.name || 'N/A'}`);
-    console.log(`Role: ${user.role || 'USER'}`);
-    console.log(`Status: ${user.status || 'N/A'}`);
-    
-    // 3. Test password verification
-    if (!user.password) {
-      console.log('❌ User has no password set');
-      await prisma.$disconnect();
-      return;
-    }
-    
-    console.log('\n🔐 Testing password verification');
-    console.log('Password hash in DB:', user.password);
-    
-    // Test with a known password if provided as third argument
-    const testPassword = process.argv[3] || 'password123';
-    console.log(`Testing password: ${testPassword}`);
-    
-    const passwordMatch = await bcrypt.compare(testPassword, user.password);
-    if (passwordMatch) {
-      console.log('✅ Password verified successfully!');
-    } else {
-      console.log('❌ Password verification failed');
-      
-      // Check bcrypt format
-      if (!user.password.startsWith('$')) {
-        console.log('❓ Password hash does not appear to be a valid bcrypt hash');
-      }
-      
-      // Create a new hash for comparison
-      const newHash = await bcrypt.hash(testPassword, 10);
-      console.log(`Sample bcrypt hash for '${testPassword}': ${newHash}`);
-    }
-    
-    // 4. Verify user login query
-    console.log('\n🧪 Testing login query...');
-    const foundUser = await prisma.user.findUnique({
-      where: { email: testEmail },
+      where: { email: 'sarafpriyanshu09@gmail.com' },
       select: {
         id: true,
         email: true,
-        name: true,
-        image: true,
         password: true,
         role: true,
-        status: true
+        status: true,
+        name: true
       }
     });
     
-    if (foundUser) {
-      console.log('✅ Login query successful');
-      // Test isActive check in your auth code
-      const isActive = foundUser.status === 'ACTIVE';
-      console.log(`User active status: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
-    } else {
-      console.log('❌ Login query failed');
+    if (!user) {
+      console.error('User not found in database');
+      return;
+    }
+    
+    console.log('\nUSER INFORMATION:');
+    console.log(`- ID: ${user.id}`);
+    console.log(`- Email: ${user.email}`);
+    console.log(`- Role: ${user.role}`);
+    console.log(`- Status: ${user.status}`);
+    
+    // Verify password
+    const password = 'matchupsports';
+    const passwordMatches = await bcrypt.compare(password, user.password);
+    console.log(`- Password matches: ${passwordMatches ? 'Yes ✅' : 'No ❌'}`);
+    
+    // Create a JWT token as NextAuth would
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      },
+      process.env.NEXTAUTH_SECRET,
+      { expiresIn: '30d' }
+    );
+    
+    console.log('\nJWT TOKEN:');
+    console.log(`- Token (truncated): ${token.substring(0, 20)}...`);
+    
+    // Verify the token
+    try {
+      const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET);
+      console.log('\nDECODED TOKEN:');
+      console.log(`- ID: ${decoded.id}`);
+      console.log(`- Email: ${decoded.email}`);
+      console.log(`- Role: ${decoded.role}`);
+      console.log(`- JWT verification: Success ✅`);
+    } catch (error) {
+      console.error('\nJWT VERIFICATION ERROR:');
+      console.error(`- Error: ${error.message}`);
     }
     
   } catch (error) {
-    console.error('❌ Error during diagnostic:', error);
+    console.error('Error in test-auth script:', error);
   } finally {
     await prisma.$disconnect();
-    console.log('\n🏁 Diagnostic complete');
   }
 }
 
-main(); 
+testAuth()
+  .then(() => {
+    console.log('\nAuthentication test completed');
+  })
+  .catch(error => {
+    console.error('Authentication test failed:', error);
+    process.exit(1);
+  }); 
