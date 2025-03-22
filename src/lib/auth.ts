@@ -281,67 +281,63 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (!credentials) {
-          console.error("No credentials provided");
-          return null;
+        if (!credentials?.usernameOrEmail && !credentials?.password) {
+          console.error("Missing credentials");
+          throw new Error("Missing credentials");
         }
 
         try {
-          const { usernameOrEmail, password } = credentials;
-
-          if (!usernameOrEmail || !password) {
-            console.error("Missing required credentials");
-            throw new Error("Please provide both email and password");
-          }
-
-          // First check if database is available before attempting login
-          try {
-            // Simple test query to check DB connection
-            await prisma.$queryRaw`SELECT 1`;
-          } catch (dbError) {
-            console.error("Database connection error during auth:", dbError);
-            throw new Error("Database connection issue. Please try again later.");
-          }
-
-          // Look up user by email or username
-          const user = await prisma.user.findFirst({
-            where: {
-              OR: [
-                { email: usernameOrEmail },
-                { username: usernameOrEmail }
-              ]
+          // Check if database is available
+          if (typeof window === 'undefined') {
+            try {
+              await prisma.$queryRaw`SELECT 1`;
+            } catch (e) {
+              console.error("Database connection issue");
+              throw new Error("Database connection issue. Please try again later.");
             }
+          }
+
+          // Find user by email or username
+          const loginIdentifier = credentials.usernameOrEmail || '';
+          const isEmail = loginIdentifier.includes('@');
+          
+          const user = await prisma.user.findFirst({
+            where: isEmail 
+              ? { email: loginIdentifier } 
+              : { username: loginIdentifier }
           });
 
           if (!user || !user.password) {
-            console.log(`No user found for credentials: ${usernameOrEmail}`);
-            return null;
+            throw new Error("Invalid credentials");
           }
 
-          // Check password - use compare from bcrypt
-          const isValid = await compare(password, user.password);
-
-          if (!isValid) {
-            console.log(`Invalid password for user: ${usernameOrEmail}`);
-            return null;
+          // Check if user account is active
+          if (user.status !== "ACTIVE") {
+            throw new Error("Account is not active");
           }
 
-          // Authentication successful
-          console.log(`Login successful for user: ${user.username || user.email}`);
+          // Verify password
+          const isValidPassword = await compare(credentials.password, user.password);
+          
+          if (!isValidPassword) {
+            throw new Error("Invalid credentials");
+          }
 
-          // Return user data without sensitive fields
+          // Make sure role is properly capitalized
+          const normalizedRole = user.role.toUpperCase();
+
           return {
-            id: user.id,
-            name: user.name,
+            id: user.id.toString(),
+            name: user.name || "",
             email: user.email,
-            image: user.image,
-            role: user.role,
-            isApproved: user.isApproved,
-            username: user.username
+            image: user.profilePicture || "",
+            role: normalizedRole,
+            isApproved: user.status === "ACTIVE",
+            username: user.username || "",
           };
-        } catch (error) {
-          console.error("Auth error:", error);
-          throw error; // Let NextAuth handle the error
+        } catch (error: any) {
+          console.error("Login error:", error);
+          throw error;
         }
       }
     }),

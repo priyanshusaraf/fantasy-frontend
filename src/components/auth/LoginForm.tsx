@@ -5,20 +5,18 @@ import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/label";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Eye, EyeOff, RefreshCw } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Eye, EyeOff } from "lucide-react";
 
 // Simple form validation schema - minimal requirements
 const loginSchema = z.object({
   username: z.string().min(1, "Username or email is required"),
   password: z.string().min(1, "Password is required"),
 });
-
+//meow meow
 interface LoginFormProps {
   callbackUrl?: string;
 }
@@ -32,73 +30,43 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginFailed, setLoginFailed] = useState(false);
   const [error, setError] = useState("");
-  const [retryCount, setRetryCount] = useState(0);
-  const [dbChecked, setDbChecked] = useState(false);
-  const [dbConnected, setDbConnected] = useState(true);
-  const [checkingDb, setCheckingDb] = useState(true);
-  const searchParams = useSearchParams();
   
-  // Form setup with validation
-  const form = useForm<typeof loginSchema>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      username: searchParams?.get("email") || "",
-      password: "",
-    },
-  });
-  
-  // Auto-focus password field if email is pre-filled from URL
   useEffect(() => {
-    const email = searchParams?.get("email");
-    const autoLogin = searchParams?.get("autoLogin");
-    
-    if (email && autoLogin === "true") {
-      // Auto-focus password field after a short delay
-      setTimeout(() => {
-        const passwordInput = document.querySelector('input[name="password"]') as HTMLInputElement;
-        if (passwordInput) {
-          passwordInput.focus();
-        }
-      }, 100);
-    }
-  }, [searchParams]);
-  
-  // Check database connection without blocking login flow
-  useEffect(() => {
-    const checkDbConnection = async () => {
+    const checkDatabase = async () => {
       try {
-        setCheckingDb(true);
-        const response = await fetch("/api/check-db-connection");
+        // Try the system/db-check endpoint first
+        let response = await fetch('/api/system/db-check');
+        
+        // If that fails with a 404, try the health endpoint as fallback
+        if (!response.ok && response.status === 404) {
+          console.log('DB check endpoint not found, trying health endpoint instead');
+          response = await fetch('/api/health');
+        }
+        
+        if (!response.ok) {
+          console.error('Database check endpoints unavailable:', response.status);
+          return; // Don't show an error to the user, just continue
+        }
+        
         const data = await response.json();
-        setDbConnected(data.connected);
-        console.log("Database connection status:", data.connected);
+        const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
+        
+        if (!isConnected) {
+          console.error('Database connection issue:', data);
+          toast.error('System issue: Database connection problem detected');
+        }
       } catch (error) {
-        console.error("Error checking database connection:", error);
-        setDbConnected(false);
-      } finally {
-        setCheckingDb(false);
-        setDbChecked(true);
+        console.error('Failed to check database:', error);
+        // Don't show an error to the user, just log it
       }
     };
     
-    checkDbConnection();
-  }, [retryCount]);
-  
-  const handleRetryDbConnection = () => {
-    if (retryCount < 3) {
-      setRetryCount(prevCount => prevCount + 1);
-      setCheckingDb(true);
-      toast.info("Retrying database connection...");
-    } else {
-      toast.error("Maximum retry attempts reached. Please try again later.");
-    }
-  };
+    checkDatabase();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setLoginFailed(false);
-    setError("");
     
     // Basic validation
     if (!username || !password) {
@@ -108,9 +76,7 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     }
 
     try {
-      console.log(`Attempting login with username: ${username}`);
-      
-      // Sign in with credentials
+      // Simply sign in with credentials
       const result = await signIn("credentials", {
         usernameOrEmail: username,
         password,
@@ -118,45 +84,18 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       });
 
       if (result?.error) {
-        console.error("Login error:", result.error);
-        
-        // Check if we should retry on database error
-        if ((result.error.includes("connection") || result.error.includes("database")) && retryCount < 3) {
-          setRetryCount(prev => prev + 1);
-          toast.error(`Database connection issue. Retrying (${retryCount + 1}/3)...`);
-          
-          // Wait a moment and retry
-          setTimeout(() => {
-            handleSubmit(e);
-          }, 2000);
-          return;
-        }
-        
-        // Show more user-friendly error messages
-        if (result.error.includes("CredentialsSignin")) {
-          toast.error("Invalid email or password");
-        } else if (result.error.includes("connection")) {
-          toast.error("Database connection issue. Please try again later.");
-        } else {
-          toast.error(result.error);
-        }
-        
-        setLoginFailed(true);
-        setError(result.error);
+        toast.error("Login failed: " + result.error);
         setIsSubmitting(false);
         return;
       }
 
-      // Success!
       toast.success("Login successful!");
       
-      // Redirect without window.location (let NextAuth handle it)
-      router.push("/user/dashboard");
+      // Simple redirect to dashboard (NextAuth callbacks will handle role-based redirects)
+      window.location.href = "/user/dashboard";
     } catch (err) {
       console.error("Login error:", err);
       toast.error("An unexpected error occurred");
-      setLoginFailed(true);
-      setError(err instanceof Error ? err.message : "Unknown error");
       setIsSubmitting(false);
     }
   };
@@ -213,48 +152,6 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       <div className="space-y-2 text-center">
         <h1 className="text-3xl font-bold">Sign In</h1>
         <p className="text-muted-foreground">Enter your email and password to access your account</p>
-        
-        {/* Database status indicator */}
-        {!dbChecked ? (
-          <div className="mt-2 text-sm text-blue-600 bg-blue-50 p-2 rounded-md flex items-center">
-            <div className="animate-spin h-4 w-4 mr-2 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-            Checking database connection...
-          </div>
-        ) : (
-          dbConnected ? (
-            <div className="mt-2 text-sm text-green-600 bg-green-50 p-2 rounded-md">
-              <strong>Database connection:</strong> Successful
-            </div>
-          ) : (
-            <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 p-3 rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className="text-yellow-700 dark:text-yellow-500 font-medium">
-                  Database connection issue detected
-                </div>
-                {retryCount < 3 && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="ml-auto"
-                    onClick={handleRetryDbConnection}
-                    disabled={checkingDb}
-                  >
-                    {checkingDb ? (
-                      <RefreshCw className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                    )}
-                    Retry
-                  </Button>
-                )}
-              </div>
-              <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
-                Please make sure you're using the correct email and password.
-              </p>
-            </div>
-          )
-        )}
-        
         <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
           <strong>Important:</strong> Make sure to use the exact email and password you registered with. 
           The login is case-sensitive.
