@@ -60,25 +60,13 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       }
       
       const data = await response.json();
-      console.log('Database connection check response:', data);
+      const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
       
-      // Properly handle the response structure
-      // The API now returns a 'connected' property directly
-      const isConnected = typeof data.connected === 'boolean' 
-        ? data.connected 
-        : data.status === 'healthy';
-      
-      console.log('Database connected status:', isConnected);
       setDbStatus(isConnected ? 'connected' : 'disconnected');
       
-      if (isConnected) {
-        toast.success('Database connection restored!', {
-          id: 'db-connection-status'
-        });
-      } else {
+      if (!isConnected) {
         console.error('Database connection issue:', data);
         toast.error('System issue: Database connection problem detected', {
-          id: 'db-connection-status',
           description: 'Your login might fail. Please try again in a few moments.',
           action: {
             label: 'Retry',
@@ -324,7 +312,7 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
         <Button 
           type="submit" 
           className="w-full" 
-          disabled={isSubmitting || (dbStatus === 'disconnected')} 
+          disabled={isSubmitting || (dbStatus === 'disconnected' && !confirm)} 
         >
           {isSubmitting ? "Signing in..." : "Sign in"}
         </Button>

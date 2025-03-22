@@ -124,17 +124,7 @@ export async function POST(
     }
 
     // Get player data from request body
-    let body;
-    try {
-      body = await request.json();
-      console.log("Received request body:", JSON.stringify(body));
-    } catch (error) {
-      console.error("Error parsing JSON:", error);
-      return NextResponse.json(
-        { message: "Invalid JSON in request body" },
-        { status: 400 }
-      );
-    }
+    const body = await request.json();
     
     // Handle both single player addition and multiple player addition
     const playerIds = body.playerIds || (body.playerId ? [body.playerId] : []);
@@ -192,7 +182,8 @@ export async function POST(
           console.log(`Added player ${playerId} to tournament ${tournamentId}`);
           return { playerId, status: "added", entryId: entry.id };
         } catch (error) {
-          console.error(`Error adding player ${playerId}:`, error);
+          console.error(`Error adding player ${playerId} to tournament:`, error);
+          // Still return a successful object, but with error status
           return { 
             playerId, 
             status: "error", 
@@ -202,23 +193,26 @@ export async function POST(
       })
     );
 
-    // Count successes and failures
+    // Summarize results
     const added = results.filter(r => r.status === "added").length;
-    const alreadyAdded = results.filter(r => r.status === "already_added").length;
+    const existing = results.filter(r => r.status === "already_added").length;
     const errors = results.filter(r => r.status === "error").length;
 
-    // Return the results
-    return NextResponse.json({
-      success: true,
-      added,
-      alreadyAdded,
-      errors,
-      results
-    });
+    console.log(`Successfully added ${added} players, ${existing} already in tournament, ${errors} errors`);
 
+    return NextResponse.json({ 
+      results,
+      summary: { added, existing, errors }
+    });
   } catch (error) {
     console.error("Error in tournament player addition:", error);
-    return errorHandler(error as Error, request);
+    return NextResponse.json(
+      { 
+        message: "Internal Server Error", 
+        details: error instanceof Error ? error.message : "An unexpected error occurred" 
+      },
+      { status: 500 }
+    );
   }
 }
 

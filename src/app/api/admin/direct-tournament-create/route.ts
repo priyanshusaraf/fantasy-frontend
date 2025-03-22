@@ -31,7 +31,40 @@ export async function POST(request: NextRequest) {
   console.log("Tournament direct creation endpoint called");
   
   try {
-    const body = await request.json();
+    // Test database connection first
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      console.log("Database connection successful");
+    } catch (dbError) {
+      console.error("Database connection failed:", dbError);
+      return NextResponse.json(
+        { 
+          message: "Failed to create tournament", 
+          error: "Database connection failed", 
+          details: dbError instanceof Error ? dbError.message : String(dbError),
+          timestamp: new Date().toISOString()
+        },
+        { status: 500 }
+      );
+    }
+    
+    // Parse request body
+    let body;
+    try {
+      body = await request.json();
+      console.log("Request body parsed successfully");
+    } catch (parseError) {
+      console.error("Error parsing request body:", parseError);
+      return NextResponse.json(
+        { 
+          message: "Invalid request format", 
+          error: "Failed to parse request body",
+          timestamp: new Date().toISOString()
+        },
+        { status: 400 }
+      );
+    }
+    
     const { tournamentData, userEmail, secretKey } = body;
     
     // Security check
@@ -46,9 +79,23 @@ export async function POST(request: NextRequest) {
     console.log("Processing tournament creation request for:", tournamentData.name);
     
     // Find the user who is creating the tournament
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail },
-    });
+    let user;
+    try {
+      user = await prisma.user.findUnique({
+        where: { email: userEmail },
+      });
+    } catch (userError) {
+      console.error("Error finding user:", userError);
+      return NextResponse.json(
+        { 
+          message: "Failed to create tournament", 
+          error: "User lookup failed",
+          details: userError instanceof Error ? userError.message : String(userError),
+          timestamp: new Date().toISOString()
+        },
+        { status: 500 }
+      );
+    }
 
     if (!user) {
       console.log("User not found:", userEmail);

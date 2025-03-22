@@ -53,79 +53,97 @@ export default function PlayerManagement({
 
   const handleAddPlayer = async () => {
     if (!newPlayer.name) {
-      toast.error('Player name is required');
+      toast({
+        title: "Error",
+        description: "Player name is required"
+      });
       return;
     }
     
     setIsSubmitting(true);
-
+    
     try {
-      // Create the request data object with all fields properly formatted
+      // Create a clean player object
       const playerData = {
         name: newPlayer.name,
-        skillLevel: newPlayer.skillLevel || 'B',
-        country: newPlayer.country || null,
-        gender: newPlayer.gender || 'MALE',
-        age: null,
-        // Only include email and password if they're not empty
-        ...(newPlayer.email ? { email: newPlayer.email } : {}),
-        ...(newPlayer.password ? { password: newPlayer.password } : {}),
-        ...(newPlayer.phone ? { phone: newPlayer.phone } : {})
+        email: newPlayer.email || undefined,
+        skillLevel: newPlayer.skillLevel || "INTERMEDIATE",
+        country: newPlayer.country || undefined,
       };
-
-      const response = await fetch('/api/players', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(playerData)
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to add player');
-      }
-
-      const createdPlayer = await response.json();
       
-      // If a password was generated automatically, show it in a toast
-      if (createdPlayer.generatedPassword) {
-        toast.success(
-          <div>
-            <p>Player created successfully!</p>
-            <p className="mt-2 font-bold">Login credentials:</p>
-            <p>Email: {createdPlayer.email}</p>
-            <p>Password: {createdPlayer.generatedPassword}</p>
-          </div>,
-          { duration: 10000 } // Keep it visible longer
-        );
-      } else {
-        toast.success('Player added successfully');
+      console.log("Creating player with data:", JSON.stringify(playerData));
+      
+      const response = await fetch("/api/players", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(playerData),
+      });
+      
+      if (!response.ok) {
+        // Handle non-OK response
+        let errorMessage = `Failed to create player (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (parseError) {
+          console.error("Error parsing error response:", parseError);
+        }
+        
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
       }
-
+      
+      // Handle successful response
+      let player;
+      try {
+        player = await response.json();
+      } catch (parseError) {
+        console.error("Error parsing success response:", parseError);
+        toast({
+          title: "Warning",
+          description: "Player may have been created, but response could not be parsed",
+          variant: "default"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+      
+      console.log("Player created successfully:", player);
+      
+      // Add to player list
+      setPlayers([...players, player]);
+      
       // Reset form
       setNewPlayer({
-        name: '',
-        email: '',
-        password: '',
-        phone: '',
-        skillLevel: 'B',
-        country: '',
-        gender: 'MALE',
-        status: 'ACTIVE'
+        name: "",
+        email: "",
+        country: "",
+        skillLevel: "INTERMEDIATE"
       });
-
-      // Update players list
+      
+      // Notify parent component
       if (onPlayersChange) {
-        const newPlayerWithId = { 
-          ...createdPlayer, 
-          id: typeof createdPlayer.id === 'string' ? parseInt(createdPlayer.id, 10) : createdPlayer.id || Date.now() 
-        };
-        onPlayersChange([...players, newPlayerWithId]);
+        onPlayersChange([...players, player]);
       }
+      
+      toast({
+        title: "Success",
+        description: `Player ${player.name} added successfully`
+      });
     } catch (error) {
-      console.error('Error adding player:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to add player');
+      console.error("Error adding player:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add player",
+        variant: "destructive"
+      });
     } finally {
       setIsSubmitting(false);
     }
