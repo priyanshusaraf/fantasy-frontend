@@ -1,5 +1,5 @@
 // src/components/player/NewPlayerDialog.tsx
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +13,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Eye, EyeOff } from "lucide-react";
 
 interface NewPlayerData {
   name: string;
+  email?: string;
+  password?: string;
   skillLevel: "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C" | "D";
   country?: string;
   age?: number;
@@ -39,6 +42,8 @@ export function NewPlayerDialog({
   onSubmit,
   children,
 }: NewPlayerDialogProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -60,6 +65,55 @@ export function NewPlayerDialog({
               }
               placeholder="Enter player name"
             />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="email">Email Address</Label>
+            <Input
+              id="email"
+              type="email"
+              value={playerData.email || ""}
+              onChange={(e) =>
+                onPlayerDataChange({ ...playerData, email: e.target.value })
+              }
+              placeholder="Enter email address"
+            />
+            <p className="text-xs text-muted-foreground">
+              Player will use this email to access their account
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={playerData.password || ""}
+                onChange={(e) =>
+                  onPlayerDataChange({ ...playerData, password: e.target.value })
+                }
+                placeholder="Create password"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+              >
+                {showPassword ? 
+                  <EyeOff size={18} aria-hidden="true" /> : 
+                  <Eye size={18} aria-hidden="true" />
+                }
+                <span className="sr-only">
+                  {showPassword ? "Hide password" : "Show password"}
+                </span>
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Optional. If not provided, a temporary password will be generated.
+            </p>
           </div>
 
           <div className="grid gap-2">

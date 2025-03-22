@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     const playerMap = new Map();
     
     // Add standalone players to the map
-    standalonePlayers.forEach(player => {
+    standalonePlayers.forEach((player: any) => {
       playerMap.set(player.id, {
         id: player.id,
         name: player.name,
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     });
     
     // Add users with PLAYER role, but avoid duplicates if they already have a player record
-    playerUsers.forEach(user => {
+    playerUsers.forEach((user: any) => {
       // If this user already has a player record, it would be in standalonePlayers,
       // so we don't need to add it again
       if (!user.player) {
@@ -169,17 +169,33 @@ export async function POST(request: NextRequest) {
           });
         }
       } else {
+        // Generate a password if none provided
+        const password = data.password || Math.random().toString(36).substring(2, 10);
+        
+        // Hash the password
+        let hashedPassword;
+        try {
+          const bcrypt = require('bcryptjs');
+          hashedPassword = await bcrypt.hash(password, 10);
+        } catch (err) {
+          console.error("Error hashing password:", err);
+          hashedPassword = null; // If bcrypt fails, we'll store null password
+        }
+        
         // Create a new user with this email
         const newUser = await prisma.user.create({
           data: {
             email: data.email,
             username: data.name,
             role: "PLAYER",
-            // Use a random password that will need to be reset
-            password: Math.random().toString(36).substring(2, 15),
+            password: hashedPassword,
           },
         });
         userId = newUser.id;
+        
+        // Store original plain password temporarily for response
+        // IMPORTANT: This should only be returned once during account creation
+        data.generatedPassword = data.password ? undefined : password;
       }
     }
 
@@ -197,7 +213,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(player, { status: 201 });
+    // Include the temporary password in the response if one was generated
+    const response = {
+      ...player,
+      email: data.email,
+      generatedPassword: data.generatedPassword,
+    };
+
+    return NextResponse.json(response, { status: 201 });
   } catch (error) {
     console.error("Error creating player:", error);
     return errorHandler(error as Error, request);

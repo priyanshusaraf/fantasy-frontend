@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PlusCircle, Search, MoreVertical, UserPlus, UserMinus, CheckCircle, Shield, RefreshCcw, Plus } from "lucide-react";
+import { PlusCircle, Search, MoreVertical, UserPlus, UserMinus, CheckCircle, Shield, RefreshCcw, Plus, Eye, EyeOff } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -40,10 +40,12 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
   const [isAddRefereeDialogOpen, setIsAddRefereeDialogOpen] = useState(false);
   const [isNewRefereeDialogOpen, setIsNewRefereeDialogOpen] = useState(false);
   const [isAddingReferees, setIsAddingReferees] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   
   const [newReferee, setNewReferee] = useState({
     name: "",
     email: "",
+    password: "",
     certificationLevel: "LEVEL_1",
   });
 
@@ -196,6 +198,7 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
         body: JSON.stringify({
           username: newReferee.name,
           email: newReferee.email,
+          password: newReferee.password || undefined, // Only send if provided
           role: "REFEREE"
         }),
       });
@@ -265,15 +268,24 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
       setReferees(prev => [...prev, refereeWithUserInfo]);
       setSelectedReferees(prev => [...prev, refereeWithUserInfo]);
       
-      showToast(
-        "Success",
-        "Referee added successfully"
-      );
+      // Show different toast if password was generated
+      if (user.generatedPassword) {
+        showToast(
+          "Referee added successfully",
+          `Login credentials: ${user.email} / ${user.generatedPassword}`
+        );
+      } else {
+        showToast(
+          "Success",
+          "Referee added successfully"
+        );
+      }
       
       setIsNewRefereeDialogOpen(false);
       setNewReferee({
         name: "",
         email: "",
+        password: "",
         certificationLevel: "LEVEL_1",
       });
     } catch (error: any) {
@@ -288,6 +300,7 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
       setNewReferee({
         name: "",
         email: "",
+        password: "",
         certificationLevel: "LEVEL_1",
       });
     }
@@ -769,6 +782,41 @@ export default function TournamentRefereeManager({ tournamentId }: TournamentRef
                 value={newReferee.email}
                 onChange={(e) => setNewReferee(prev => ({ ...prev, email: e.target.value }))}
               />
+            </div>
+            
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="password" className="text-right">
+                Password
+              </Label>
+              <div className="col-span-3 relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  className="pr-10"
+                  value={newReferee.password}
+                  onChange={(e) => setNewReferee(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="Enter password or leave empty to auto-generate"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? 
+                    <EyeOff size={18} aria-hidden="true" /> : 
+                    <Eye size={18} aria-hidden="true" />
+                  }
+                  <span className="sr-only">
+                    {showPassword ? "Hide password" : "Show password"}
+                  </span>
+                </button>
+              </div>
+              <div className="col-span-3 col-start-2">
+                <p className="text-xs text-muted-foreground">
+                  If left empty, a password will be automatically generated
+                </p>
+              </div>
             </div>
             
             <div className="grid grid-cols-4 items-center gap-4">

@@ -150,7 +150,10 @@ export async function POST(request: NextRequest) {
     // Check authentication
     const session = await getServerSession(authOptions);
     if (!session?.user || !['TOURNAMENT_ADMIN', 'MASTER_ADMIN'].includes(session.user.role as string)) {
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json({
+        error: "Unauthorized",
+        message: "You must be a tournament admin or master admin to create tournaments"
+      }, { status: 401 });
     }
 
     // Get request body
@@ -174,17 +177,63 @@ export async function POST(request: NextRequest) {
       fantasySettings 
     } = body;
 
+    // Validate required fields
+    const missingFields = [];
+    if (!name) missingFields.push("name");
+    if (!type) missingFields.push("type");
+    if (!startDate) missingFields.push("startDate");
+    if (!endDate) missingFields.push("endDate");
+    if (!location) missingFields.push("location");
+    
+    if (missingFields.length > 0) {
+      return NextResponse.json({
+        error: "Validation Error",
+        message: `Missing required fields: ${missingFields.join(", ")}`,
+        fields: missingFields
+      }, { status: 400 });
+    }
+
+    // Validate dates
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const regOpen = registrationOpenDate ? new Date(registrationOpenDate) : null;
+      const regClose = registrationCloseDate ? new Date(registrationCloseDate) : null;
+      
+      if (end <= start) {
+        return NextResponse.json({
+          error: "Date Validation Error",
+          message: "End date must be after start date"
+        }, { status: 400 });
+      }
+      
+      if (regOpen && regClose && regClose <= regOpen) {
+        return NextResponse.json({
+          error: "Date Validation Error",
+          message: "Registration close date must be after registration open date"
+        }, { status: 400 });
+      }
+    } catch (err) {
+      return NextResponse.json({
+        error: "Date Validation Error",
+        message: "Invalid date format"
+      }, { status: 400 });
+    }
+
     // Get tournament admin ID
     const adminUser = await prisma.tournamentAdmin.findFirst({
       where: {
         user: {
-          id: session.user.id,
+          id: parseInt(session.user.id as string),
         },
       },
     });
 
     if (!adminUser) {
-      return new NextResponse('Tournament admin not found', { status: 404 });
+      return NextResponse.json({
+        error: "Not Found",
+        message: "Tournament admin profile not found. Please set up your admin profile first."
+      }, { status: 404 });
     }
 
     // Create tournament
@@ -197,11 +246,11 @@ export async function POST(request: NextRequest) {
         status: 'IN_PROGRESS',
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-        registrationOpenDate: new Date(registrationOpenDate),
-        registrationCloseDate: new Date(registrationCloseDate),
+        registrationOpenDate: registrationOpenDate ? new Date(registrationOpenDate) : new Date(startDate),
+        registrationCloseDate: registrationCloseDate ? new Date(registrationCloseDate) : new Date(startDate),
         location,
-        maxParticipants: Number(maxParticipants),
-        entryFee: Number(entryFee),
+        maxParticipants: Number(maxParticipants) || 32,
+        entryFee: Number(entryFee) || 0,
         prizeMoney: prizeMoney ? Number(prizeMoney) : null,
         rules,
         fantasySettings: fantasySettings ? JSON.stringify(fantasySettings) : null,
@@ -210,40 +259,84 @@ export async function POST(request: NextRequest) {
     });
 
     // Add players to tournament
+    const playerResults = [];
     if (players && players.length > 0) {
       for (const player of players) {
-        await prisma.tournamentEntry.create({
-          data: {
-            tournamentId: tournament.id,
+        try {
+          const entry = await prisma.tournamentEntry.create({
+            data: {
+              tournamentId: tournament.id,
+              playerId: player.id,
+              paymentStatus: 'PAID', // Auto-approve entries created by admin
+            },
+          });
+          playerResults.push({ 
+            playerId: player.id, 
+            success: true, 
+            entryId: entry.id 
+          });
+        } catch (playerError) {
+          console.error(`Error adding player ${player.id} to tournament:`, playerError);
+          playerResults.push({ 
             playerId: player.id,
-            paymentStatus: 'PAID', // Auto-approve entries created by admin
-          },
-        });
+            success: false,
+            error: playerError instanceof Error ? playerError.message : "Unknown error" 
+          });
+        }
       }
     }
 
     // Create teams if team-based tournament
+    const teamResults = [];
     if (isTeamBased && teams && teams.length > 0) {
       for (const team of teams) {
-        await prisma.team.create({
-          data: {
-            name: team.name,
-            tournament: {
-              connect: { id: tournament.id }
+        try {
+          const newTeam = await prisma.team.create({
+            data: {
+              name: team.name,
+              tournament: {
+                connect: { id: tournament.id }
+              },
+              players: {
+                connect: team.players.map((player: any) => ({ id: player.id }))
+              }
             },
-            players: {
-              connect: team.players.map((player: any) => ({ id: player.id }))
-            }
-          },
-        });
+          });
+          teamResults.push({ 
+            teamId: newTeam.id, 
+            name: team.name, 
+            success: true 
+          });
+        } catch (teamError) {
+          console.error(`Error creating team ${team.name} for tournament:`, teamError);
+          teamResults.push({ 
+            name: team.name,
+            success: false,
+            error: teamError instanceof Error ? teamError.message : "Unknown error" 
+          });
+        }
       }
     }
 
-    // Return the created tournament
-    return NextResponse.json(tournament);
+    // Return the created tournament with detailed results
+    return NextResponse.json({
+      tournament,
+      players: playerResults.length > 0 ? playerResults : undefined,
+      teams: teamResults.length > 0 ? teamResults : undefined,
+      success: true,
+      message: "Tournament created successfully"
+    }, { status: 201 });
   } catch (error) {
     console.error('Error creating tournament:', error);
-    return new NextResponse('Error creating tournament', { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+    const errorDetail = error instanceof Error && error.stack ? error.stack : undefined;
+    
+    return NextResponse.json({
+      error: "Tournament Creation Failed",
+      message: errorMessage,
+      detail: errorDetail,
+      success: false
+    }, { status: 500 });
   }
 }
 

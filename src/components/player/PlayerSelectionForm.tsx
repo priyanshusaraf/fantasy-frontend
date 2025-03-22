@@ -16,7 +16,7 @@ import { toast } from "@/components/ui/sonner";
 import { PlayerCard } from "@/components/player/PlayerCard";
 import { PlayerSearch } from "@/components/player/PlayerSearch";
 import { NewPlayerDialog } from "@/components/player/NewPlayerDialog";
-import { Player, NewPlayerData } from "@/types/player";
+import { NewPlayerData } from "@/types/player";
 import {
   Select,
   SelectContent,
@@ -30,12 +30,29 @@ const showToast = (message: string, type: 'success' | 'error' = 'success') => {
   if (type === 'success') {
     toast(message);
   } else {
-    toast.error(message);
+    toast({ title: message, variant: "destructive" });
   }
 };
 
 interface PlayerSelectionFormProps {
   tournamentId: string;
+}
+
+// Define the Player interface to match PlayerCard component's expectations
+interface Player {
+  id: number;
+  name: string;
+  imageUrl?: string;
+  skillLevel?: "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C" | "D";
+  country?: string;
+  age?: number;
+  gender?: "MALE" | "FEMALE" | "OTHER";
+}
+
+// Extended version of NewPlayerData that includes email and password for the form
+interface ExtendedPlayerData extends NewPlayerData {
+  email?: string;
+  password?: string;
 }
 
 export function PlayerSelectionForm({
@@ -48,11 +65,13 @@ export function PlayerSelectionForm({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isNewPlayerDialogOpen, setIsNewPlayerDialogOpen] = useState(false);
-  const [newPlayer, setNewPlayer] = useState<NewPlayerData>({
+  const [newPlayer, setNewPlayer] = useState<ExtendedPlayerData>({
     name: "",
     skillLevel: "B",
     country: "",
     gender: "MALE",
+    email: "",
+    password: "",
   });
 
   // Fetch existing players from DB
@@ -70,7 +89,12 @@ export function PlayerSelectionForm({
         }
 
         const data = await response.json();
-        setExistingPlayers(data.players);
+        // Convert API response to our local Player type with id as number
+        const players = data.players.map((player: any) => ({
+          ...player,
+          id: typeof player.id === 'string' ? parseInt(player.id) : player.id,
+        }));
+        setExistingPlayers(players);
       } catch (error) {
         console.error("Error fetching players:", error);
         showToast("Failed to load existing players.", "error");
@@ -107,6 +131,7 @@ export function PlayerSelectionForm({
     }
 
     try {
+      setSubmitting(true);
       const response = await fetch("/api/players", {
         method: "POST",
         headers: {
@@ -117,24 +142,48 @@ export function PlayerSelectionForm({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to create player");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create player");
       }
 
-      const createdPlayer = await response.json();
+      const createdPlayerData = await response.json();
+      
+      // Convert the created player to match our local type
+      const createdPlayer: Player = {
+        ...createdPlayerData,
+        id: typeof createdPlayerData.id === 'string' ? parseInt(createdPlayerData.id) : createdPlayerData.id,
+      };
+      
+      // Add the created player to both lists
       setExistingPlayers([...existingPlayers, createdPlayer]);
       setSelectedPlayers([...selectedPlayers, createdPlayer]);
+      
+      // Show appropriate success message
+      if (createdPlayerData.email && createdPlayerData.generatedPassword) {
+        // Show password in the success message for account creation
+        showToast(
+          `Player created successfully. Login credentials: Email: ${createdPlayerData.email} / Password: ${createdPlayerData.generatedPassword}`,
+          "success"
+        );
+      } else {
+        showToast("Player created successfully.");
+      }
+      
+      // Reset form
       setNewPlayer({
         name: "",
+        email: "",
+        password: "",
         skillLevel: "B",
         country: "",
         gender: "MALE",
       });
       setIsNewPlayerDialogOpen(false);
-
-      showToast("Player created successfully.");
     } catch (error) {
       console.error("Error creating player:", error);
-      showToast("Failed to create player.", "error");
+      showToast(error instanceof Error ? error.message : "Failed to create player.", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
