@@ -169,11 +169,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // First check database connectivity
       const isDbConnected = await pingDatabase();
       
+      console.log('Starting registration process for:', userData.email);
+      console.log('Database connected:', isDbConnected);
+      
       // If database is disconnected, we'll still attempt registration with fallback
       if (!isDbConnected) {
         console.info('Registration will proceed even if database connection is delayed');
       }
       
+      console.log('Sending registration request to API');
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
@@ -182,18 +186,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(userData),
       });
 
+      console.log('Registration API response status:', response.status);
       const data = await response.json();
+      console.log('Registration API response data:', data);
 
       if (!response.ok) {
         // Handle specific error types
-        if (data.error.includes('database') || data.error.includes('connection')) {
+        if (data.error?.includes('database') || data.error?.includes('connection')) {
           setError('Registration saved locally. Your account will be activated when database connectivity is restored.');
           setStatus('success'); // We're treating this as success since we handle fallback
           toast('Registration saved locally. Your account will be activated when database connectivity is restored.');
           
           // Redirect to a page explaining the situation
           router.push('/auth/pending');
-        } else if (data.error.includes('already exists')) {
+        } else if (data.error?.includes('already exists')) {
           setError('A user with this email already exists');
           setStatus('error');
           toast.error('A user with this email already exists');
@@ -214,11 +220,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           // Auto-login the user after successful registration
           try {
+            console.log('Attempting auto-login after registration for:', userData.email);
             const loginResult = await signIn('credentials', {
               redirect: false,
               email: userData.email,
               password: userData.password,
             });
+            
+            console.log('Auto-login result:', loginResult);
             
             if (loginResult?.error) {
               // If auto-login fails, redirect to login page with email pre-filled
@@ -227,6 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               router.push(`/auth?mode=signin&email=${encodeURIComponent(userData.email)}`);
             } else {
               // Successfully logged in after registration
+              console.log('Auto-login successful, redirecting to dashboard');
               toast.success('Account created and logged in successfully!');
               router.push('/dashboard');
             }

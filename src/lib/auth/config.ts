@@ -8,9 +8,54 @@ import bcrypt from "bcryptjs";
 import fs from 'fs';
 import path from 'path';
 import { JWT } from "next-auth/jwt";
-import { Session } from "next-auth";
+import { DefaultSession, Session } from "next-auth";
 
-// Define extended types for session and token
+// Extend the built-in session types
+declare module "next-auth" {
+  interface Session extends DefaultSession {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+      role: string;
+      isAdmin?: boolean;
+      isActive?: boolean;
+      username?: string;
+    }
+  }
+
+  interface User {
+    id: string;
+    email: string;
+    name?: string;
+    image?: string;
+    isAdmin?: boolean;
+    isActive?: boolean;
+    role: string;
+    username?: string;
+    isFallbackUser?: boolean;
+  }
+}
+
+// Extend JWT
+declare module "next-auth/jwt" {
+  interface JWT {
+    user?: {
+      id: string;
+      email: string;
+      name?: string;
+      image?: string;
+      isAdmin?: boolean;
+      isActive?: boolean;
+      role?: string;
+      username?: string;
+    };
+    isFallbackUser?: boolean;
+  }
+}
+
+// Custom Types for internal use
 interface ExtendedUser {
   id: string;
   email: string;
@@ -20,19 +65,6 @@ interface ExtendedUser {
   isActive?: boolean;
   role?: string;
   username?: string;
-}
-
-interface ExtendedJWT extends JWT {
-  user?: ExtendedUser;
-  role?: string;
-  username?: string;
-  isAdmin?: boolean;
-  isActive?: boolean;
-  isFallbackUser?: boolean;
-}
-
-interface ExtendedSession extends Session {
-  user: ExtendedUser;
 }
 
 // Handle fallback auth for temporary users stored during database outages
@@ -143,10 +175,13 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
+          console.error("Missing credentials", { email: !!credentials?.email, password: !!credentials?.password });
           return null;
         }
         
         try {
+          console.log(`Login attempt for: ${credentials.email}`);
+          
           // Check database connection first with multiple attempts
           let isConnected = false;
           
@@ -154,6 +189,7 @@ export const authOptions: NextAuthOptions = {
             // Try to ping the database up to 3 times
             for (let i = 0; i < 3; i++) {
               isConnected = await pingDatabase();
+              console.log(`Database connection attempt ${i+1}: ${isConnected ? 'connected' : 'failed'}`);
               if (isConnected) break;
               
               // Short delay between attempts
@@ -166,6 +202,7 @@ export const authOptions: NextAuthOptions = {
               // Try fallback authentication for users registered during outage
               const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
               if (fallbackUser) {
+                console.log(`Authenticated ${credentials.email} via fallback mechanism`);
                 return fallbackUser;
               }
               
@@ -177,12 +214,14 @@ export const authOptions: NextAuthOptions = {
             // Try fallback authentication before giving up
             const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
             if (fallbackUser) {
+              console.log(`Authenticated ${credentials.email} via fallback after connectivity error`);
               return fallbackUser;
             }
             
             throw new Error("We're having trouble connecting to our database. Please try again shortly.");
           }
           
+          console.log(`Querying database for user: ${credentials.email}`);
           // Get the user from database with retries and extended timeout
           const user = await queryDatabaseWithRetry(
             () => prisma.user.findUnique({
@@ -193,22 +232,28 @@ export const authOptions: NextAuthOptions = {
           );
           
           if (!user) {
+            console.log(`No user found with email: ${credentials.email}`);
             // One more check of fallback users if normal DB lookup fails
             const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
             if (fallbackUser) {
+              console.log(`Found fallback user for: ${credentials.email}`);
               return fallbackUser;
             }
             
             throw new Error("No account found with this email address");
           }
+          
+          console.log(`User found, verifying password for: ${credentials.email}`);
     
           // Verify password
           const passwordMatch = await bcrypt.compare(credentials.password, user.password);
+          console.log(`Password verification result for ${credentials.email}: ${passwordMatch ? 'match' : 'mismatch'}`);
           
           if (!passwordMatch) {
             throw new Error("Incorrect password");
           }
           
+          console.log(`Authentication successful for: ${credentials.email}`);
           return {
             id: user.id,
             email: user.email,
@@ -299,40 +344,37 @@ export const authOptions: NextAuthOptions = {
           }
         }
         
-        return token as ExtendedJWT;
+        return token;
       } catch (error) {
         console.error("JWT callback error:", error);
         // Return the token without modification in case of errors
-        return token as ExtendedJWT;
+        return token;
       }
     },
     
     async session({ session, token }) {
-      const extendedToken = token as ExtendedJWT;
-      const extendedSession = session as ExtendedSession;
-      
-      if (extendedSession.user) {
+      if (session.user) {
         // Set user ID from token
-        extendedSession.user.id = extendedToken.user?.id || extendedToken.sub || '';
+        session.user.id = token.user?.id || token.sub || '';
         
         // Copy all user properties from token to session
-        if (extendedToken.user) {
-          Object.assign(extendedSession.user, extendedToken.user);
+        if (token.user) {
+          Object.assign(session.user, token.user);
         }
         
         // Add legacy custom fields if they exist directly on token
-        if ('role' in extendedToken) extendedSession.user.role = extendedToken.role;
-        if ('username' in extendedToken) extendedSession.user.username = extendedToken.username;
-        if ('isAdmin' in extendedToken) extendedSession.user.isAdmin = extendedToken.isAdmin;
-        if ('isActive' in extendedToken) extendedSession.user.isActive = extendedToken.isActive;
+        if ('role' in token) session.user.role = token.role as string;
+        if ('username' in token) session.user.username = token.username as string;
+        if ('isAdmin' in token) session.user.isAdmin = token.isAdmin as boolean;
+        if ('isActive' in token) session.user.isActive = token.isActive as boolean;
         
         // Add fallback flag if present
-        if (extendedToken.isFallbackUser) {
-          (extendedSession as any).isFallbackUser = true;
-          extendedSession.user.isAdmin = false; // Ensure fallback users are never admins
+        if (token.isFallbackUser) {
+          (session as any).isFallbackUser = true;
+          session.user.isAdmin = false; // Ensure fallback users are never admins
         }
       }
-      return extendedSession;
+      return session;
     },
     async redirect({ url, baseUrl }) {
       // If the URL is an absolute URL that starts with the base URL

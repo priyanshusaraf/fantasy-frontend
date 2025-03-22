@@ -82,12 +82,25 @@ export default function UserDashboard() {
   
   // Check if user has the correct role
   useEffect(() => {
+    // Skip checks if status is still loading
+    if (status === "loading") {
+      return;
+    }
+    
     if (status === "unauthenticated") {
       router.push("/login");
       return;
     }
     
-    if (status === "authenticated" && session?.user?.role !== "USER") {
+    // Only redirect if we're sure the session is fully established
+    // and the role is definitely not USER
+    if (status === "authenticated" && 
+        session?.user && 
+        'role' in session.user && 
+        session.user.role !== "USER") {
+      console.log("User role mismatch, redirecting from user dashboard", {
+        role: session.user.role
+      });
       router.push("/dashboard");
       return;
     }

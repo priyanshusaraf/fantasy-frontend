@@ -3,8 +3,9 @@
 
 import { Suspense } from "react";
 import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 export default function LoginRedirectPage() {
   return (
@@ -21,31 +22,25 @@ export default function LoginRedirectPage() {
 
 function LoginRedirectContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
 
   useEffect(() => {
-    // Extract any query parameters to pass along
-    const callbackUrl = searchParams.get("callbackUrl");
-    const error = searchParams.get("error");
-
-    let redirectUrl = "/auth?mode=signin";
-
-    if (callbackUrl) {
-      redirectUrl += `&callbackUrl=${encodeURIComponent(callbackUrl)}`;
+    // If the user is authenticated, go directly to dashboard
+    if (status === 'authenticated') {
+      router.replace('/user/dashboard');
+      return;
     }
-
-    if (error) {
-      redirectUrl += `&error=${encodeURIComponent(error)}`;
+    
+    // If not authenticated or still loading, go to auth page
+    if (status === 'unauthenticated') {
+      router.replace("/auth?mode=signin");
     }
-
-    // Redirect to the auth page
-    router.replace(redirectUrl);
-  }, [router, searchParams]);
+  }, [router, status, session]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen">
       <Loader2 className="h-8 w-8 animate-spin text-[#00a1e0]" />
-      <p className="mt-4">Redirecting to login...</p>
+      <p className="mt-4">Redirecting...</p>
     </div>
   );
 }

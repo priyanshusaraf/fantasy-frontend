@@ -20,22 +20,13 @@ interface LoginFormProps {
   callbackUrl?: string;
 }
 
-export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
+export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Sanitize the callback URL to prevent redirect loops
-  const sanitizedCallback = useMemo(() => {
-    // If it contains nested callbacks or percent encoding, use dashboard
-    if (callbackUrl.includes('callbackUrl=') || callbackUrl.includes('%25')) {
-      return '/dashboard';
-    }
-    return callbackUrl;
-  }, [callbackUrl]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -56,15 +47,17 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
       
       setIsSubmitting(true);
       
-      // Use NextAuth signIn with credentials
+      // Use NextAuth signIn with credentials - always force user dashboard as target
       const signInResult = await signIn("credentials", {
         redirect: false,
         usernameOrEmail: username,
+        username: username,
+        email: username,
         password,
-        callbackUrl: sanitizedCallback, // Use sanitized URL
       });
       
       if (signInResult?.error) {
+        console.error("Login error:", signInResult.error);
         toast.error("Invalid username or password");
         setErrors({
           username: "Invalid username or password",
@@ -76,8 +69,11 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
       // Show success toast
       toast.success("Login successful");
       
-      // Redirect to the sanitized callback URL or dashboard
-      router.push(sanitizedCallback);
+      // Redirect immediately without timeout
+      console.log("Login successful, redirecting to user dashboard");
+      
+      // Use window.location.href for a hard redirect that will break any loops
+      window.location.href = "/user/dashboard";
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
       toast.error(errorMessage);

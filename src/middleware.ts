@@ -15,6 +15,12 @@ export async function middleware(request: NextRequest) {
     '/maintenance',
   ];
 
+  // Also always allow access to dashboard - we'll handle auth there
+  // This prevents redirect loops at the middleware level
+  if (path === '/dashboard') {
+    return NextResponse.next();
+  }
+  
   // Skip middleware for public paths or static files
   if (publicPaths.some(publicPath => path.startsWith(publicPath)) || 
       path.includes('/_next/') || 
@@ -41,11 +47,14 @@ export async function middleware(request: NextRequest) {
 
   return NextResponse.next();
 }
-
 // Only run middleware on specific paths
 export const config = {
   matcher: [
-    // Apply to all paths except those starting with:
-    '/((?!api/auth|auth|login|register|_next|images|favicon.ico).*)',
+    // Only apply middleware to these specific paths
+    '/api/fantasy-pickleball/:path*',
+    '/api/tournaments/:path*',
+    '/api/matches/:path*',
+    '/api/users/:path*', 
   ],
 };
+

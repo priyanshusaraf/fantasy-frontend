@@ -28,19 +28,44 @@ export default function DashboardRedirector() {
   useEffect(() => {
     const redirectToDashboard = async () => {
       try {
-        // If user is not authenticated, redirect to auth page
-        if (status === "unauthenticated") {
-          router.push("/auth");
-          return;
-        }
-
+        // Add debugging info
+        console.log("Dashboard redirect status:", status, {
+          hasSession: !!session,
+          user: session?.user ? { 
+            hasRole: 'role' in (session.user || {}),
+            role: session?.user?.role 
+          } : null
+        });
+        
         // If still loading and not retrying, wait for session
         if (status === "loading" && !isRetrying) {
           return;
         }
         
+        // If user is not authenticated, redirect to auth page
+        if (status === "unauthenticated") {
+          router.push("/auth");
+          return;
+        }
+        
         // First try to get role from session
-        if (status === "authenticated" && session?.user?.role) {
+        if (status === "authenticated" && session?.user) {
+          // We have a session but may not have role - check carefully
+
+          // Check for basic user info to verify we have a proper session
+          if (!session.user.email) {
+            if (retryCount < 3) {
+              // Session appears incomplete, retry
+              console.log("Session appears incomplete, retrying", { retryCount });
+              setIsRetrying(true);
+              setRetryCount(prev => prev + 1);
+              setTimeout(() => {
+                setIsRetrying(false);
+              }, 2000); // Wait 2 seconds between retries
+              return;
+            }
+          }
+
           // Cast to our extended user type
           const user = session.user as ExtendedUser;
           
@@ -54,30 +79,41 @@ export default function DashboardRedirector() {
             return;
           }
           
-          const role = user.role;
-          
-          // Redirect based on user role
-          switch (role) {
-            case "PLAYER":
-              router.push("/player/dashboard");
-              break;
-            case "USER":
-              router.push("/user/dashboard");
-              break;
-            case "REFEREE":
-              router.push("/referee/dashboard");
-              break;
-            case "TOURNAMENT_ADMIN":
-              router.push("/admin/dashboard");
-              break;
-            case "MASTER_ADMIN":
-              router.push("/master-admin/dashboard");
-              break;
-            default:
-              router.push("/user/dashboard"); // Default fallback
-              break;
+          // If role exists in user object, use it
+          if ('role' in user) {
+            const role = user.role;
+            
+            // Redirect based on user role
+            switch (role) {
+              case "PLAYER":
+                router.push("/player/dashboard");
+                break;
+              case "USER":
+                router.push("/user/dashboard");
+                break;
+              case "REFEREE":
+                router.push("/referee/dashboard");
+                break;
+              case "TOURNAMENT_ADMIN":
+                router.push("/admin/dashboard");
+                break;
+              case "MASTER_ADMIN":
+                router.push("/master-admin/dashboard");
+                break;
+              default:
+                // Default to user dashboard
+                console.log("Unknown role, defaulting to user dashboard", { role });
+                router.push("/user/dashboard");
+                break;
+            }
+            return;
+          } else {
+            // No role in session, but we have a session
+            // Default to user dashboard to prevent loops
+            console.log("Session exists but no role found, defaulting to user dashboard");
+            router.push("/user/dashboard");
+            return;
           }
-          return;
         }
         
         // If no session role but we have pending retry, just redirect to user dashboard

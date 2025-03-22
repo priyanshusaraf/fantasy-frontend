@@ -383,21 +383,53 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role;
+        // Ensure role is always set with USER as fallback
+        token.role = user.role || "USER";
         token.isApproved = user.isApproved;
         token.username = user.username;
+      }
+      // Handle case where token exists but role is missing
+      if (!token.role) {
+        token.role = "USER";
       }
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
-        session.user.role = token.role as string;
+        // Ensure role is always set with USER as fallback 
+        session.user.role = (token.role as string) || "USER";
         session.user.isApproved = token.isApproved as boolean;
         session.user.username = token.username as string;
       }
+      // Double-check role is set
+      if (session.user && !session.user.role) {
+        session.user.role = "USER";
+      }
       return session;
     },
+    // Add custom redirect callback to always go to user dashboard for credentials provider
+    async redirect({ url, baseUrl }) {
+      // If URL is absolute and for same site
+      if (url.startsWith(baseUrl)) {
+        // For credentials provider success login, always go to user dashboard
+        if (url.includes('/api/auth/callback/credentials')) {
+          return `${baseUrl}/user/dashboard`;
+        }
+        // For other authorized callbacks, keep the URL
+        return url;
+      }
+      // If URL is relative, prepend base URL
+      else if (url.startsWith('/')) {
+        // For credentials login, ensure we go to user dashboard
+        if (url === '/' || url === '/dashboard') {
+          return `${baseUrl}/user/dashboard`;
+        }
+        return `${baseUrl}${url}`;
+      }
+      // Otherwise, return to base URL
+      return baseUrl;
+    }
   },
   debug: process.env.NODE_ENV === "development",
 };
