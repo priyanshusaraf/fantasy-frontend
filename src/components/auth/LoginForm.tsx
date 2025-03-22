@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, RefreshCw, AlertCircle, CheckCircle, Database } from "lucide-react";
 
 // Simple form validation schema - minimal requirements
 const loginSchema = z.object({
@@ -30,43 +30,78 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginFailed, setLoginFailed] = useState(false);
   const [error, setError] = useState("");
+  const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
+  const [isCheckingDb, setIsCheckingDb] = useState(false);
   
-  useEffect(() => {
-    const checkDatabase = async () => {
-      try {
-        // Try the system/db-check endpoint first
-        let response = await fetch('/api/system/db-check');
+  // Function to check database connection
+  const checkDatabase = async () => {
+    try {
+      setIsCheckingDb(true);
+      
+      // Try the check-db-connection endpoint
+      let response = await fetch('/api/check-db-connection');
+      
+      // If that fails with a 404, try system/db-check as fallback
+      if (!response.ok && response.status === 404) {
+        console.log('DB check endpoint not found, trying system/db-check instead');
+        response = await fetch('/api/system/db-check');
         
-        // If that fails with a 404, try the health endpoint as fallback
+        // If that fails too, try the health endpoint as last resort
         if (!response.ok && response.status === 404) {
-          console.log('DB check endpoint not found, trying health endpoint instead');
+          console.log('System db-check endpoint not found, trying health endpoint');
           response = await fetch('/api/health');
         }
-        
-        if (!response.ok) {
-          console.error('Database check endpoints unavailable:', response.status);
-          return; // Don't show an error to the user, just continue
-        }
-        
-        const data = await response.json();
-        const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
-        
-        if (!isConnected) {
-          console.error('Database connection issue:', data);
-          toast.error('System issue: Database connection problem detected');
-        }
-      } catch (error) {
-        console.error('Failed to check database:', error);
-        // Don't show an error to the user, just log it
       }
-    };
-    
+      
+      if (!response.ok) {
+        console.error('All database check endpoints unavailable:', response.status);
+        setDbStatus('disconnected');
+        return;
+      }
+      
+      const data = await response.json();
+      const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
+      
+      setDbStatus(isConnected ? 'connected' : 'disconnected');
+      
+      if (!isConnected) {
+        console.error('Database connection issue:', data);
+        toast.error('System issue: Database connection problem detected', {
+          description: 'Your login might fail. Please try again in a few moments.',
+          action: {
+            label: 'Retry',
+            onClick: () => checkDatabase()
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to check database:', error);
+      setDbStatus('disconnected');
+    } finally {
+      setIsCheckingDb(false);
+    }
+  };
+  
+  // Check database connection on component mount
+  useEffect(() => {
     checkDatabase();
-  }, []);
+    
+    // Set up periodic checks every 30 seconds
+    const interval = setInterval(() => {
+      // Only check if currently disconnected
+      if (dbStatus === 'disconnected') {
+        checkDatabase();
+      }
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [dbStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setLoginFailed(false);
+    setError("");
     
     // Basic validation
     if (!username || !password) {
@@ -76,7 +111,17 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     }
 
     try {
-      // Simply sign in with credentials
+      // Check database connection first
+      if (dbStatus === 'disconnected') {
+        await checkDatabase();
+        
+        // If still disconnected, warn the user
+        if (dbStatus === 'disconnected') {
+          toast.warning("Database connection issue detected. Login might fail.");
+        }
+      }
+      
+      // Proceed with sign in
       const result = await signIn("credentials", {
         usernameOrEmail: username,
         password,
@@ -84,7 +129,23 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       });
 
       if (result?.error) {
-        toast.error("Login failed: " + result.error);
+        setLoginFailed(true);
+        
+        // Special handling for database connection errors
+        if (result.error.includes('Database connection') || result.error.includes('database issue')) {
+          setError("Database connection issue. Please try again in a few moments.");
+          toast.error("Database connection issue detected", {
+            description: "The server couldn't connect to the database. Please try again later.",
+            action: {
+              label: 'Retry',
+              onClick: () => checkDatabase()
+            }
+          });
+        } else {
+          setError(result.error);
+          toast.error("Login failed: " + result.error);
+        }
+        
         setIsSubmitting(false);
         return;
       }
@@ -96,6 +157,8 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     } catch (err) {
       console.error("Login error:", err);
       toast.error("An unexpected error occurred");
+      setLoginFailed(true);
+      setError("An unexpected error occurred during login. Please try again.");
       setIsSubmitting(false);
     }
   };
@@ -152,6 +215,41 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       <div className="space-y-2 text-center">
         <h1 className="text-3xl font-bold">Sign In</h1>
         <p className="text-muted-foreground">Enter your email and password to access your account</p>
+        
+        {/* Database connection status indicator */}
+        <div className={`flex items-center justify-center gap-2 text-sm p-2 rounded-md mt-2 
+          ${dbStatus === 'connected' ? 'text-green-600 bg-green-50' : 
+            dbStatus === 'disconnected' ? 'text-red-600 bg-red-50' : 
+            'text-amber-600 bg-amber-50'}`}>
+          
+          {dbStatus === 'connected' ? (
+            <>
+              <CheckCircle size={16} />
+              <span>Database connected</span>
+            </>
+          ) : dbStatus === 'disconnected' ? (
+            <>
+              <AlertCircle size={16} />
+              <span>Database connection issue detected</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={checkDatabase} 
+                disabled={isCheckingDb} 
+                className="ml-2 h-7 px-2"
+              >
+                <RefreshCw size={14} className={`mr-1 ${isCheckingDb ? 'animate-spin' : ''}`} />
+                Retry
+              </Button>
+            </>
+          ) : (
+            <>
+              <Database size={16} className="animate-pulse" />
+              <span>Checking database connection...</span>
+            </>
+          )}
+        </div>
+        
         <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
           <strong>Important:</strong> Make sure to use the exact email and password you registered with. 
           The login is case-sensitive.
@@ -211,9 +309,19 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
           )}
         </div>
         
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button 
+          type="submit" 
+          className="w-full" 
+          disabled={isSubmitting || (dbStatus === 'disconnected' && !confirm)} 
+        >
           {isSubmitting ? "Signing in..." : "Sign in"}
         </Button>
+        
+        {dbStatus === 'disconnected' && (
+          <p className="text-xs text-center text-destructive">
+            Warning: Database is currently unavailable. Login may fail.
+          </p>
+        )}
       </form>
       
       <div className="text-center text-sm">
@@ -242,7 +350,7 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       </div>
 
       {loginFailed && (
-        <div className="mt-4 text-center text-destructive">
+        <div className="mt-4 p-3 text-center text-destructive bg-destructive/10 rounded-md">
           {error}
         </div>
       )}

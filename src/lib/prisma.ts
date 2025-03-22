@@ -461,89 +461,145 @@ async function syncFallbackStorage() {
   }
 }
 
+// Improved connection cache with timestamp
+let connectionCache = {
+  connected: true, // Default to true until first check
+  lastChecked: 0,
+  lastError: null as Error | null,
+  checking: false,
+  retries: 0
+};
+
+// Cache expiration time in milliseconds (10 seconds)
+const CACHE_EXPIRATION = 10000;
+
 /**
- * Connect to the database
+ * Ping the database to check connectivity
+ * Enhanced with retries, timeout, and caching
  */
-export async function connectDB() {
-  if (typeof window !== 'undefined') {
-    console.log('Running in browser, skipping DB connection');
-    return false;
-  }
-  
-  try {
-    // Mark the attempt time
-    lastConnectionAttempt = Date.now();
-    
-    await prisma.$connect();
-    isDatabaseConnected = true;
-    console.log('🚀 Database connected successfully');
-    return true;
-  } catch (error) {
-    isDatabaseConnected = false;
-    console.error('❌ Database connection failed:', error);
-    return false;
-  }
-}
-
-export async function disconnectDB() {
-  if (typeof window !== 'undefined') {
-    return;
-  }
-  
-  try {
-    await prisma.$disconnect();
-    isDatabaseConnected = false;
-    console.log('Database disconnected successfully');
-  } catch (error) {
-    console.error('Error disconnecting from database:', error);
-  }
-}
-
-// Add a ping method to check database connectivity
 export async function pingDatabase(): Promise<boolean> {
-  // Browser environment check moved to top
+  // If we're in the browser, return true (database connection is handled by API)
   if (typeof window !== 'undefined') {
-    // Running in browser, skip actual DB ping but allow the app to proceed
     return true;
   }
   
-  try {
-    // Mark the attempt time
-    lastConnectionAttempt = Date.now();
-    
-    // Simple query with timeout
-    const timeoutDuration = process.env.NODE_ENV === 'production' ? 5000 : 3000;
-    
-    // The actual query - just select 1
-    const queryPromise = prisma.$queryRaw`SELECT 1 as connected`;
-    
-    // Run the query with timeout
-    await Promise.race([
-      queryPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Database ping timeout')), timeoutDuration))
-    ]);
-    
-    // If we got here, the query succeeded
-    isDatabaseConnected = true;
-    console.log('Database connection verified successfully');
-    return true;
-  } catch (error: any) {
-    console.error('Database ping failed:', error);
-    // Only set to false if we have a confirmed failure
-    if (error && typeof error === 'object' && 'message' in error && 
-        error.message !== 'Database is not initialized') {
-      isDatabaseConnected = false;
+  // If we recently checked and cache is still valid, return cached result
+  const now = Date.now();
+  if (
+    !connectionCache.checking && 
+    connectionCache.lastChecked > 0 && 
+    now - connectionCache.lastChecked < CACHE_EXPIRATION
+  ) {
+    return connectionCache.connected;
+  }
+  
+  // If another ping is in progress, wait for it to complete
+  if (connectionCache.checking) {
+    // Wait up to 3 seconds for the other check to complete
+    const checkStart = Date.now();
+    while (connectionCache.checking && Date.now() - checkStart < 3000) {
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
+    
+    // If still checking after 3 seconds, use last known state
+    if (connectionCache.checking) {
+      console.warn('Ping operation still in progress after timeout, using cached state');
+      return connectionCache.connected;
+    }
+    
+    return connectionCache.connected;
+  }
+  
+  // Mark as checking
+  connectionCache.checking = true;
+  lastConnectionAttempt = now;
+  
+  try {
+    console.log('Pinging database...');
+    
+    // Create a timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Database ping timed out after 5 seconds')), 5000);
+    });
+    
+    // Try multiple times with increasing backoff
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // Use Promise.race to implement timeout
+        await Promise.race([
+          prisma.$queryRaw`SELECT 1`,
+          timeoutPromise
+        ]);
+        
+        // If we get here, the query succeeded
+        console.log(`Database ping successful on attempt ${attempt + 1}`);
+        
+        // Update cache with success
+        connectionCache = {
+          connected: true,
+          lastChecked: now,
+          lastError: null,
+          checking: false,
+          retries: 0
+        };
+        
+        isDatabaseConnected = true;
+        return true;
+      } catch (error: any) {
+        // Don't retry on specific errors that indicate permission/schema issues
+        if (
+          error.message?.includes('Access denied') || 
+          error.message?.includes('permission') ||
+          error.message?.includes('authentication')
+        ) {
+          console.error('Database access error (not retrying):', error.message);
+          throw error;
+        }
+        
+        // If this is not the last attempt, wait and retry
+        if (attempt < 2) {
+          const delay = 500 * Math.pow(2, attempt); // 500ms, then 1000ms
+          console.warn(`Database ping failed, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // Last attempt failed
+          console.error('Final database ping attempt failed:', error);
+          connectionCache.lastError = error;
+          throw error;
+        }
+      }
+    }
+    
+    // If we get here, all attempts failed
+    throw new Error('All database ping attempts failed');
+  } catch (error: any) {
+    console.error('Database ping error:', error.message);
+    
+    // Update cache with failure
+    connectionCache = {
+      connected: false,
+      lastChecked: now,
+      lastError: error,
+      checking: false,
+      retries: connectionCache.retries + 1
+    };
+    
+    isDatabaseConnected = false;
     return false;
+  } finally {
+    connectionCache.checking = false;
   }
 }
 
-// Get the current database connection status
+/**
+ * Get the current database connection status without pinging
+ */
 export function isDatabaseAvailable(): boolean {
-  // In browser environment, return true to allow client operations
+  // If in browser, assume true
   if (typeof window !== 'undefined') {
     return true;
   }
+  
   return isDatabaseConnected;
 }
 
