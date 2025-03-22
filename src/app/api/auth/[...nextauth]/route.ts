@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import authOptions from "@/lib/auth/config";
 import { NextRequest, NextResponse } from "next/server";
 import { pingDatabase } from "@/lib/prisma";
+import { Credentials } from "next-auth/providers";
 
 // Enhanced handler with error protection
 async function handleAuthRequest(req: NextRequest, context: any) {
@@ -61,3 +62,86 @@ export async function POST(request: NextRequest, context: any) {
 }
 
 export { authOptions };
+
+// Add this to your NextAuth configuration
+// Inside the NextAuth() configuration object:
+
+providers: [
+  // Keep your existing providers
+  
+  // Add this special admin credentials provider
+  Credentials({
+    id: "admin-credentials",
+    name: "Admin Credentials",
+    credentials: {
+      usernameOrEmail: { label: "Admin Email", type: "email" },
+      password: { label: "Admin Password", type: "password" }
+    },
+    async authorize(credentials) {
+      if (!credentials?.usernameOrEmail || !credentials?.password) {
+        return null;
+      }
+      
+      // Special case for admin authentication
+      const adminEmail = process.env.ADMIN_EMAIL;
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      
+      // Debug logs - remove in production
+      console.log("Admin auth attempt:", {
+        providedEmail: credentials.usernameOrEmail,
+        adminEmailMatch: credentials.usernameOrEmail === adminEmail,
+        adminEmailExists: !!adminEmail,
+        passwordLength: credentials.password?.length || 0,
+        adminPasswordLength: adminPassword?.length || 0
+      });
+      
+      if (
+        adminEmail &&
+        adminPassword &&
+        credentials.usernameOrEmail.toLowerCase() === adminEmail.toLowerCase() &&
+        credentials.password === adminPassword
+      ) {
+        // Create an admin user object
+        return {
+          id: "admin-master",
+          email: adminEmail,
+          name: "System Admin",
+          role: "MASTER_ADMIN",
+          isAdmin: true
+        };
+      }
+      
+      // Fall back to regular authentication
+      return null;
+    }
+  }),
+],
+
+// Modify your callbacks
+callbacks: {
+  // Keep your existing callbacks
+  
+  // Enhance the session callback
+  async session({ session, token }) {
+    if (token.sub === "admin-master") {
+      session.user.role = "MASTER_ADMIN";
+      session.user.isAdmin = true;
+    }
+    
+    // Your existing session logic...
+    
+    return session;
+  },
+  
+  // Enhance the JWT callback
+  async jwt({ token, user }) {
+    if (user?.isAdmin) {
+      token.isAdmin = true;
+      token.role = "MASTER_ADMIN";
+    }
+    
+    // Your existing JWT logic...
+    
+    return token;
+  }
+},
