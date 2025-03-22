@@ -3,6 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { authMiddleware } from "@/middleware/auth";
 import { errorHandler } from "@/middleware/error-handler";
 import prisma from "@/lib/prisma";
+import { z } from "zod";
+import { SKILL_LEVELS } from "@/utils/constants";
+
+const playerSchema = z.object({
+  // ... other fields
+  skillLevel: z.enum(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C', 'D']).optional(),
+  // ... other fields
+});
 
 export async function GET(request: NextRequest) {
   try {

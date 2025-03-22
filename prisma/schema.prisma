@@ -76,7 +76,7 @@ model Player {
   imageUrl           String?
   age                Int?
   country            String?
-  skillLevel         PlayerSkillLevel?
+  skillLevel         SkillLevel?
   rank               Int?
   tournamentWins     Int                 @default(0)
   careerWinRate      Float               @default(0)
@@ -669,17 +669,13 @@ enum TournamentStatus {
   CANCELLED
 }
 
-enum PlayerSkillLevel {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
-  PROFESSIONAL
-  A_PLUS       @map("A+")
+enum SkillLevel {
+  A_PLUS @map("A+")
   A
-  A_MINUS      @map("A-")
-  B_PLUS       @map("B+")
+  A_MINUS @map("A-")
+  B_PLUS @map("B+")
   B
-  B_MINUS      @map("B-")
+  B_MINUS @map("B-")
   C
   D
 }
