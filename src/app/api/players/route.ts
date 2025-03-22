@@ -158,84 +158,114 @@ export async function POST(request: NextRequest) {
       return authResult;
     }
 
-    let data: PlayerWithPassword;
+    // Clone the request before trying to parse JSON to avoid stream errors
+    const requestClone = request.clone();
+    
+    // First check if body exists and is not empty
+    const text = await requestClone.text();
+    if (!text || text.trim() === '') {
+      console.error("Empty request body received");
+      return NextResponse.json({
+        error: "Invalid request",
+        message: "Request body is empty or missing",
+      }, { status: 400 });
+    }
+
+    // Parse JSON safely
+    let data;
     try {
-      const rawData = await request.json();
-      data = rawData as PlayerWithPassword;
+      data = JSON.parse(text);
     } catch (jsonError: unknown) {
       console.error("JSON parse error in players POST:", jsonError);
       return NextResponse.json({
         error: "Invalid request",
-        message: "Could not parse request body as JSON",
+        message: "Could not parse request body as JSON. Check syntax and formatting.",
         details: process.env.NODE_ENV === "development" ? (jsonError as Error).message : undefined
       }, { status: 400 });
     }
 
     // Validate with Zod schema
     try {
-      const validatedData = playerSchema.parse(data);
-      data = { ...validatedData } as PlayerWithPassword; // Use the validated data
+      const validatedData = playerSchema.safeParse(data);
+      if (!validatedData.success) {
+        console.error("Validation error:", validatedData.error);
+        return NextResponse.json({
+          error: "Validation failed",
+          message: "Invalid player data",
+          details: process.env.NODE_ENV === "development" ? validatedData.error.format() : undefined
+        }, { status: 400 });
+      }
+      data = validatedData.data;
     } catch (validationError) {
-      console.error("Validation error:", validationError);
+      console.error("Unexpected validation error:", validationError);
       return NextResponse.json({
         error: "Validation failed",
-        message: "Invalid player data",
+        message: "Invalid player data structure",
         details: process.env.NODE_ENV === "development" ? validationError : undefined
+      }, { status: 400 });
+    }
+
+    // Check required fields
+    if (!data.name) {
+      console.error("Missing required field: name");
+      return NextResponse.json({
+        error: "Validation Error",
+        message: "Player name is required"
       }, { status: 400 });
     }
 
     // If email is provided, check if a user already exists with this email
     let userId = null;
-    if (data.email) {
-      const existingUser = await prisma.user.findUnique({
-        where: { email: data.email },
-      });
-
-      if (existingUser) {
-        // Use this user's ID for the player
-        userId = existingUser.id;
-        
-        // Update user role to PLAYER if not already
-        if (existingUser.role !== "PLAYER") {
-          await prisma.user.update({
-            where: { id: existingUser.id },
-            data: { role: "PLAYER" },
-          });
-        }
-      } else {
-        // Generate a password if none provided
-        const password = data.password || Math.random().toString(36).substring(2, 10);
-        
-        // Hash the password
-        let hashedPassword;
-        try {
-          const bcrypt = require('bcryptjs');
-          hashedPassword = await bcrypt.hash(password, 10);
-        } catch (err) {
-          console.error("Error hashing password:", err);
-          hashedPassword = null; // If bcrypt fails, we'll store null password
-        }
-        
-        // Create a new user with this email
-        const newUser = await prisma.user.create({
-          data: {
-            email: data.email,
-            username: data.name,
-            role: "PLAYER",
-            password: hashedPassword,
-          },
+    try {
+      if (data.email) {
+        const existingUser = await prisma.user.findUnique({
+          where: { email: data.email },
         });
-        userId = newUser.id;
-        
-        // Store original plain password temporarily for response
-        // IMPORTANT: This should only be returned once during account creation
-        data.generatedPassword = data.password ? undefined : password;
-      }
-    }
 
-    // Create new player
-    const player = await prisma.player.create({
-      data: {
+        if (existingUser) {
+          // Use this user's ID for the player
+          userId = existingUser.id;
+          
+          // Update user role to PLAYER if not already
+          if (existingUser.role !== "PLAYER") {
+            await prisma.user.update({
+              where: { id: existingUser.id },
+              data: { role: "PLAYER" },
+            });
+          }
+        } else {
+          // Generate a password if none provided
+          const password = data.password || Math.random().toString(36).substring(2, 10);
+          
+          // Hash the password
+          let hashedPassword;
+          try {
+            const bcrypt = require('bcryptjs');
+            hashedPassword = await bcrypt.hash(password, 10);
+          } catch (err) {
+            console.error("Error hashing password:", err);
+            hashedPassword = null; // If bcrypt fails, we'll store null password
+          }
+          
+          // Create a new user with this email
+          const newUser = await prisma.user.create({
+            data: {
+              email: data.email,
+              username: data.name,
+              role: "PLAYER",
+              password: hashedPassword,
+            },
+          });
+          userId = newUser.id;
+          
+          // Store original plain password temporarily for response
+          // IMPORTANT: This should only be returned once during account creation
+          data.generatedPassword = data.password ? undefined : password;
+        }
+      }
+
+      // Create new player with proper data preparation
+      const playerData = {
         name: data.name,
         country: data.country || null,
         skillLevel: data.skillLevel || "B",
@@ -244,17 +274,32 @@ export async function POST(request: NextRequest) {
         imageUrl: data.imageUrl || null,
         isActive: true,
         ...(userId ? { userId } : {}), // Link to user if we have a userId
-      },
-    });
+      };
 
-    // Include the temporary password in the response if one was generated
-    const response = {
-      ...player,
-      email: data.email,
-      generatedPassword: data.generatedPassword,
-    };
+      console.log("Creating player with data:", JSON.stringify(playerData));
+      
+      const player = await prisma.player.create({
+        data: playerData,
+      });
 
-    return NextResponse.json(response, { status: 201 });
+      console.log("Player created successfully:", player.id);
+
+      // Include the temporary password in the response if one was generated
+      const response = {
+        ...player,
+        email: data.email,
+        generatedPassword: data.generatedPassword,
+      };
+
+      return NextResponse.json(response, { status: 201 });
+    } catch (dbError) {
+      console.error("Database operation error:", dbError);
+      return NextResponse.json({
+        error: "Database Error",
+        message: "Failed to create player in database",
+        details: process.env.NODE_ENV === "development" ? (dbError as Error).message : undefined
+      }, { status: 500 });
+    }
   } catch (error) {
     console.error("Error creating player:", error);
     return errorHandler(error as Error, request);
