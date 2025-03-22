@@ -56,6 +56,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Function to determine the dashboard path based on user role
+const getRoleDashboardPath = (role?: string): string => {
+  switch (role) {
+    case "PLAYER":
+      return "/player/dashboard";
+    case "REFEREE":
+      return "/referee/dashboard";
+    case "TOURNAMENT_ADMIN":
+    case "MASTER_ADMIN":
+      return "/admin/dashboard";
+    default:
+      return "/user/dashboard";
+  }
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
@@ -237,7 +252,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // Successfully logged in after registration
               console.log('Auto-login successful, redirecting to dashboard');
               toast.success('Account created and logged in successfully!');
-              router.push('/dashboard');
+              
+              // Redirect to the appropriate dashboard based on role
+              const dashboardPath = getRoleDashboardPath(userData.role);
+              console.log(`Redirecting to ${dashboardPath} based on role: ${userData.role}`);
+              router.push(dashboardPath);
             }
           } catch (loginError) {
             // If auto-login throws an error, redirect to login page

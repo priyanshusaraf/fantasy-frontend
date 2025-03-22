@@ -32,14 +32,30 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   useEffect(() => {
     const checkDatabase = async () => {
       try {
-        const res = await fetch('/api/system/db-check');
-        const data = await res.json();
-        if (!data.connected) {
+        // Try the system/db-check endpoint first
+        let response = await fetch('/api/system/db-check');
+        
+        // If that fails with a 404, try the health endpoint as fallback
+        if (!response.ok && response.status === 404) {
+          console.log('DB check endpoint not found, trying health endpoint instead');
+          response = await fetch('/api/health');
+        }
+        
+        if (!response.ok) {
+          console.error('Database check endpoints unavailable:', response.status);
+          return; // Don't show an error to the user, just continue
+        }
+        
+        const data = await response.json();
+        const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
+        
+        if (!isConnected) {
           console.error('Database connection issue:', data);
           toast.error('System issue: Database connection problem detected');
         }
       } catch (error) {
         console.error('Failed to check database:', error);
+        // Don't show an error to the user, just log it
       }
     };
     

@@ -26,21 +26,27 @@ function RegisterRedirectContent() {
   useEffect(() => {
     // Extract any query parameters to pass along
     const callbackUrl = searchParams.get("callbackUrl");
-
-    let redirectUrl = "/auth?mode=register";
+    
+    // Use "signup" mode instead of "register" for consistency
+    // Both "signup" and "register" are accepted in AuthClientPage
+    let redirectUrl = "/auth?mode=signup";
 
     if (callbackUrl) {
       redirectUrl += `&callbackUrl=${encodeURIComponent(callbackUrl)}`;
     }
 
-    // Redirect to the auth page
-    router.replace(redirectUrl);
+    console.log(`Redirecting from /register to ${redirectUrl}`);
+    
+    // Add a small delay to ensure navigation works properly
+    setTimeout(() => {
+      router.replace(redirectUrl);
+    }, 100);
   }, [router, searchParams]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen">
       <Loader2 className="h-8 w-8 animate-spin text-[#00a1e0]" />
-      <p className="mt-4">Redirecting to registration...</p>
+      <p className="mt-4">Redirecting to registration form...</p>
     </div>
   );
 }

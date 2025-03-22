@@ -100,20 +100,25 @@ export function RegisterForm() {
       
       setIsSubmitting(true);
       
+      // Prepare registration data
+      const registrationData = {
+        username,
+        name: username, // Use username as name if not provided separately
+        email,
+        password,
+        role,
+        // Include rank for players
+        ...(role === "PLAYER" ? { rank } : {})
+      };
+      
+      console.log("Submitting registration for:", email);
+      
       try {
         // Submit registration
-        await register({
-          username,
-          email,
-          password,
-          name: username,
-          role,
-          // Include rank for players
-          ...(role === "PLAYER" ? { rank } : {})
-        });
+        await register(registrationData);
         
         // Show success toast
-        toast.success("Registration successful");
+        toast.success("Registration successful! Redirecting to dashboard...");
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Registration failed";
         
@@ -333,7 +338,7 @@ export function RegisterForm() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Creating account...
             </>
-          ) : "Register"}
+          ) : "Create Account"}
         </Button>
       </form>
       
