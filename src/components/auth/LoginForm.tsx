@@ -34,26 +34,19 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   useEffect(() => {
     const checkDatabase = async () => {
       try {
-        // Try the system/db-check endpoint first
-        let response = await fetch('/api/system/db-check');
-        
-        // If that fails with a 404, try the health endpoint as fallback
-        if (!response.ok && response.status === 404) {
-          console.log('DB check endpoint not found, trying health endpoint instead');
-          response = await fetch('/api/health');
-        }
+        // Try to check database connection - we'll now use our direct endpoint
+        const response = await fetch('/api/check-db-connection');
         
         if (!response.ok) {
-          console.error('Database check endpoints unavailable:', response.status);
-          return; // Don't show an error to the user, just continue
+          console.error('Database check failed:', response.status);
+          return; // Don't block the login flow
         }
         
         const data = await response.json();
-        const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
         
-        if (!isConnected) {
+        if (!data.connected) {
           console.error('Database connection issue:', data);
-          toast.error('System issue: Database connection problem detected');
+          toast.error('Database connection issue detected. You may still be able to log in.');
         }
       } catch (error) {
         console.error('Failed to check database:', error);
@@ -61,12 +54,15 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       }
     };
     
+    // Run the check but don't await it - don't block the login page rendering
     checkDatabase();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setLoginFailed(false);
+    setError("");
     
     // Basic validation
     if (!username || !password) {
@@ -76,7 +72,9 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     }
 
     try {
-      // Simply sign in with credentials
+      console.log(`Attempting login with username: ${username}`);
+      
+      // Sign in with credentials
       const result = await signIn("credentials", {
         usernameOrEmail: username,
         password,
@@ -84,18 +82,33 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       });
 
       if (result?.error) {
-        toast.error("Login failed: " + result.error);
+        console.error("Login error:", result.error);
+        
+        // Show more user-friendly error messages
+        if (result.error.includes("CredentialsSignin")) {
+          toast.error("Invalid email or password");
+        } else if (result.error.includes("connection")) {
+          toast.error("Database connection issue. Please try again.");
+        } else {
+          toast.error(result.error);
+        }
+        
+        setLoginFailed(true);
+        setError(result.error);
         setIsSubmitting(false);
         return;
       }
 
+      // Success!
       toast.success("Login successful!");
       
-      // Simple redirect to dashboard (NextAuth callbacks will handle role-based redirects)
-      window.location.href = "/user/dashboard";
+      // Redirect without window.location (let NextAuth handle it)
+      router.push("/user/dashboard");
     } catch (err) {
       console.error("Login error:", err);
       toast.error("An unexpected error occurred");
+      setLoginFailed(true);
+      setError(err instanceof Error ? err.message : "Unknown error");
       setIsSubmitting(false);
     }
   };
