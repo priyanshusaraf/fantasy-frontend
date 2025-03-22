@@ -3,6 +3,10 @@ import authOptions from "@/lib/auth/config";
 import { NextRequest, NextResponse } from "next/server";
 import { pingDatabase } from "@/lib/prisma";
 import { Credentials } from "next-auth/providers";
+import CredentialsProvider from "next-auth/providers/credentials";
+import prisma from "@/lib/prisma";
+import { compare } from "bcrypt";
+import { PrismaAdapter } from "@auth/prisma-adapter";
 
 // Enhanced handler with error protection
 async function handleAuthRequest(req: NextRequest, context: any) {
@@ -53,95 +57,121 @@ async function handleAuthRequest(req: NextRequest, context: any) {
   }
 }
 
-export async function GET(request: NextRequest, context: any) {
-  return handleAuthRequest(request, context);
-}
-
-export async function POST(request: NextRequest, context: any) {
-  return handleAuthRequest(request, context);
-}
-
-export { authOptions };
-
-// Add this to your NextAuth configuration
-// Inside the NextAuth() configuration object:
-
-providers: [
-  // Keep your existing providers
+export const authOptions = {
+  adapter: PrismaAdapter(prisma),
   
-  // Add this special admin credentials provider
-  Credentials({
-    id: "admin-credentials",
-    name: "Admin Credentials",
-    credentials: {
-      usernameOrEmail: { label: "Admin Email", type: "email" },
-      password: { label: "Admin Password", type: "password" }
-    },
-    async authorize(credentials) {
-      if (!credentials?.usernameOrEmail || !credentials?.password) {
+  providers: [
+    // Your existing credentials provider
+    CredentialsProvider({
+      id: "credentials",
+      name: "Credentials",
+      credentials: {
+        usernameOrEmail: { label: "Username or Email", type: "text" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        // Your existing authorize logic for regular users
+        if (!credentials?.usernameOrEmail || !credentials?.password) {
+          return null;
+        }
+        
+        // Existing user lookup code
+        // ...
+      }
+    }),
+    
+    // Add separate admin credentials provider
+    CredentialsProvider({
+      id: "admin-credentials",
+      name: "Admin Credentials",
+      credentials: {
+        usernameOrEmail: { label: "Admin Email", type: "email" },
+        password: { label: "Admin Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.usernameOrEmail || !credentials?.password) {
+          return null;
+        }
+        
+        // Special case for admin authentication
+        const adminEmail = process.env.ADMIN_EMAIL;
+        const adminPassword = process.env.ADMIN_PASSWORD;
+        
+        // Debug logs
+        console.log("Admin auth attempt:", {
+          providedEmail: credentials.usernameOrEmail,
+          adminEmailMatch: credentials.usernameOrEmail === adminEmail,
+          adminEmailExists: !!adminEmail,
+          passwordLength: credentials.password?.length || 0,
+          adminPasswordLength: adminPassword?.length || 0
+        });
+        
+        if (
+          adminEmail &&
+          adminPassword &&
+          credentials.usernameOrEmail.toLowerCase() === adminEmail.toLowerCase() &&
+          credentials.password === adminPassword
+        ) {
+          // Create an admin user object
+          return {
+            id: "admin-master",
+            email: adminEmail,
+            name: "System Admin",
+            role: "MASTER_ADMIN",
+            isAdmin: true
+          };
+        }
+        
         return null;
       }
-      
-      // Special case for admin authentication
-      const adminEmail = process.env.ADMIN_EMAIL;
-      const adminPassword = process.env.ADMIN_PASSWORD;
-      
-      // Debug logs - remove in production
-      console.log("Admin auth attempt:", {
-        providedEmail: credentials.usernameOrEmail,
-        adminEmailMatch: credentials.usernameOrEmail === adminEmail,
-        adminEmailExists: !!adminEmail,
-        passwordLength: credentials.password?.length || 0,
-        adminPasswordLength: adminPassword?.length || 0
-      });
-      
-      if (
-        adminEmail &&
-        adminPassword &&
-        credentials.usernameOrEmail.toLowerCase() === adminEmail.toLowerCase() &&
-        credentials.password === adminPassword
-      ) {
-        // Create an admin user object
-        return {
-          id: "admin-master",
-          email: adminEmail,
-          name: "System Admin",
-          role: "MASTER_ADMIN",
-          isAdmin: true
-        };
+    })
+  ],
+  
+  callbacks: {
+    // Your existing callbacks
+    
+    // Add or modify session callback
+    async session({ session, token }) {
+      if (token.sub === "admin-master") {
+        session.user.role = "MASTER_ADMIN";
+        session.user.isAdmin = true;
+      } else if (token.role) {
+        // Your existing role assignment
+        session.user.role = token.role;
       }
       
-      // Fall back to regular authentication
-      return null;
-    }
-  }),
-],
-
-// Modify your callbacks
-callbacks: {
-  // Keep your existing callbacks
-  
-  // Enhance the session callback
-  async session({ session, token }) {
-    if (token.sub === "admin-master") {
-      session.user.role = "MASTER_ADMIN";
-      session.user.isAdmin = true;
-    }
+      // Any other session logic you have
+      
+      return session;
+    },
     
-    // Your existing session logic...
-    
-    return session;
+    // Add or modify JWT callback
+    async jwt({ token, user }) {
+      if (user?.isAdmin) {
+        token.isAdmin = true;
+        token.role = "MASTER_ADMIN";
+      } else if (user?.role) {
+        // Your existing role handling
+        token.role = user.role;
+      }
+      
+      // Any other token logic you have
+      
+      return token;
+    }
   },
   
-  // Enhance the JWT callback
-  async jwt({ token, user }) {
-    if (user?.isAdmin) {
-      token.isAdmin = true;
-      token.role = "MASTER_ADMIN";
-    }
-    
-    // Your existing JWT logic...
-    
-    return token;
+  // Your existing NextAuth configuration options
+  pages: {
+    signIn: '/auth',
+    // Any other custom pages
+  },
+  session: {
+    strategy: "jwt",
+    // Any other session config
   }
-},
+  // Any other options
+};
+
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };
