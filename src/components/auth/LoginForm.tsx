@@ -67,21 +67,16 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError("");
-    setLoginFailed(false);
+    
+    // Basic validation
+    if (!username || !password) {
+      toast.error("Please enter both email and password");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
-      // First check database connection
-      const dbCheckRes = await fetch("/api/check-db-connection");
-      if (!dbCheckRes.ok) {
-        setError("Database connection error. Please try again later.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      console.log(`Attempting login for ${username} with role prioritization`);
-      
-      // Try to sign in with credentials
+      // Simply sign in with credentials
       const result = await signIn("credentials", {
         usernameOrEmail: username,
         password,
@@ -89,54 +84,18 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       });
 
       if (result?.error) {
-        console.error("Login error:", result.error);
-        setLoginFailed(true);
-        
-        // Provide more specific error messages
-        if (result.error.includes("not active")) {
-          setError("Your account is not activated. Please check your email or contact support.");
-        } else if (result.error.includes("Database connection")) {
-          setError("Database connection issue. Please try again later.");
-        } else {
-          setError("Login failed. Please check your credentials and try again.");
-        }
-        
+        toast.error("Login failed: " + result.error);
         setIsSubmitting(false);
         return;
       }
 
-      // Get session to determine role for redirect
-      const session = await fetch('/api/auth/session');
-      const sessionData = await session.json();
-      console.log("Login successful, session:", sessionData);
+      toast.success("Login successful!");
       
-      if (!sessionData || !sessionData.user) {
-        setError("Failed to retrieve user session after login.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Handle different roles with proper case normalization
-      const userRole = (sessionData.user.role || "").toUpperCase();
-      console.log(`Redirecting user with role: ${userRole}`);
-      
-      // Redirect based on normalized role
-      if (userRole === "ADMIN") {
-        router.push("/admin/dashboard");
-      } else if (userRole === "REFEREE") {
-        router.push("/referee/dashboard");
-      } else if (userRole === "PLAYER") {
-        router.push("/player/dashboard");
-      } else if (userRole === "USER") {
-        router.push("/dashboard");
-      } else {
-        console.warn(`Unknown role: ${userRole}, defaulting to /dashboard`);
-        router.push("/dashboard");
-      }
+      // Simple redirect to dashboard (NextAuth callbacks will handle role-based redirects)
+      window.location.href = "/user/dashboard";
     } catch (err) {
-      console.error("Login exception:", err);
-      setError("An unexpected error occurred. Please try again.");
-      setLoginFailed(true);
+      console.error("Login error:", err);
+      toast.error("An unexpected error occurred");
       setIsSubmitting(false);
     }
   };
@@ -192,7 +151,11 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     <div className="mx-auto max-w-md space-y-6 rounded-lg border bg-card p-6 shadow-sm">
       <div className="space-y-2 text-center">
         <h1 className="text-3xl font-bold">Sign In</h1>
-        <p className="text-muted-foreground">Enter your credentials</p>
+        <p className="text-muted-foreground">Enter your email and password to access your account</p>
+        <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
+          <strong>Important:</strong> Make sure to use the exact email and password you registered with. 
+          The login is case-sensitive.
+        </div>
       </div>
       
       <form onSubmit={handleSubmit} className="space-y-4">

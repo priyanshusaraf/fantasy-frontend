@@ -281,47 +281,38 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (!credentials?.usernameOrEmail && !(credentials?.username || credentials?.email) || !credentials?.password) {
-          console.error("Missing credentials: No username/email or password provided");
+        if (!credentials?.usernameOrEmail && !credentials?.password) {
+          console.error("Missing credentials");
           throw new Error("Missing credentials");
         }
 
         try {
-          // Check if database is available first
+          // Check if database is available
           if (typeof window === 'undefined') {
             try {
               await prisma.$queryRaw`SELECT 1`;
-              console.log("Database connection verified");
             } catch (e) {
-              console.error("Database not available during login:", e);
+              console.error("Database connection issue");
               throw new Error("Database connection issue. Please try again later.");
             }
           }
 
-          // Handle different credential formats (accept both usernameOrEmail and username/email)
-          const loginIdentifier = credentials.usernameOrEmail || credentials.username || credentials.email || '';
-          console.log(`Login attempt with identifier: ${loginIdentifier.includes('@') ? 'email format' : 'username format'}`);
-          
-          // Check if the input is an email or username
+          // Find user by email or username
+          const loginIdentifier = credentials.usernameOrEmail || '';
           const isEmail = loginIdentifier.includes('@');
           
-          // Find user by email or username
           const user = await prisma.user.findFirst({
             where: isEmail 
               ? { email: loginIdentifier } 
               : { username: loginIdentifier }
           });
 
-          console.log(`User lookup result: ${user ? `Found (ID: ${user.id}, Role: ${user.role})` : 'Not found'}`);
-
           if (!user || !user.password) {
-            console.error(`Authentication failed: ${!user ? 'User not found' : 'Password not set'}`);
             throw new Error("Invalid credentials");
           }
 
           // Check if user account is active
           if (user.status !== "ACTIVE") {
-            console.error(`Authentication failed: Account status is ${user.status}`);
             throw new Error("Account is not active");
           }
 
@@ -329,23 +320,18 @@ export const authOptions: NextAuthOptions = {
           const isValidPassword = await compare(credentials.password, user.password);
           
           if (!isValidPassword) {
-            console.error("Authentication failed: Invalid password");
             throw new Error("Invalid credentials");
           }
 
-          console.log(`Authentication successful for ${user.role} user (ID: ${user.id})`);
-          
-          // Force-set role to "PLAYER" for users with player role to ensure consistency
-          if (user.role === "player" || user.role === "PLAYER") {
-            user.role = "PLAYER";
-          }
+          // Make sure role is properly capitalized
+          const normalizedRole = user.role.toUpperCase();
 
           return {
             id: user.id.toString(),
             name: user.name || "",
             email: user.email,
             image: user.profilePicture || "",
-            role: user.role,
+            role: normalizedRole,
             isApproved: user.status === "ACTIVE",
             username: user.username || "",
           };
@@ -398,50 +384,35 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        // Ensure role is always set with USER as fallback
-        token.role = user.role || "USER";
+        // Just store the role directly
+        token.role = user.role;
         token.isApproved = user.isApproved;
         token.username = user.username;
       }
-      // Handle case where token exists but role is missing
-      if (!token.role) {
-        token.role = "USER";
-      }
       return token;
     },
+    
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
-        // Ensure role is always set with USER as fallback 
-        session.user.role = (token.role as string) || "USER";
+        session.user.role = token.role as string;
         session.user.isApproved = token.isApproved as boolean;
         session.user.username = token.username as string;
       }
-      // Double-check role is set
-      if (session.user && !session.user.role) {
-        session.user.role = "USER";
-      }
       return session;
     },
-    // Add custom redirect callback to always go to user dashboard for credentials provider
+    
     async redirect({ url, baseUrl }) {
       // If URL is absolute and for same site
       if (url.startsWith(baseUrl)) {
-        // For credentials provider success login, always go to user dashboard
-        if (url.includes('/api/auth/callback/credentials')) {
-          return `${baseUrl}/user/dashboard`;
-        }
-        // For other authorized callbacks, keep the URL
         return url;
       }
-      // If URL is relative, prepend base URL
-      else if (url.startsWith('/')) {
-        // For credentials login, ensure we go to user dashboard
-        if (url === '/' || url === '/dashboard') {
-          return `${baseUrl}/user/dashboard`;
-        }
+      
+      // Handle relative URLs
+      if (url.startsWith('/')) {
         return `${baseUrl}${url}`;
       }
+      
       // Otherwise, return to base URL
       return baseUrl;
     }
