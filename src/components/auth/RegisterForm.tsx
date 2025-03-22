@@ -10,7 +10,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { toast } from "sonner";
 import { UserRole } from "@/context/AuthContext";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
@@ -51,6 +51,8 @@ export function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [role, setRole] = useState<UserRole>("USER");
   const [rank, setRank] = useState("");
   const [errors, setErrors] = useState<{ 
@@ -217,16 +219,29 @@ export function RegisterForm() {
         
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            disabled={isSubmitting}
-            className={errors.password ? "border-destructive" : ""}
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={isSubmitting}
+              className={`${errors.password ? "border-destructive" : ""} pr-10`}
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              onClick={() => setShowPassword(!showPassword)}
+              tabIndex={-1}
+            >
+              {showPassword ? 
+                <EyeOff size={18} aria-hidden="true" /> : 
+                <Eye size={18} aria-hidden="true" />
+              }
+            </button>
+          </div>
           {errors.password && (
             <p className="text-sm text-destructive">{errors.password}</p>
           )}
@@ -234,16 +249,29 @@ export function RegisterForm() {
         
         <div className="space-y-2">
           <Label htmlFor="confirmPassword">Confirm Password</Label>
-          <Input
-            id="confirmPassword"
-            type="password"
-            placeholder="••••••••"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            disabled={isSubmitting}
-            className={errors.confirmPassword ? "border-destructive" : ""}
-          />
+          <div className="relative">
+            <Input
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              disabled={isSubmitting}
+              className={`${errors.confirmPassword ? "border-destructive" : ""} pr-10`}
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              tabIndex={-1}
+            >
+              {showConfirmPassword ? 
+                <EyeOff size={18} aria-hidden="true" /> : 
+                <Eye size={18} aria-hidden="true" />
+              }
+            </button>
+          </div>
           {errors.confirmPassword && (
             <p className="text-sm text-destructive">{errors.confirmPassword}</p>
           )}
