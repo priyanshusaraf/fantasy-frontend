@@ -384,7 +384,6 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        // Just store the role directly
         token.role = user.role;
         token.isApproved = user.isApproved;
         token.username = user.username;
@@ -403,17 +402,23 @@ export const authOptions: NextAuthOptions = {
     },
     
     async redirect({ url, baseUrl }) {
-      // If URL is absolute and for same site
+      // If this is a callback from credentials provider
+      if (url.includes('/api/auth/callback/credentials')) {
+        // Handle this specially to avoid 401 errors
+        return `${baseUrl}/user/dashboard`;
+      }
+      
+      // If URL is absolute and for the same site, keep it
       if (url.startsWith(baseUrl)) {
         return url;
       }
       
-      // Handle relative URLs
+      // If URL is relative, prepend the base URL
       if (url.startsWith('/')) {
         return `${baseUrl}${url}`;
       }
       
-      // Otherwise, return to base URL
+      // Default to base URL
       return baseUrl;
     }
   },

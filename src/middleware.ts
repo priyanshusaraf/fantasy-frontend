@@ -1,75 +1,88 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { getToken } from 'next-auth/jwt'
 
-// Middleware to handle authentication and role-based access
+// Authentication middleware for role-based access
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  
-  // Skip authentication for public paths
-  const isPublicPath = 
-    pathname === '/' || 
-    pathname === '/auth' || 
-    pathname.startsWith('/api/auth') ||
-    pathname.includes('_next') || 
-    pathname.includes('favicon.ico');
+  const { pathname } = request.nextUrl
 
-  if (isPublicPath) {
+  // Skip authentication for public paths and auth-related paths
+  const publicPaths = [
+    '/',
+    '/auth',
+    '/auth/register',
+    '/api/auth',
+    '/api/health',
+    '/api/check-db-connection',
+    '/favicon.ico'
+  ];
+  
+  // Skip middleware for public paths or static files
+  if (
+    publicPaths.some(path => pathname.startsWith(path)) ||
+    pathname.includes('/_next/') ||
+    pathname.includes('/images/') || 
+    pathname.includes('.') // Skip files with extensions
+  ) {
     return NextResponse.next();
   }
 
-  // Get auth token
-  const token = await getToken({ req: request });
-  
-  // If no token, redirect to login
+  // Get the token - simplified to prevent connection errors
+  const token = await getToken({ 
+    req: request,
+    secureCookie: process.env.NODE_ENV === 'production'
+  });
+
+  // If no token, redirect to login page
   if (!token) {
     return NextResponse.redirect(new URL('/auth', request.url));
   }
 
-  // Handle role-based redirects for role-specific paths
-  const role = (token.role as string || "USER").toUpperCase();
+  // Get the user role from token
+  const role = (token.role as string || 'USER').toUpperCase();
 
-  // Admin paths can only be accessed by admins
-  if (pathname.startsWith('/admin') && role !== 'ADMIN' && role !== 'MASTER_ADMIN' && role !== 'TOURNAMENT_ADMIN') {
+  // Check access to restricted areas
+  if (pathname.startsWith('/admin') && 
+      !['ADMIN', 'MASTER_ADMIN', 'TOURNAMENT_ADMIN'].includes(role)) {
     return NextResponse.redirect(new URL('/auth', request.url));
   }
 
-  // Player paths can only be accessed by players
   if (pathname.startsWith('/player') && role !== 'PLAYER') {
     return NextResponse.redirect(new URL('/auth', request.url));
   }
 
-  // Referee paths can only be accessed by referees
   if (pathname.startsWith('/referee') && role !== 'REFEREE') {
     return NextResponse.redirect(new URL('/auth', request.url));
   }
 
-  // Ensure users go to the correct dashboard path
+  // Redirect to appropriate dashboard based on role
   if (pathname === '/dashboard') {
-    if (role === 'ADMIN' || role === 'MASTER_ADMIN' || role === 'TOURNAMENT_ADMIN') {
-      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    } 
-    else if (role === 'PLAYER') {
-      return NextResponse.redirect(new URL('/player/dashboard', request.url));
+    let redirectPath = '/user/dashboard';
+    
+    if (['ADMIN', 'MASTER_ADMIN', 'TOURNAMENT_ADMIN'].includes(role)) {
+      redirectPath = '/admin/dashboard';
+    } else if (role === 'PLAYER') {
+      redirectPath = '/player/dashboard';
+    } else if (role === 'REFEREE') {
+      redirectPath = '/referee/dashboard';
     }
-    else if (role === 'REFEREE') {
-      return NextResponse.redirect(new URL('/referee/dashboard', request.url));
-    }
-    else {
-      return NextResponse.redirect(new URL('/user/dashboard', request.url));
-    }
+    
+    return NextResponse.redirect(new URL(redirectPath, request.url));
   }
 
   return NextResponse.next();
 }
 
-// Only run middleware on specific paths
+// Configure which paths the middleware runs on - key change to fix authentication
 export const config = {
   matcher: [
-    // Only apply middleware to these specific paths
-    '/api/fantasy-pickleball/:path*',
-    '/api/tournaments/:path*',
-    '/api/matches/:path*',
-    '/api/users/:path*', 
+    /*
+     * Match all paths except:
+     * - _next (Next.js internals)
+     * - api/auth (NextAuth internals)
+     * - static files, images, and other assets
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
 
