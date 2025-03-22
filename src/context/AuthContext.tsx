@@ -13,11 +13,10 @@ import { pingDatabase } from "@/lib/prisma";
 
 export type UserRole =
   | "USER"
-  | "ADMIN"
-  | "MANAGER"
   | "PLAYER"
-  | "COACH"
-  | "OWNER";
+  | "TOURNAMENT_ADMIN"
+  | "REFEREE"
+  | "MASTER_ADMIN";
 
 export type User = {
   id: string;
