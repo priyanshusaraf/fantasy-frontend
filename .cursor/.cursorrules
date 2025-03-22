@@ -56,7 +56,7 @@ the players are pretty simple, they create their account, mention their category
 
 general rules of the entire application:
 
-- made using google authentication only, so the prerequisite authentication form is really important to verify the role of the user.
+- made with email id and password authentication only. there is no google authentication.
 - deployment first orientation of the code: there should be nothing that hampers deployment status of the website
 - website based application initially: entirely made on next js, react, use shadcn and tailwind along with any other ui libraries that might be good. use sockets for live scoring as well.
 - mobile responsiveness is very very important
@@ -66,11 +66,89 @@ general rules of the entire application:
 - minimise cost for the servers.
 - ensure that the entire app works very well and does not break at any given point, emphasise on dynamics of the site, such that it comes out as a b2b saas project.
 
-how razorpay works and payments in general:
+how razorpay works and payments in general: no working of razorpay right now. this overrules anything mentioned before.
 
-payment transfer to MatchUp (our account). we don’t need to have payment transfers to the tournament admin either, we can settle everything from our end. We don’t even need a payment transfer to the winning players, as the winning players can just be sent an email for the time being requesting them to share their bank account details, and we make a bank transfer manually. no need of code for the time being to manage this entire payment system as it is just one tournament right now that we are specifically catering to. after 24th march we can develop these things even more. we just need to monitor how many payments we are getting overall and we need the prize pool that is being formed after the 22.36% cut from razorpay, matchup and the tournament admin. again, this is just an absolute figure value that we need, so we really only just need 77.64% of the total amount paid by people to be displayed as the prize money.
 
-here we will be having some modifications. currently when the admin is creating the tournament, he is required to enter the prize money himself. but what i want to happen is that this prize pool is dynamic for this tournament (in the backend we will still make provisions for the admin to choose for this to be static, however no need for this to be there in the frontend, as the tournament admin only wants a dynamic prize pool option right now) in which the overall prize pool is dependent on the no. of registrations. so for example if only 5 registrations come for 1000 rupees category, then the prize pool becomes 77.64% of 5000 = 3882 rupees, and only this value is shown to the end user, however if we get 50 registrations then this no. goes to 38820 rupees. this is very important to be implemented.
+
+Technical Incident Resolution Report: AWS RDS Authentication & Frontend Redirection Issues
+Executive Summary
+This document summarizes the resolution of critical authentication issues in the Fantasy Pickleball application, including AWS RDS connectivity problems and frontend redirection loops. The resolution process involved database configuration fixes, authentication flow improvements, and strategic code changes to break circular redirections.
+1. Initial AWS RDS Connectivity Issues
+Problem Identification
+The application deployed on Vercel failed to authenticate users
+Database connectivity errors appeared in logs
+AWS RDS MySQL instance was reachable but authentication failed
+Root Causes
+Incorrect environment variables in Vercel deployment
+Database password had been reset in AWS but not updated in application configuration
+Security group settings in AWS RDS needed adjustment to allow connections from Vercel's IP range
+Resolution Steps
+Verified the correct password ('matchupsports') for the AWS RDS instance
+Updated DATABASE_URL in Vercel environment variables with the correct connection string
+Updated local .env file with the same connection string to ensure consistency
+Modified AWS security group to allow connections from Vercel deployment IPs
+Tested connectivity from both local and production environments
+2. Authentication Flow & Redirection Loops
+Problem Identification
+Users experienced infinite redirection loops between:
+/auth → /dashboard → /user/dashboard → /auth
+Registration worked but login failed with "Missing credentials"
+Sessions were not properly established
+Role information was not correctly passed to the client
+Root Causes
+Middleware interfering with authentication routes
+Login form sending incorrect parameter names
+Complex URL sanitization logic causing loops
+Inconsistent default redirect paths
+JWT callback not correctly handling missing role information
+Resolution Steps
+2.1 Authentication API Fixes
+Updated CredentialsProvider to accept multiple parameter formats:
+Apply
+}
+Added fallbacks in JWT callbacks to ensure role was always set:
+Apply
+}
+2.2 Login Form Improvements
+Updated parameter names in signIn call:
+Apply
+;
+Replaced router.push with direct browser redirection:
+Apply
+;
+2.3 Breaking the Redirect Loop
+Limited middleware scope to specific API paths:
+Apply
+;
+Simplified auth page logic:
+Apply
+}
+Eliminated complex URL sanitization logic
+Used window.location.href for hard redirects to break loops
+Removed timeouts and unnecessary callback URL parameters
+3. Key Lessons & Best Practices
+Database Connectivity
+Always verify environment variables in both local and deployed environments
+Test database connectivity directly before deploying
+Store sensitive credentials in a secure way that can be updated across environments
+Ensure proper security group configuration in AWS
+Authentication Flow Design
+Simplify authentication flow - fewer redirects lead to fewer problems
+Use consistent paths for redirects (/user/dashboard vs /dashboard)
+Avoid circular dependencies in redirect logic
+Include fallbacks for missing user information
+Implement proper logging at critical authentication points
+Middleware Design
+Be selective with middleware application paths
+Avoid protecting pages that handle their own authentication
+Middleware should not redirect already authenticated sessions
+Client-Side Redirection
+Prefer hard redirects (window.location.href) when breaking loops
+Avoid timeouts for authentication redirects where possible
+Minimize query parameters for authentication redirects
+Test redirection flows on both development and production
+
+
 # PERSONALITY
 
 you are a debugger

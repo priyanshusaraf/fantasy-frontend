@@ -28,7 +28,7 @@ const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string().min(8, "Confirm password must be at least 8 characters"),
-  role: z.enum(["USER", "PLAYER", "TOURNAMENT_ADMIN", "REFEREE"]).default("USER"),
+  role: z.enum(["USER", "PLAYER", "REFEREE"]).default("USER"),
   rank: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -270,7 +270,6 @@ export function RegisterForm() {
                 <SelectLabel>User Roles</SelectLabel>
                 <SelectItem value="USER">Fantasy Player</SelectItem>
                 <SelectItem value="PLAYER">Player</SelectItem>
-                <SelectItem value="TOURNAMENT_ADMIN">Admin</SelectItem>
                 <SelectItem value="REFEREE">Referee</SelectItem>
               </SelectGroup>
             </SelectContent>

@@ -13,7 +13,7 @@ const registerSchema = z.object({
   username: z.string().min(2, "Username must be at least 2 characters").optional(),
   email: z.string().email("Invalid email format"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.string().optional().default("USER"),
+  role: z.enum(["USER", "PLAYER", "REFEREE"]).optional().default("USER"),
   skillLevel: z.string().optional(),
 }).superRefine((data, ctx) => {
   // Ensure at least one of name or username is provided
@@ -155,7 +155,14 @@ export async function POST(req: NextRequest) {
     }
     
     // Extract validated data
-    const { email, password, role = "USER", skillLevel } = validation.data;
+    const { email, password, skillLevel } = validation.data;
+    let { role = "USER" } = validation.data;
+    
+    // Ensure role is restricted (extra protection beyond the schema)
+    if ((role as string) === "TOURNAMENT_ADMIN" || (role as string) === "MASTER_ADMIN") {
+      console.warn(`Attempt to register with restricted role: ${role} for email: ${email}`);
+      role = "USER"; // Force to USER if someone tries to bypass validation
+    }
     
     // Extract name with fallbacks (username → name → default)
     // We prioritize name over username if both are provided

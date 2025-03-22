@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
-    "test-db": "node -r dotenv/config src/scripts/test-db.js"
+    "test-db": "node -r dotenv/config src/scripts/test-db.js",
+    "init-admin": "ts-node -r dotenv/config src/scripts/init-admin.ts",
+    "vercel-build": "prisma generate && next build && npm run init-admin"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.8.0",

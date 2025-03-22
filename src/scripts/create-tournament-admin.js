@@ -13,14 +13,21 @@ async function createTournamentAdmin() {
   try {
     console.log('Starting Tournament Admin creation...');
     
-    // Define admin user data
+    // Get credentials from environment variables
     const adminData = {
-      username: 'tournamentadmin',
-      email: 'tournamentadmin@example.com',
-      password: 'Password123!', // Will be hashed before storing
-      name: 'Tournament Admin',
+      username: process.env.ADMIN_USERNAME || 'admin',
+      email: process.env.ADMIN_EMAIL || 'admin@example.com',
+      password: process.env.ADMIN_PASSWORD || 'ChangeMe123!',
+      name: process.env.ADMIN_NAME || 'Tournament Admin',
       role: 'TOURNAMENT_ADMIN',
     };
+    
+    if (
+      adminData.email === 'admin@example.com' || 
+      adminData.password === 'ChangeMe123!'
+    ) {
+      console.warn('WARNING: Using default credentials. Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables for security.');
+    }
     
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({

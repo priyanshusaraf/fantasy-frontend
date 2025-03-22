@@ -55,6 +55,7 @@ Required configuration:
 - `NEXTAUTH_SECRET`: A randomly generated secret for NextAuth
 - `JWT_SECRET`: A randomly generated secret for JWT tokens
 - `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`: If using Razorpay for payments
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_USERNAME`, `ADMIN_NAME`: For creating initial admin accounts
 
 ### 2. Database Setup
 
@@ -66,7 +67,31 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
-### 3. Build the Application
+### 3. Admin Account Setup
+
+IMPORTANT: Never hardcode admin credentials in files. Always use environment variables.
+
+```bash
+# Set environment variables for admin creation
+export ADMIN_EMAIL="your-email@example.com"
+export ADMIN_PASSWORD="your-secure-password"
+export ADMIN_USERNAME="your-username"
+export ADMIN_NAME="Your Name"
+
+# Run the admin creation script
+node -r dotenv/config src/scripts/create-tournament-admin.js
+```
+
+Alternatively, you can add these variables to your .env file:
+
+```
+ADMIN_EMAIL="your-email@example.com"
+ADMIN_PASSWORD="your-secure-password"
+ADMIN_USERNAME="your-username"
+ADMIN_NAME="Your Name"
+```
+
+### 4. Build the Application
 
 ```bash
 # Install dependencies
@@ -76,7 +101,7 @@ npm install
 npm run build
 ```
 
-### 4. Deployment
+### 5. Deployment
 
 #### Option 1: Vercel Deployment
 
@@ -134,6 +159,7 @@ Our application includes the following security features:
    - CSRF protection
    - Input sanitization
    - Secure environment variable handling
+   - No hardcoded credentials in source code
 
 ## Post-Deployment Tasks
 
@@ -205,4 +231,12 @@ If you need assistance during deployment, please:
 2. Search existing GitHub issues
 3. Create a new issue if your problem is not already documented
 
-Remember that most deployment issues can be resolved by checking logs and ensuring environment variables are correctly set. 
+Remember that most deployment issues can be resolved by checking logs and ensuring environment variables are correctly set.
+
+## Security Best Practices
+
+1. **Never hardcode credentials**: Always use environment variables for sensitive information like admin credentials, API keys, etc.
+2. **Rotate secrets regularly**: Change your NextAuth secret, JWT secret, and admin passwords periodically
+3. **Use strong, unique passwords**: Generate random, complex passwords for all admin accounts
+4. **Implement MFA**: Consider adding multi-factor authentication for admin accounts
+5. **Audit admin access**: Regularly review who has admin access and remove unnecessary accounts 
