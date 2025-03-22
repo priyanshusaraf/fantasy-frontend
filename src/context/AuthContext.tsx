@@ -199,11 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         body: JSON.stringify(userData),
       });
-
+      
       console.log('Registration API response status:', response.status);
       const data = await response.json();
       console.log('Registration API response data:', data);
-
+      
       if (!response.ok) {
         // Handle specific error types
         if (data.error?.includes('database') || data.error?.includes('connection')) {
@@ -227,44 +227,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('success');
         toast.success('Registration successful!');
         
-        // If in fallback mode, show different message
-        if (!isDbConnected) {
-          toast('Your account is saved locally and will be activated when database connectivity is restored.');
-          router.push('/auth/pending');
-        } else {
-          // Auto-login the user after successful registration
-          try {
-            console.log('Attempting auto-login after registration for:', userData.email);
-            const loginResult = await signIn('credentials', {
-              redirect: false,
-              email: userData.email,
-              password: userData.password,
-            });
-            
-            console.log('Auto-login result:', loginResult);
-            
-            if (loginResult?.error) {
-              // If auto-login fails, redirect to login page with email pre-filled
-              console.warn('Auto-login after registration failed:', loginResult.error);
-              toast('Account created! Please sign in with your credentials.');
-              router.push(`/auth?mode=signin&email=${encodeURIComponent(userData.email)}`);
-            } else {
-              // Successfully logged in after registration
-              console.log('Auto-login successful, redirecting to dashboard');
-              toast.success('Account created and logged in successfully!');
-              
-              // Redirect to the appropriate dashboard based on role
-              const dashboardPath = getRoleDashboardPath(userData.role);
-              console.log(`Redirecting to ${dashboardPath} based on role: ${userData.role}`);
-              router.push(dashboardPath);
-            }
-          } catch (loginError) {
-            // If auto-login throws an error, redirect to login page
-            console.error('Auto-login error:', loginError);
-            toast('Account created! Please sign in with your credentials.');
-            router.push(`/auth?mode=signin&email=${encodeURIComponent(userData.email)}`);
-          }
-        }
+        // IMPORTANT CHANGE: Skip auto-login attempt entirely to prevent 401 errors
+        // Instead, redirect directly to the login page with email pre-filled
+        console.log('Registration successful. Redirecting to login page...');
+        toast.success('Account created successfully! Please sign in with your credentials.');
+        
+        // Use window.location for a full page reload to clear any auth state
+        setTimeout(() => {
+          window.location.href = `/auth?mode=signin&email=${encodeURIComponent(userData.email)}`;
+        }, 1500);
       }
     } catch (error: any) {
       console.error('Registration error:', error);

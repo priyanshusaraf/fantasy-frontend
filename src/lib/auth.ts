@@ -290,23 +290,41 @@ export const authOptions: NextAuthOptions = {
           // Check if database is available
           if (typeof window === 'undefined') {
             let dbConnected = false;
-            try {
-              await prisma.$queryRaw`SELECT 1`;
-              dbConnected = true;
-            } catch (e) {
-              console.error("Database connection issue during authentication", e);
-              // Instead of throwing, we'll use a mock user during DB downtime
-              // This prevents 401 errors at the callback endpoint
+            let dbCheckError = null;
+            
+            // Try multiple times to check database connection
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                console.log(`Database connection check attempt ${attempt + 1}/3`);
+                await prisma.$queryRaw`SELECT 1`;
+                dbConnected = true;
+                console.log("Database connection successful");
+                break;
+              } catch (e) {
+                dbCheckError = e;
+                console.error(`Database connection check failed (attempt ${attempt + 1}/3):`, e);
+                
+                // Wait a bit before next attempt (only if not last attempt)
+                if (attempt < 2) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                }
+              }
+            }
+            
+            if (!dbConnected) {
+              console.error("All database connection attempts failed:", dbCheckError);
+              
+              // Special development mode handling - allow bypass in dev only
               if (process.env.NODE_ENV === 'development') {
-                console.warn("Using fallback auth in development mode due to database issues");
+                console.warn("DEVELOPMENT MODE: Using emergency auth bypass due to database issues");
                 return {
                   id: "temp-id-1",
-                  name: "Temporary User",
+                  name: credentials.usernameOrEmail.split('@')[0] || "Temporary User",
                   email: credentials.usernameOrEmail,
                   image: "",
                   role: "USER",
                   isApproved: true,
-                  username: credentials.usernameOrEmail.split('@')[0],
+                  username: credentials.usernameOrEmail.split('@')[0] || "temp-user",
                   _tempAuthDuringDbDowntime: true
                 };
               }
@@ -319,30 +337,42 @@ export const authOptions: NextAuthOptions = {
           const loginIdentifier = credentials.usernameOrEmail || '';
           const isEmail = loginIdentifier.includes('@');
           
+          console.log(`Looking up user with ${isEmail ? 'email' : 'username'}: ${loginIdentifier}`);
+          
           const user = await prisma.user.findFirst({
             where: isEmail 
               ? { email: loginIdentifier } 
               : { username: loginIdentifier }
           });
 
-          if (!user || !user.password) {
+          if (!user) {
+            console.log(`User not found: ${loginIdentifier}`);
             throw new Error("Invalid credentials");
+          }
+          
+          if (!user.password) {
+            console.error(`User found but has no password set: ${loginIdentifier}`);
+            throw new Error("Account requires password reset");
           }
 
           // Check if user account is active
           if (user.status !== "ACTIVE") {
+            console.log(`Account not active for user: ${loginIdentifier}, status: ${user.status}`);
             throw new Error("Account is not active");
           }
 
           // Verify password
+          console.log(`Verifying password for user: ${loginIdentifier}`);
           const isValidPassword = await compare(credentials.password, user.password);
           
           if (!isValidPassword) {
+            console.log(`Invalid password for user: ${loginIdentifier}`);
             throw new Error("Invalid credentials");
           }
 
           // Make sure role is properly capitalized
           const normalizedRole = user.role.toUpperCase();
+          console.log(`Login successful for: ${loginIdentifier}, role: ${normalizedRole}`);
 
           return {
             id: user.id.toString(),
@@ -360,7 +390,8 @@ export const authOptions: NextAuthOptions = {
           if (error.message && 
               (error.message.includes('database') || 
                error.message.includes('connection') ||
-               error.message.includes('ECONNREFUSED'))) {
+               error.message.includes('ECONNREFUSED') ||
+               error.message.includes('timeout'))) {
             // Return a special error that our frontend can handle properly
             throw new Error("Database connection issue. Please try again in a few moments.");
           }
@@ -430,11 +461,10 @@ export const authOptions: NextAuthOptions = {
     },
     
     async redirect({ url, baseUrl }) {
-      // Always allow bypassing the callback URL when we have DB issues
-      // This prevents getting stuck in the callback loop with 401 errors
+      // If this is a callback from credentials provider
       if (url.includes('/api/auth/callback/credentials')) {
-        console.log("Handling credentials callback redirect to avoid 401 errors");
-        return `${baseUrl}/auth?error=AuthenticationError&message=Database+connection+issue`;
+        // Handle this specially to avoid 401 errors
+        return `${baseUrl}/user/dashboard`;
       }
       
       // If URL is absolute and for the same site, keep it
