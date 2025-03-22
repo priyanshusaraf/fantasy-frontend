@@ -6,11 +6,22 @@ import prisma from "@/lib/prisma";
 import { z } from "zod";
 import { SKILL_LEVELS } from "@/utils/constants";
 
+// Update the schema to include more flexible skill level handling
 const playerSchema = z.object({
-  // ... other fields
-  skillLevel: z.enum(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C', 'D']).optional(),
-  // ... other fields
+  name: z.string().min(1, "Name is required"),
+  skillLevel: z.string().optional().default("B"),
+  country: z.string().optional().nullable(),
+  age: z.number().optional().nullable(),
+  gender: z.string().optional().default("MALE"),
+  imageUrl: z.string().optional().nullable(),
+  email: z.string().email().optional(),
+  password: z.string().optional()
 });
+
+// Extended schema that includes generated password for response
+type PlayerWithPassword = z.infer<typeof playerSchema> & {
+  generatedPassword?: string;
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,96 +45,105 @@ export async function GET(request: NextRequest) {
       playerWhere.skillLevel = skillLevel;
     }
 
-    // Get standalone players with pagination (players without associated users)
-    const [standalonePlayers, totalStandalone] = await Promise.all([
-      prisma.player.findMany({
-        where: playerWhere,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { name: "asc" },
-      }),
-      prisma.player.count({ where: playerWhere }),
-    ]);
+    try {
+      // Get standalone players with pagination (players without associated users)
+      const [standalonePlayers, totalStandalone] = await Promise.all([
+        prisma.player.findMany({
+          where: playerWhere,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { name: "asc" },
+        }),
+        prisma.player.count({ where: playerWhere }),
+      ]);
 
-    // Query for users with PLAYER role that might not have a Player record
-    const userWhere: any = {
-      role: "PLAYER",
-    };
+      // Query for users with PLAYER role that might not have a Player record
+      const userWhere: any = {
+        role: "PLAYER",
+      };
 
-    if (search) {
-      userWhere.OR = [
-        { username: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-        { firstName: { contains: search, mode: "insensitive" } },
-        { lastName: { contains: search, mode: "insensitive" } },
-      ];
-    }
-
-    // Get users with PLAYER role, including their player profile if it exists
-    const playerUsers = await prisma.user.findMany({
-      where: userWhere,
-      include: {
-        player: true,
-      },
-      orderBy: { username: "asc" },
-    });
-
-    console.log(`Found ${standalonePlayers.length} standalone players and ${playerUsers.length} player users`);
-
-    // Create a map to deduplicate players
-    const playerMap = new Map();
-    
-    // Add standalone players to the map
-    standalonePlayers.forEach((player: any) => {
-      playerMap.set(player.id, {
-        id: player.id,
-        name: player.name,
-        skillLevel: player.skillLevel,
-        country: player.country,
-        age: player.age,
-        gender: player.gender,
-        imageUrl: player.imageUrl,
-        // Add more fields as needed
-      });
-    });
-    
-    // Add users with PLAYER role, but avoid duplicates if they already have a player record
-    playerUsers.forEach((user: any) => {
-      // If this user already has a player record, it would be in standalonePlayers,
-      // so we don't need to add it again
-      if (!user.player) {
-        // Create a synthetic player record for the user
-        const syntheticPlayer = {
-          id: user.id * -1, // Use negative ID to avoid conflicts with real player IDs
-          name: user.username || user.email?.split('@')[0] || "Player",
-          skillLevel: "B", // Updated default value
-          country: null,
-          age: null,
-          gender: "MALE",
-          userId: user.id,
-          email: user.email || "",
-          isUserOnly: true, // Flag to indicate this is a user without a player record
-        };
-        
-        playerMap.set(syntheticPlayer.id, syntheticPlayer);
+      if (search) {
+        userWhere.OR = [
+          { username: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+        ];
       }
-    });
-    
-    // Convert the map to an array
-    const allPlayers = Array.from(playerMap.values());
-    
-    // Sort by name
-    allPlayers.sort((a, b) => a.name.localeCompare(b.name));
 
-    return NextResponse.json({
-      players: allPlayers,
-      meta: {
-        total: allPlayers.length,
-        page,
-        limit,
-        totalPages: Math.ceil(allPlayers.length / limit),
-      },
-    });
+      // Get users with PLAYER role, including their player profile if it exists
+      const playerUsers = await prisma.user.findMany({
+        where: userWhere,
+        include: {
+          player: true,
+        },
+        orderBy: { username: "asc" },
+      });
+
+      console.log(`Found ${standalonePlayers.length} standalone players and ${playerUsers.length} player users`);
+
+      // Create a map to deduplicate players
+      const playerMap = new Map();
+      
+      // Add standalone players to the map
+      standalonePlayers.forEach((player: any) => {
+        playerMap.set(player.id, {
+          id: player.id,
+          name: player.name,
+          skillLevel: player.skillLevel,
+          country: player.country,
+          age: player.age,
+          gender: player.gender,
+          imageUrl: player.imageUrl,
+          // Add more fields as needed
+        });
+      });
+      
+      // Add users with PLAYER role, but avoid duplicates if they already have a player record
+      playerUsers.forEach((user: any) => {
+        // If this user already has a player record, it would be in standalonePlayers,
+        // so we don't need to add it again
+        if (!user.player) {
+          // Create a synthetic player record for the user
+          const syntheticPlayer = {
+            id: user.id * -1, // Use negative ID to avoid conflicts with real player IDs
+            name: user.username || user.email?.split('@')[0] || "Player",
+            skillLevel: "B", // Updated default value
+            country: null,
+            age: null,
+            gender: "MALE",
+            userId: user.id,
+            email: user.email || "",
+            isUserOnly: true, // Flag to indicate this is a user without a player record
+          };
+          
+          playerMap.set(syntheticPlayer.id, syntheticPlayer);
+        }
+      });
+      
+      // Convert the map to an array
+      const allPlayers = Array.from(playerMap.values());
+      
+      // Sort by name
+      allPlayers.sort((a, b) => a.name.localeCompare(b.name));
+
+      return NextResponse.json({
+        players: allPlayers,
+        meta: {
+          total: allPlayers.length,
+          page,
+          limit,
+          totalPages: Math.ceil(allPlayers.length / limit),
+        },
+      });
+    } catch (dbError: unknown) {
+      console.error("Database error fetching players:", dbError);
+      return NextResponse.json({ 
+        error: "Database error", 
+        message: "Failed to fetch players from database",
+        details: process.env.NODE_ENV === "development" ? (dbError as Error).message : undefined
+      }, { status: 500 });
+    }
   } catch (error) {
     console.error("Error fetching players:", error);
     return errorHandler(error as Error, request);
@@ -138,16 +158,30 @@ export async function POST(request: NextRequest) {
       return authResult;
     }
 
-    const data = await request.json();
+    let data: PlayerWithPassword;
+    try {
+      const rawData = await request.json();
+      data = rawData as PlayerWithPassword;
+    } catch (jsonError: unknown) {
+      console.error("JSON parse error in players POST:", jsonError);
+      return NextResponse.json({
+        error: "Invalid request",
+        message: "Could not parse request body as JSON",
+        details: process.env.NODE_ENV === "development" ? (jsonError as Error).message : undefined
+      }, { status: 400 });
+    }
 
-    // Validate required fields
-    if (!data.name) {
-      return NextResponse.json(
-        {
-          message: "Player name is required",
-        },
-        { status: 400 }
-      );
+    // Validate with Zod schema
+    try {
+      const validatedData = playerSchema.parse(data);
+      data = { ...validatedData } as PlayerWithPassword; // Use the validated data
+    } catch (validationError) {
+      console.error("Validation error:", validationError);
+      return NextResponse.json({
+        error: "Validation failed",
+        message: "Invalid player data",
+        details: process.env.NODE_ENV === "development" ? validationError : undefined
+      }, { status: 400 });
     }
 
     // If email is provided, check if a user already exists with this email
