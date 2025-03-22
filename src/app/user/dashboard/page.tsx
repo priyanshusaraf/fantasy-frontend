@@ -170,30 +170,48 @@ export default function UserDashboard() {
   useEffect(() => {
     if (status !== "authenticated") return;
 
-    console.log('Setting up polling for live matches every', env.NEXT_PUBLIC_POLLING_INTERVAL_MS, 'ms');
+    const pollingIntervalMs = Number(env.NEXT_PUBLIC_POLLING_INTERVAL_MS);
+    console.log('[DEBUG] Setting up polling for live matches every', pollingIntervalMs, 'ms');
     
     const fetchLiveMatches = async () => {
       try {
         // Add timestamp to prevent caching
         const timestamp = new Date().getTime();
+        console.log(`[DEBUG] Fetching live matches at ${new Date().toISOString()}`);
+        
         const response = await fetch(`/api/matches/live?t=${timestamp}`, {
+          method: 'GET',
           cache: 'no-store',
+          next: { revalidate: 0 },
           headers: {
             'Pragma': 'no-cache',
-            'Cache-Control': 'no-cache, no-store, must-revalidate'
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'X-Requested-With': 'XMLHttpRequest'
           }
         });
         
         if (!response.ok) {
-          throw new Error("Failed to fetch live matches");
+          console.error(`[DEBUG] Error response: ${response.status} ${response.statusText}`);
+          throw new Error(`Failed to fetch live matches: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log('Polling: Fetched live matches:', data.matches);
+        console.log('[DEBUG] Polling: Fetched live matches:', JSON.stringify(data.matches));
+        
+        // Log current vs new scores to see if there's a change
+        if (liveMatches.length > 0 && data.matches.length > 0) {
+          liveMatches.forEach(oldMatch => {
+            const newMatch = data.matches.find(m => m.id === oldMatch.id);
+            if (newMatch) {
+              console.log(`[DEBUG] Match ${oldMatch.id} score change: ${oldMatch.teamA.score}-${oldMatch.teamB.score} -> ${newMatch.teamA.score}-${newMatch.teamB.score}`);
+            }
+          });
+        }
+        
         setLiveMatches(data.matches || []);
         setLastScoreUpdate(new Date());
       } catch (error) {
-        console.error("Error polling live matches:", error);
+        console.error("[DEBUG] Error polling live matches:", error);
       }
     };
     
@@ -201,14 +219,14 @@ export default function UserDashboard() {
     fetchLiveMatches();
     
     // Set up polling interval
-    const intervalId = setInterval(fetchLiveMatches, Number(env.NEXT_PUBLIC_POLLING_INTERVAL_MS));
+    const intervalId = setInterval(fetchLiveMatches, pollingIntervalMs);
     
     // Clean up on unmount
     return () => {
-      console.log('Clearing live matches polling interval');
+      console.log('[DEBUG] Clearing live matches polling interval');
       clearInterval(intervalId);
     };
-  }, [status]);
+  }, [status, liveMatches]);
 
   // Handle manual refresh of matches
   const handleRefreshScores = async () => {

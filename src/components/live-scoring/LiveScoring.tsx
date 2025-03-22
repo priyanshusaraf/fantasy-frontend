@@ -116,12 +116,27 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
   const fetchMatchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/matches/${matchId}`);
+      const timestamp = new Date().getTime();
+      console.log(`[DEBUG] Fetching match data for ID ${matchId} at ${new Date().toISOString()}`);
+      
+      const res = await fetch(`/api/matches/${matchId}?t=${timestamp}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+      
       if (!res.ok) {
-        throw new Error("Failed to fetch match data");
+        console.error(`[DEBUG] Error response: ${res.status} ${res.statusText}`);
+        throw new Error(`Failed to fetch match data: ${res.status}`);
       }
       
       const data = await res.json();
+      console.log(`[DEBUG] Match data received:`, data);
+      console.log(`[DEBUG] Current timestamp: ${data.timestamp}, Score: ${data.player1Score}-${data.player2Score}`);
+      
       setMatch(data);
       
       // Update scores based on fetched data
@@ -140,7 +155,7 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ matchId }) => {
         }
       }
     } catch (err) {
-      console.error("Error fetching match data:", err);
+      console.error("[DEBUG] Error fetching match data:", err);
       setError("Failed to fetch match data");
     } finally {
       setLoading(false);

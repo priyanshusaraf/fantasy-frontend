@@ -4,27 +4,35 @@ import { z } from "zod";
 export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]),
-    DATABASE_URL: z.string().url().optional(),
+    DATABASE_URL: z.string().min(1),
     NEXTAUTH_URL: z.string().url().optional(),
     NEXTAUTH_SECRET: z.string().min(1),
     GOOGLE_CLIENT_ID: z.string().optional().default("not-used"),
     GOOGLE_CLIENT_SECRET: z.string().optional().default("not-used"),
     JWT_SECRET: z.string().min(1),
     ADMIN_KEY: z.string().min(1),
-    RAZORPAY_KEY_ID: z.string().optional().default("not-used"),
-    RAZORPAY_KEY_SECRET: z.string().optional().default("not-used"),
+    RAZORPAY_KEY_ID: z.string().optional(),
+    RAZORPAY_KEY_SECRET: z.string().optional(),
     RAZORPAY_WEBHOOK_SECRET: z.string().optional().default("not-used"),
-    EMAIL_SERVER_HOST: z.string().optional().default(""),
-    EMAIL_SERVER_PORT: z.string().optional().default("587"),
-    EMAIL_SERVER_USER: z.string().optional().default(""),
-    EMAIL_SERVER_PASSWORD: z.string().optional().default(""),
-    EMAIL_FROM: z.string().optional().default("noreply@example.com"),
+    EMAIL_SERVER_HOST: z.string().optional(),
+    EMAIL_SERVER_PORT: z.string().optional(),
+    EMAIL_SERVER_USER: z.string().optional(),
+    EMAIL_SERVER_PASSWORD: z.string().optional(),
+    EMAIL_FROM: z.string().optional(),
     BYPASS_RAZORPAY: z.string().transform((val) => val === "true" || val === "" ? true : false),
-    POLLING_INTERVAL_MS: z.string().transform(val => parseInt(val || "15000", 10)),
+    POLLING_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2000),
   },
   client: {
-    NEXT_PUBLIC_APP_URL: z.string().min(1),
-    NEXT_PUBLIC_POLLING_INTERVAL_MS: z.string().transform(val => parseInt(val || "15000", 10)),
+    NEXT_PUBLIC_APP_URL: z.string().url(),
+    NEXT_PUBLIC_POLLING_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2000),
   },
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,

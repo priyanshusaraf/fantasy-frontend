@@ -4,18 +4,31 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic'; // Prevent caching
+export const revalidate = 0; // Never revalidate, always fetch fresh data
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const timestamp = new Date().toISOString();
+    console.log(`[DEBUG] Score update API called at ${timestamp} for match ${params.id}`);
+    
     const session = await getServerSession(authOptions);
     
     // Check authentication
     if (!session) {
       return NextResponse.json(
         { error: "Unauthorized" },
-        { status: 401 }
+        { 
+          status: 401,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        }
       );
     }
     
@@ -73,7 +86,12 @@ export async function POST(
       );
     }
     
-    const body = await request.json();
+    // Extract and log the request body for debugging
+    const rawBody = await request.text();
+    console.log(`[DEBUG] Raw request body: ${rawBody}`);
+    const body = JSON.parse(rawBody);
+    console.log(`[DEBUG] Parsed request body:`, body);
+    
     const { teamNumber } = body;
     
     if (teamNumber !== 1 && teamNumber !== 2) {
@@ -182,6 +200,9 @@ export async function POST(
       },
     });
     
+    // At the end, log the response being sent
+    console.log(`[DEBUG] Sending score update response for match ${params.id} at ${new Date().toISOString()}`);
+    
     // Format the response to return to the client
     const formattedMatch = {
       id: updatedMatch.id,
@@ -209,9 +230,18 @@ export async function POST(
         players: [updatedMatch.player3, updatedMatch.player4].filter(Boolean),
       },
       setScores: updatedMatch.setScores,
+      timestamp: Date.now() // Add timestamp to prevent caching
     };
     
-    return NextResponse.json(formattedMatch);
+    return NextResponse.json(formattedMatch, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'X-Debug-Timestamp': timestamp
+      }
+    });
   } catch (error) {
     console.error("Error updating match score:", error);
     return NextResponse.json(
