@@ -282,6 +282,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.usernameOrEmail && !(credentials?.username || credentials?.email) || !credentials?.password) {
+          console.error("Missing credentials: No username/email or password provided");
           throw new Error("Missing credentials");
         }
 
@@ -290,14 +291,16 @@ export const authOptions: NextAuthOptions = {
           if (typeof window === 'undefined') {
             try {
               await prisma.$queryRaw`SELECT 1`;
+              console.log("Database connection verified");
             } catch (e) {
-              console.error("Database not available during login");
+              console.error("Database not available during login:", e);
               throw new Error("Database connection issue. Please try again later.");
             }
           }
 
           // Handle different credential formats (accept both usernameOrEmail and username/email)
           const loginIdentifier = credentials.usernameOrEmail || credentials.username || credentials.email || '';
+          console.log(`Login attempt with identifier: ${loginIdentifier.includes('@') ? 'email format' : 'username format'}`);
           
           // Check if the input is an email or username
           const isEmail = loginIdentifier.includes('@');
@@ -309,12 +312,16 @@ export const authOptions: NextAuthOptions = {
               : { username: loginIdentifier }
           });
 
+          console.log(`User lookup result: ${user ? `Found (ID: ${user.id}, Role: ${user.role})` : 'Not found'}`);
+
           if (!user || !user.password) {
+            console.error(`Authentication failed: ${!user ? 'User not found' : 'Password not set'}`);
             throw new Error("Invalid credentials");
           }
 
           // Check if user account is active
           if (user.status !== "ACTIVE") {
+            console.error(`Authentication failed: Account status is ${user.status}`);
             throw new Error("Account is not active");
           }
 
@@ -322,7 +329,15 @@ export const authOptions: NextAuthOptions = {
           const isValidPassword = await compare(credentials.password, user.password);
           
           if (!isValidPassword) {
+            console.error("Authentication failed: Invalid password");
             throw new Error("Invalid credentials");
+          }
+
+          console.log(`Authentication successful for ${user.role} user (ID: ${user.id})`);
+          
+          // Force-set role to "PLAYER" for users with player role to ensure consistency
+          if (user.role === "player" || user.role === "PLAYER") {
+            user.role = "PLAYER";
           }
 
           return {

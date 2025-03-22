@@ -28,6 +28,8 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginFailed, setLoginFailed] = useState(false);
+  const [error, setError] = useState("");
   
   useEffect(() => {
     const checkDatabase = async () => {
@@ -64,107 +66,77 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Reset errors
-    setErrors({});
-    
+    setIsSubmitting(true);
+    setError("");
+    setLoginFailed(false);
+
     try {
-      // Basic validation
-      const result = loginSchema.safeParse({ username, password });
-      if (!result.success) {
-        const formattedErrors = result.error.format();
-        setErrors({
-          username: formattedErrors.username?._errors[0],
-          password: formattedErrors.password?._errors[0],
-        });
+      // First check database connection
+      const dbCheckRes = await fetch("/api/check-db-connection");
+      if (!dbCheckRes.ok) {
+        setError("Database connection error. Please try again later.");
+        setIsSubmitting(false);
         return;
       }
+
+      console.log(`Attempting login for ${username} with role prioritization`);
       
-      setIsSubmitting(true);
-      
-      // Check if this might be an admin login
-      let signInResult;
-      
-      // First try admin authentication if email looks like admin
-      if (username.toLowerCase().includes("admin") || 
-          username.toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-        console.log("Attempting admin authentication");
-        signInResult = await signIn("admin-credentials", {
-          redirect: false,
-          usernameOrEmail: username,
-          password,
-          callbackUrl: callbackUrl
-        });
+      // Try to sign in with credentials
+      const result = await signIn("credentials", {
+        usernameOrEmail: username,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        console.error("Login error:", result.error);
+        setLoginFailed(true);
         
-        // Log admin auth attempt result
-        console.log("Admin auth attempt result:", {
-          success: !signInResult?.error,
-          error: signInResult?.error
-        });
-      }
-      
-      // If admin auth failed or wasn't attempted, try regular auth
-      if (!signInResult || signInResult.error) {
-        signInResult = await signIn("credentials", {
-          redirect: false,
-          usernameOrEmail: username,
-          password,
-          callbackUrl: callbackUrl
-        });
-      }
-      
-      if (signInResult?.error) {
-        console.error("Login error details:", {
-          error: signInResult.error,
-          status: signInResult.status,
-          ok: signInResult.ok,
-          url: signInResult.url
-        });
+        // Provide more specific error messages
+        if (result.error.includes("not active")) {
+          setError("Your account is not activated. Please check your email or contact support.");
+        } else if (result.error.includes("Database connection")) {
+          setError("Database connection issue. Please try again later.");
+        } else {
+          setError("Login failed. Please check your credentials and try again.");
+        }
         
-        // Log any additional details available
-        toast.error("Login failed: " + signInResult.error);
-        setErrors({
-          username: "Authentication failed. Please check your credentials.",
-          password: "Authentication failed. Please check your credentials.",
-        });
+        setIsSubmitting(false);
         return;
       }
-      
-      // Show success toast
-      toast.success("Login successful");
-      
-      // Get session to check user role
+
+      // Get session to determine role for redirect
       const session = await fetch('/api/auth/session');
       const sessionData = await session.json();
+      console.log("Login successful, session:", sessionData);
       
-      // Determine correct dashboard based on user role
-      let targetUrl = callbackUrl;
-      if (!targetUrl || targetUrl === "/user/dashboard") {
-        const role = sessionData?.user?.role;
-        // Only override if it's the default
-        if (role === "TOURNAMENT_ADMIN" || role === "MASTER_ADMIN") {
-          targetUrl = "/admin/dashboard";
-        } else if (role === "REFEREE") {
-          targetUrl = "/referee/dashboard";
-        } else if (role === "PLAYER") {
-          targetUrl = "/player/dashboard";
-        } else {
-          targetUrl = "/user/dashboard";
-        }
-        console.log(`Redirecting based on role: ${role} to ${targetUrl}`);
+      if (!sessionData || !sessionData.user) {
+        setError("Failed to retrieve user session after login.");
+        setIsSubmitting(false);
+        return;
       }
+
+      // Handle different roles with proper case normalization
+      const userRole = (sessionData.user.role || "").toUpperCase();
+      console.log(`Redirecting user with role: ${userRole}`);
       
-      // Use signInResult.url if available (NextAuth redirect logic), otherwise use role-based redirect
-      window.location.href = signInResult?.url || targetUrl;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Authentication failed";
-      console.error("Login error:", error);
-      toast.error(errorMessage);
-      setErrors({
-        username: "Authentication failed. Please try again.",
-        password: "Authentication failed. Please try again.",
-      });
-    } finally {
+      // Redirect based on normalized role
+      if (userRole === "ADMIN") {
+        router.push("/admin/dashboard");
+      } else if (userRole === "REFEREE") {
+        router.push("/referee/dashboard");
+      } else if (userRole === "PLAYER") {
+        router.push("/player/dashboard");
+      } else if (userRole === "USER") {
+        router.push("/dashboard");
+      } else {
+        console.warn(`Unknown role: ${userRole}, defaulting to /dashboard`);
+        router.push("/dashboard");
+      }
+    } catch (err) {
+      console.error("Login exception:", err);
+      setError("An unexpected error occurred. Please try again.");
+      setLoginFailed(true);
       setIsSubmitting(false);
     }
   };
@@ -305,6 +277,12 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
           Admin Login Troubleshooter
         </button>
       </div>
+
+      {loginFailed && (
+        <div className="mt-4 text-center text-destructive">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
