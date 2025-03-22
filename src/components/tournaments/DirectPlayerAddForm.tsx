@@ -150,69 +150,94 @@ export default function DirectPlayerAddForm({ tournamentId, onSuccess, onCancel 
       let playerId = playerData.playerId;
       
       if (isCreatingNewPlayer) {
-        const createResponse = await fetch("/api/players", {
+        // Create a clean object with only the fields we need
+        const playerCreateData = {
+          name: playerData.name || "",
+          email: playerData.email || "",
+          phone: playerData.phone || "",
+          country: playerData.country || "",
+          skillLevel: playerData.skillLevel || "INTERMEDIATE",
+          dominantHand: playerData.dominantHand || "RIGHT",
+          notes: playerData.notes || ""
+        };
+        
+        console.log("Creating new player with data:", JSON.stringify(playerCreateData));
+        
+        try {
+          const createResponse = await fetch("/api/players", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(playerCreateData),
+          });
+          
+          if (!createResponse.ok) {
+            const errorData = await createResponse.json().catch(() => ({ message: "Unknown error" }));
+            throw new Error(errorData.message || "Failed to create new player");
+          }
+          
+          const newPlayer = await createResponse.json();
+          playerId = newPlayer.id;
+          
+          toast({
+            title: "Success",
+            description: `New player created with ID: ${playerId}`,
+          });
+        } catch (error) {
+          console.error("Error creating player:", error);
+          toast({
+            title: "Error",
+            description: error instanceof Error ? error.message : "Failed to create player. Please try again.",
+            variant: "destructive",
+          });
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      
+      // Now add the player to the tournament
+      try {
+        const addData = { playerIds: [playerId] };
+        console.log("Adding player to tournament with data:", JSON.stringify(addData));
+        
+        const addResponse = await fetch(`/api/tournaments/${tournamentId}/players`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            name: playerData.name,
-            email: playerData.email,
-            phone: playerData.phone,
-            country: playerData.country,
-            skillLevel: playerData.skillLevel,
-            dominantHand: playerData.dominantHand,
-            notes: playerData.notes
-          }),
+          body: JSON.stringify(addData),
         });
         
-        if (!createResponse.ok) {
-          throw new Error("Failed to create new player");
+        if (!addResponse.ok) {
+          const errorData = await addResponse.json().catch(() => ({ message: "Unknown error" }));
+          throw new Error(errorData.message || "Failed to add player to tournament");
         }
         
-        const newPlayer = await createResponse.json();
-        playerId = newPlayer.id;
+        const result = await addResponse.json();
         
         toast({
           title: "Success",
-          description: `New player created with ID: ${playerId}`,
+          description: "Player successfully added to tournament",
+        });
+        
+        // Call success callback
+        if (onSuccess) {
+          onSuccess();
+        }
+      } catch (error) {
+        console.error("Error adding player to tournament:", error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to add player to tournament. Please try again.",
+          variant: "destructive",
         });
       }
-      
-      // Now add the player to the tournament
-      const addResponse = await fetch(`/api/tournaments/${tournamentId}/players`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          playerIds: [playerId],
-        }),
-      });
-      
-      if (!addResponse.ok) {
-        throw new Error("Failed to add player to tournament");
-      }
-      
-      const result = await addResponse.json();
-      
-      toast({
-        title: "Success",
-        description: "Player successfully added to tournament",
-      });
-      
-      // Refresh or redirect
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.refresh();
-        router.push(`/admin/tournaments/${tournamentId}?tab=players`);
-      }
     } catch (error) {
-      console.error("Error adding player to tournament:", error);
+      console.error("Unexpected error:", error);
       toast({
         title: "Error",
-        description: "Failed to add player to tournament. Please try again.",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
     } finally {

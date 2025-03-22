@@ -158,54 +158,21 @@ export async function POST(request: NextRequest) {
       return authResult;
     }
 
-    // Clone the request before trying to parse JSON to avoid stream errors
-    const requestClone = request.clone();
-    
-    // First check if body exists and is not empty
-    const text = await requestClone.text();
-    if (!text || text.trim() === '') {
-      console.error("Empty request body received");
-      return NextResponse.json({
-        error: "Invalid request",
-        message: "Request body is empty or missing",
-      }, { status: 400 });
-    }
-
-    // Parse JSON safely
     let data;
     try {
-      data = JSON.parse(text);
-    } catch (jsonError: unknown) {
-      console.error("JSON parse error in players POST:", jsonError);
+      data = await request.json();
+    } catch (parseError) {
+      console.error("JSON parsing error:", parseError);
       return NextResponse.json({
-        error: "Invalid request",
-        message: "Could not parse request body as JSON. Check syntax and formatting.",
-        details: process.env.NODE_ENV === "development" ? (jsonError as Error).message : undefined
+        error: "Invalid JSON",
+        message: "The request body is not valid JSON",
+        details: process.env.NODE_ENV === "development" ? (parseError as Error).message : undefined
       }, { status: 400 });
     }
 
-    // Validate with Zod schema
-    try {
-      const validatedData = playerSchema.safeParse(data);
-      if (!validatedData.success) {
-        console.error("Validation error:", validatedData.error);
-        return NextResponse.json({
-          error: "Validation failed",
-          message: "Invalid player data",
-          details: process.env.NODE_ENV === "development" ? validatedData.error.format() : undefined
-        }, { status: 400 });
-      }
-      data = validatedData.data;
-    } catch (validationError) {
-      console.error("Unexpected validation error:", validationError);
-      return NextResponse.json({
-        error: "Validation failed",
-        message: "Invalid player data structure",
-        details: process.env.NODE_ENV === "development" ? validationError : undefined
-      }, { status: 400 });
-    }
+    console.log("Received player creation request with data:", JSON.stringify(data));
 
-    // Check required fields
+    // Validate required fields
     if (!data.name) {
       console.error("Missing required field: name");
       return NextResponse.json({
