@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { pingDatabase, isDatabaseAvailable } from '@/lib/prisma';
+import prisma, { checkDatabaseConnection } from '@/lib/db';
 
 // Keep a history of recent connection statuses
 const connectionHistory: Array<{ timestamp: number; connected: boolean; error?: string }> = [];
@@ -26,7 +25,7 @@ export async function GET() {
   try {
     // Set a timeout for the database query
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Database query timed out after 5 seconds')), 5000);
+      setTimeout(() => reject(new Error('Database query timed out after 3 seconds')), 3000);
     });
     
     // Use Promise.race to implement timeout for the query
@@ -35,28 +34,21 @@ export async function GET() {
     let error = null;
     
     try {
-      // First check if the database is already known to be connected
-      const cachedStatus = isDatabaseAvailable();
-      
-      // If not cached or false, actually ping the database
-      if (!cachedStatus) {
-        console.log('No positive cached connection status, pinging database');
-        await Promise.race([pingDatabase(), timeoutPromise]);
-      } else {
-        console.log('Using cached database connection status');
-      }
-      
-      // Try running a test query
+      // Check database connection with built-in retry logic
+      console.log('Checking database connection...');
       const queryStartTime = Date.now();
       
-      // Always try running a simple query to verify connectivity
-      await Promise.race([
-        prisma.$queryRaw`SELECT 1 as connected`,
+      // Use our enhanced connection check with retry logic
+      connected = await Promise.race([
+        checkDatabaseConnection(),
         timeoutPromise
       ]);
       
       queryLatency = Date.now() - queryStartTime;
-      connected = true;
+      
+      if (!connected) {
+        error = 'Database connection failed after multiple attempts';
+      }
     } catch (err: any) {
       console.error('Database connection check failed:', err);
       error = err.message || 'Unknown database error';
@@ -82,7 +74,6 @@ export async function GET() {
       history: connectionHistory,
       error: error,
       environment: process.env.NODE_ENV || 'unknown',
-      cached: isDatabaseAvailable(),
     });
   } catch (error: any) {
     console.error('Error in database connection check API:', error);

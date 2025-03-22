@@ -39,17 +39,24 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       setIsCheckingDb(true);
       
       // Try the check-db-connection endpoint
-      let response = await fetch('/api/check-db-connection');
+      let response = await fetch('/api/check-db-connection', {
+        // Add cache control to avoid caching error responses
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       
       // If that fails with a 404, try system/db-check as fallback
       if (!response.ok && response.status === 404) {
         console.log('DB check endpoint not found, trying system/db-check instead');
-        response = await fetch('/api/system/db-check');
+        response = await fetch('/api/system/db-check', { cache: 'no-store' });
         
         // If that fails too, try the health endpoint as last resort
         if (!response.ok && response.status === 404) {
           console.log('System db-check endpoint not found, trying health endpoint');
-          response = await fetch('/api/health');
+          response = await fetch('/api/health', { cache: 'no-store' });
         }
       }
       
@@ -82,17 +89,27 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     }
   };
   
-  // Check database connection on component mount
+  // Check database connection on component mount and when URL parameters change
   useEffect(() => {
     checkDatabase();
     
-    // Set up periodic checks every 30 seconds
+    // Check if we have a 'database' error in the URL
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('error') === 'database') {
+      setDbStatus('disconnected');
+      toast.error('Database connection error detected', {
+        description: 'The system is currently experiencing database issues. Please try again later.',
+        duration: 5000
+      });
+    }
+    
+    // Set up periodic checks every 15 seconds
     const interval = setInterval(() => {
       // Only check if currently disconnected
       if (dbStatus === 'disconnected') {
         checkDatabase();
       }
-    }, 30000);
+    }, 15000);
     
     return () => clearInterval(interval);
   }, [dbStatus]);
@@ -115,9 +132,12 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       if (dbStatus === 'disconnected') {
         await checkDatabase();
         
-        // If still disconnected, warn the user
+        // If still disconnected, warn the user but allow them to try
         if (dbStatus === 'disconnected') {
-          toast.warning("Database connection issue detected. Login might fail.");
+          toast.warning("Database connection issue detected. Login might fail.", {
+            description: "The system is experiencing connection issues, but we'll try to log you in anyway.",
+            duration: 5000
+          });
         }
       }
       
@@ -131,15 +151,23 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       if (result?.error) {
         setLoginFailed(true);
         
-        // Special handling for database connection errors
-        if (result.error.includes('Database connection') || result.error.includes('database issue')) {
+        // Enhanced error handling for database-related errors
+        if (
+          result.error.includes('Database connection') || 
+          result.error.includes('database issue') ||
+          result.error.includes('timeout') ||
+          result.error.includes('ETIMEDOUT') ||
+          result.error.includes('ECONNREFUSED')
+        ) {
           setError("Database connection issue. Please try again in a few moments.");
+          setDbStatus('disconnected');
           toast.error("Database connection issue detected", {
-            description: "The server couldn't connect to the database. Please try again later.",
+            description: "The server couldn't connect to the database. We'll automatically retry the connection.",
             action: {
-              label: 'Retry',
+              label: 'Retry Now',
               onClick: () => checkDatabase()
-            }
+            },
+            duration: 8000
           });
         } else {
           setError(result.error);
