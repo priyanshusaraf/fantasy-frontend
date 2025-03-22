@@ -39,75 +39,22 @@ function getValidDatabaseUrl() {
   dbUrl = dbUrl.replace(/^"|"$/g, '');
   dbUrl = dbUrl.replace(/^'|'$/g, '');
   
-  // Parse the MySQL connection string to ensure it's valid
-  try {
-    // Basic validation to ensure it's a MySQL URL
-    if (!dbUrl.startsWith('mysql://')) {
-      console.error('Invalid database URL format - not a MySQL URL');
-      // Provide a default local URL for development if needed
-      if (process.env.NODE_ENV === 'development') {
-        return 'mysql://root:password@localhost:3306/fantasy_db?connect_timeout=30';
-      } else {
-        throw new Error('Invalid database URL format');
-      }
-    }
-
-    // Extract parts from URL to build a clean version
-    const urlParts = new URL(dbUrl);
-    
-    // Ensure we have all required parts
-    if (!urlParts.hostname || !urlParts.pathname) {
-      throw new Error('Missing hostname or database name in connection string');
-    }
-    
-    // Rebuild the connection string with explicit parameters
-    const username = urlParts.username;
-    const password = urlParts.password;
-    const host = urlParts.hostname;
-    const port = urlParts.port || '3306';
-    const database = urlParts.pathname.replace(/^\//, '');
-    
-    // Build clean URL with connection parameters
-    let cleanUrl = `mysql://${username}:${password}@${host}:${port}/${database}`;
-    
-    // Add essential connection parameters
-    const params = new URLSearchParams(urlParts.search);
-    
-    // Configure connection parameters based on environment
-    if (process.env.NODE_ENV === 'production') {
-      // Production settings - optimal for serverless Next.js with AWS RDS
-      params.set('connection_limit', '20');    // Increased for better handling of concurrent requests
-      params.set('pool_timeout', '30');        // Increased to handle connection waits
-      params.set('connect_timeout', '60');     // Extended timeout for production
-      params.set('wait_timeout', '180');       // Longer wait timeout for AWS RDS
-      params.set('socket_timeout', '60');      // Socket timeout
-      params.set('pool_idle_timeout', '120');  // Connection pool idle timeout
-      
-      // Additional recommended parameters for MySQL RDS
-      params.set('ssl', 'true');               // Use SSL for production RDS connections
-      params.set('connection_retries', '3');   // Retry connection 3 times
-      params.set('retry_delay', '3');          // Delay 3 seconds between retries
-    } else {
-      // Development settings
-      params.set('connection_limit', '10');    // More connections for development
-      params.set('pool_timeout', '20');
-      params.set('connect_timeout', '30');     // Longer timeout for development
-      params.set('wait_timeout', '60');        // Wait timeout
-    }
-    
-    // Add parameters back to URL
-    if (params.toString()) {
-      cleanUrl += `?${params.toString()}`;
-    }
-    
-    console.log(`Database URL processed with connection parameters for ${process.env.NODE_ENV}`);
-    return cleanUrl;
-    
-  } catch (error) {
-    console.error('Error processing database URL:', error);
-    // Return the original URL as fallback
+  // ⚠️ IMPORTANT: Use DATABASE_URL directly for Prisma client
+  // Prisma requires a specific format and handling the URL manually can cause issues
+  console.log(`Database environment: ${process.env.NODE_ENV}`);
+  
+  // In development mode, add logging info
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Using database URL from environment (first 15 chars):', dbUrl.substring(0, 15) + '...');
+  }
+  
+  // If running in production on Vercel, the DATABASE_URL is already correctly formatted
+  if (process.env.VERCEL) {
+    console.log('Running on Vercel, using provided DATABASE_URL');
     return dbUrl;
   }
+  
+  return dbUrl;
 }
 
 // Import Node.js modules conditionally only on server
