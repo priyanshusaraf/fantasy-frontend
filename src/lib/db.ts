@@ -13,6 +13,7 @@ const globalForPrisma = global as unknown as {
 let isConnected = false;
 let isUsingFallback = false;
 let connectionAttempts = 0;
+let lastConnectionError = "";
 const MAX_CONNECTION_ATTEMPTS = 5;
 const CONNECTION_RETRY_ATTEMPTS = 3;
 const CONNECTION_RETRY_DELAY = 2000; // 2 seconds
@@ -46,7 +47,7 @@ function createPrismaClient(connectionUrl?: string, isFallback = false) {
   try {
     // Special handling for SQLite
     if (isFallback && url.startsWith('file:')) {
-      // Test SQLite connection first
+      // Test SQLite fallback first
       if (!isSqliteFallbackReady()) {
         console.error('SQLite fallback database is not ready or accessible');
         return null;
@@ -88,6 +89,7 @@ function createPrismaClient(connectionUrl?: string, isFallback = false) {
           if (!isFallback) {
             isConnected = true; // Only update main connection status
             connectionErrors = 0; // Reset error counter on success
+            lastConnectionError = ""; // Clear error message on success
           }
           
           return result;
@@ -101,7 +103,23 @@ function createPrismaClient(connectionUrl?: string, isFallback = false) {
             error.code === 'P1002';
           
           if (isConnectionError && !isFallback) {
-            console.error(`Database connection error (attempt ${attempt + 1}/${CONNECTION_RETRY_ATTEMPTS}):`, error.message);
+            lastConnectionError = error.message || "Unknown connection error";
+            console.error(`[${new Date().toISOString()}] Database connection error (attempt ${attempt + 1}/${CONNECTION_RETRY_ATTEMPTS}):`, error.message);
+            
+            if (process.env.NODE_ENV === 'production') {
+              // In production, also log detailed error information
+              console.error('Error details:', {
+                code: error.code,
+                meta: error.meta,
+                errorType: typeof error,
+                params: JSON.stringify({
+                  model: params.model,
+                  action: params.action,
+                  args: params.args ? Object.keys(params.args) : null
+                })
+              });
+            }
+            
             isConnected = false;
             connectionErrors++;
             
@@ -132,9 +150,27 @@ function createPrismaClient(connectionUrl?: string, isFallback = false) {
       return executeWithRetry();
     });
 
+    // Verify connection immediately
+    if (!isFallback) {
+      // Perform a test query to verify the connection works
+      client.$queryRaw`SELECT 1 as result`
+        .then(() => {
+          console.log('Initial database connection test successful');
+          isConnected = true;
+          connectionErrors = 0;
+        })
+        .catch(err => {
+          console.error('Initial database connection test failed:', err.message);
+          lastConnectionError = err.message;
+          isConnected = false;
+          connectionErrors++;
+        });
+    }
+
     return client;
-  } catch (err) {
-    console.error(`Failed to initialize ${isFallback ? 'fallback' : 'main'} Prisma client:`, err);
+  } catch (err: any) {
+    console.error(`Failed to initialize ${isFallback ? 'fallback' : 'main'} Prisma client:`, err.message);
+    lastConnectionError = err.message || "Unknown initialization error";
     throw err;
   }
 }
@@ -319,3 +355,15 @@ process.on('beforeExit', async () => {
 // Export the actual client getter function as the default
 const prisma = getPrismaClient();
 export default prisma;
+
+// Export a function to get connection status
+export function getDatabaseStatus() {
+  return {
+    isConnected,
+    isUsingFallback,
+    connectionErrors,
+    lastError: lastConnectionError,
+    mainUrl: process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/\/\/([^:]+):[^@]+@/, '//****:****@') : null,
+    fallbackEnabled: isFallbackEnabled(),
+  };
+}
