@@ -35,6 +35,7 @@ declare module "next-auth" {
     role: string;
     username?: string;
     isFallbackUser?: boolean;
+    status?: string;  // Add this field to match usage in the code
   }
 }
 
@@ -222,10 +223,13 @@ export const authOptions: NextAuthOptions = {
           }
           
           console.log(`Querying database for user: ${credentials.email}`);
+          
           // Get the user from database with retries and extended timeout
           const user = await queryDatabaseWithRetry(
             () => prisma.user.findUnique({
-              where: { email: credentials.email }
+              where: { 
+                email: credentials.email.trim().toLowerCase() 
+              }
             }),
             3,  // 3 retries
             15000 // 15 second timeout
@@ -233,6 +237,44 @@ export const authOptions: NextAuthOptions = {
           
           if (!user) {
             console.log(`No user found with email: ${credentials.email}`);
+            
+            // Try one more search with case-insensitive compare
+            const userCaseInsensitive = await queryDatabaseWithRetry(
+              () => prisma.user.findFirst({
+                where: {
+                  email: {
+                    mode: 'insensitive',
+                    equals: credentials.email.trim()
+                  }
+                }
+              }),
+              2,
+              10000
+            );
+            
+            if (userCaseInsensitive) {
+              console.log(`Found user with case-insensitive search: ${userCaseInsensitive.email}`);
+              
+              // Verify password for case-insensitive match
+              if (userCaseInsensitive.password) {
+                const passwordMatch = await bcrypt.compare(credentials.password, userCaseInsensitive.password);
+                
+                if (passwordMatch) {
+                  console.log(`Password matched for case-insensitive user: ${userCaseInsensitive.email}`);
+                  
+                  return {
+                    id: userCaseInsensitive.id.toString(),
+                    email: userCaseInsensitive.email,
+                    name: userCaseInsensitive.name || userCaseInsensitive.email.split('@')[0],
+                    image: userCaseInsensitive.image,
+                    isAdmin: userCaseInsensitive.isAdmin,
+                    isActive: userCaseInsensitive.status === 'ACTIVE',
+                    role: userCaseInsensitive.role || 'USER',
+                  };
+                }
+              }
+            }
+            
             // One more check of fallback users if normal DB lookup fails
             const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
             if (fallbackUser) {
@@ -246,6 +288,11 @@ export const authOptions: NextAuthOptions = {
           console.log(`User found, verifying password for: ${credentials.email}`);
     
           // Verify password
+          if (!user.password) {
+            console.error(`User ${credentials.email} has no password set`);
+            throw new Error("Account requires password reset");
+          }
+          
           const passwordMatch = await bcrypt.compare(credentials.password, user.password);
           console.log(`Password verification result for ${credentials.email}: ${passwordMatch ? 'match' : 'mismatch'}`);
           
@@ -255,12 +302,12 @@ export const authOptions: NextAuthOptions = {
           
           console.log(`Authentication successful for: ${credentials.email}`);
           return {
-            id: user.id,
+            id: user.id.toString(),
             email: user.email,
-            name: user.name,
+            name: user.name || user.email.split('@')[0],
             image: user.image,
             isAdmin: user.isAdmin,
-            isActive: user.isActive,
+            isActive: user.status === 'ACTIVE',
             role: user.role || 'USER',
           };
           

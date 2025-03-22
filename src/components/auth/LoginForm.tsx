@@ -47,21 +47,21 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       
       setIsSubmitting(true);
       
-      // Use NextAuth signIn with credentials - always force user dashboard as target
+      // Simplified credentials object - just use the single credential field correctly
+      // NextAuth expects email field for credentials provider
       const signInResult = await signIn("credentials", {
         redirect: false,
-        usernameOrEmail: username,
-        username: username,
-        email: username,
+        email: username, // Use username input as email
         password,
+        callbackUrl: callbackUrl
       });
       
       if (signInResult?.error) {
         console.error("Login error:", signInResult.error);
-        toast.error("Invalid username or password");
+        toast.error("Login failed: " + signInResult.error);
         setErrors({
-          username: "Invalid username or password",
-          password: "Invalid username or password",
+          username: "Authentication failed. Please check your credentials.",
+          password: "Authentication failed. Please check your credentials.",
         });
         return;
       }
@@ -72,14 +72,19 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       // Redirect immediately without timeout
       console.log("Login successful, redirecting to user dashboard");
       
-      // Use window.location.href for a hard redirect that will break any loops
-      window.location.href = "/user/dashboard";
+      // Use router.push instead of window.location for smoother navigation
+      if (signInResult?.url) {
+        window.location.href = signInResult.url;
+      } else {
+        window.location.href = callbackUrl || "/user/dashboard";
+      }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
+      const errorMessage = error instanceof Error ? error.message : "Authentication failed";
+      console.error("Login error:", error);
       toast.error(errorMessage);
       setErrors({
-        username: "Authentication failed",
-        password: "Authentication failed",
+        username: "Authentication failed. Please try again.",
+        password: "Authentication failed. Please try again.",
       });
     } finally {
       setIsSubmitting(false);
@@ -95,16 +100,17 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="username">Username or Email</Label>
+          <Label htmlFor="username">Email</Label>
           <Input
             id="username"
-            type="text"
-            placeholder="Enter username or email"
+            type="email"
+            placeholder="Enter your email"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
             disabled={isSubmitting}
             className={errors.username ? "border-destructive" : ""}
+            autoComplete="email"
           />
           {errors.username && (
             <p className="text-sm text-destructive">{errors.username}</p>
@@ -122,6 +128,7 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
             required
             disabled={isSubmitting}
             className={errors.password ? "border-destructive" : ""}
+            autoComplete="current-password"
           />
           {errors.password && (
             <p className="text-sm text-destructive">{errors.password}</p>
