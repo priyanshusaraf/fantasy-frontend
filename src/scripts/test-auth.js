@@ -8,82 +8,137 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-async function testAuth() {
-  // Print environment variables (redacting sensitive values)
-  console.log('ENVIRONMENT VARIABLES:');
-  console.log(`- NEXTAUTH_SECRET: ${process.env.NEXTAUTH_SECRET ? '****' + process.env.NEXTAUTH_SECRET.slice(-4) : 'not set'}`);
-  console.log(`- DATABASE_URL: ${process.env.DATABASE_URL ? '****' + process.env.DATABASE_URL.slice(-20) : 'not set'}`);
-  console.log(`- NEXTAUTH_URL: ${process.env.NEXTAUTH_URL || 'not set'}`);
+// Set test parameters
+const TEST_EMAIL = 'sarafpriyanshu09@gmail.com';
+const TEST_PASSWORD = 'matchupsports';
+
+// Functions to validate required env variables
+function checkEnvVariables() {
+  const variables = ['NEXTAUTH_SECRET', 'JWT_SECRET', 'NEXTAUTH_URL'];
+  
+  console.log('\n=== Environment Variables ===');
+  
+  let allPresent = true;
+  variables.forEach(varName => {
+    if (!process.env[varName]) {
+      console.log(`❌ ${varName} is missing`);
+      allPresent = false;
+    } else {
+      console.log(`✅ ${varName} is set to: ${varName === 'NEXTAUTH_SECRET' || varName === 'JWT_SECRET' 
+        ? process.env[varName].substring(0, 3) + '...' + process.env[varName].substring(process.env[varName].length - 3) 
+        : process.env[varName]}`);
+    }
+  });
+  
+  // Check if JWT_SECRET and NEXTAUTH_SECRET match
+  if (process.env.JWT_SECRET && process.env.NEXTAUTH_SECRET) {
+    if (process.env.JWT_SECRET === process.env.NEXTAUTH_SECRET) {
+      console.log('✅ JWT_SECRET and NEXTAUTH_SECRET match');
+    } else {
+      console.log('❌ JWT_SECRET and NEXTAUTH_SECRET do not match - this can cause authentication issues');
+    }
+  }
+  
+  return allPresent;
+}
+
+// Main test function
+async function testAuthentication() {
+  console.log('\n🔑 TESTING AUTHENTICATION FLOW\n');
+  
+  // Check environment variables
+  const envCheck = checkEnvVariables();
+  if (!envCheck) {
+    console.log('\n❌ Environment variable check failed - fix these issues first.');
+    process.exit(1);
+  }
   
   try {
-    // Find the user
+    // Step 1: Find user in database
+    console.log('\n=== User Lookup ===');
     const user = await prisma.user.findUnique({
-      where: { email: 'sarafpriyanshu09@gmail.com' },
+      where: { email: TEST_EMAIL },
       select: {
         id: true,
         email: true,
         password: true,
+        name: true,
         role: true,
-        status: true,
-        name: true
+        status: true
       }
     });
     
     if (!user) {
-      console.error('User not found in database');
-      return;
+      console.log(`❌ User with email ${TEST_EMAIL} not found`);
+      process.exit(1);
     }
     
-    console.log('\nUSER INFORMATION:');
-    console.log(`- ID: ${user.id}`);
-    console.log(`- Email: ${user.email}`);
-    console.log(`- Role: ${user.role}`);
-    console.log(`- Status: ${user.status}`);
+    console.log(`✅ User found: ID ${user.id}`);
+    console.log(`   Email: ${user.email}`);
+    console.log(`   Name: ${user.name || 'Not set'}`);
+    console.log(`   Role: ${user.role || 'Not set'}`);
+    console.log(`   Status: ${user.status || 'Not set'}`);
     
-    // Verify password
-    const password = 'matchupsports';
-    const passwordMatches = await bcrypt.compare(password, user.password);
-    console.log(`- Password matches: ${passwordMatches ? 'Yes ✅' : 'No ❌'}`);
+    // Step 2: Verify password
+    console.log('\n=== Password Verification ===');
+    if (!user.password) {
+      console.log('❌ User has no password set');
+      process.exit(1);
+    }
     
-    // Create a JWT token as NextAuth would
+    const passwordMatch = await bcrypt.compare(TEST_PASSWORD, user.password);
+    if (!passwordMatch) {
+      console.log('❌ Password does not match');
+      process.exit(1);
+    }
+    
+    console.log('✅ Password verification successful');
+    
+    // Step 3: Create JWT token (similar to NextAuth)
+    console.log('\n=== JWT Token Creation ===');
     const token = jwt.sign(
       {
-        id: user.id,
+        sub: user.id.toString(),
         email: user.email,
-        role: user.role
+        role: user.role || 'USER',
+        isAdmin: user.role === 'ADMIN' || user.role === 'MASTER_ADMIN',
+        isActive: user.status === 'ACTIVE',
       },
       process.env.NEXTAUTH_SECRET,
       { expiresIn: '30d' }
     );
     
-    console.log('\nJWT TOKEN:');
-    console.log(`- Token (truncated): ${token.substring(0, 20)}...`);
+    console.log(`✅ JWT token created: ${token.substring(0, 12)}...`);
     
-    // Verify the token
+    // Step 4: Verify the token
+    console.log('\n=== JWT Token Verification ===');
     try {
       const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET);
-      console.log('\nDECODED TOKEN:');
-      console.log(`- ID: ${decoded.id}`);
-      console.log(`- Email: ${decoded.email}`);
-      console.log(`- Role: ${decoded.role}`);
-      console.log(`- JWT verification: Success ✅`);
-    } catch (error) {
-      console.error('\nJWT VERIFICATION ERROR:');
-      console.error(`- Error: ${error.message}`);
+      console.log('✅ Token verification successful');
+      console.log(`   User ID: ${decoded.sub}`);
+      console.log(`   Email: ${decoded.email}`);
+      console.log(`   Role: ${decoded.role}`);
+      console.log(`   Is Admin: ${decoded.isAdmin}`);
+      console.log(`   Is Active: ${decoded.isActive}`);
+      console.log(`   Expires: ${new Date(decoded.exp * 1000).toLocaleString()}`);
+    } catch (err) {
+      console.log(`❌ Token verification failed: ${err.message}`);
+      process.exit(1);
     }
     
+    console.log('\n✅ AUTHENTICATION TEST SUCCESSFUL');
+    console.log('\nIf this test passes but login still fails in the browser:');
+    console.log('1. Clear your browser cookies and cache');
+    console.log('2. Try using an incognito/private window');
+    console.log('3. Check that your deployment environment variables match these test values');
+    console.log('4. Ensure your domain configuration is consistent (www vs non-www)');
   } catch (error) {
-    console.error('Error in test-auth script:', error);
+    console.error('❌ Test failed with error:', error);
+    process.exit(1);
   } finally {
     await prisma.$disconnect();
   }
 }
 
-testAuth()
-  .then(() => {
-    console.log('\nAuthentication test completed');
-  })
-  .catch(error => {
-    console.error('Authentication test failed:', error);
-    process.exit(1);
-  }); 
+// Run the test
+testAuthentication(); 

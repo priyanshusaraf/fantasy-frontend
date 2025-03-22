@@ -171,17 +171,17 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        usernameOrEmail: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          console.error("Missing credentials", { email: !!credentials?.email, password: !!credentials?.password });
+        if (!credentials?.usernameOrEmail || !credentials?.password) {
+          console.error("Missing credentials", { usernameOrEmail: !!credentials?.usernameOrEmail, password: !!credentials?.password });
           return null;
         }
         
         try {
-          console.log(`Login attempt for: ${credentials.email}`);
+          console.log(`Login attempt for: ${credentials.usernameOrEmail}`);
           
           // Check database connection first with multiple attempts
           let isConnected = false;
@@ -201,9 +201,9 @@ export const authOptions: NextAuthOptions = {
               console.warn("Database connection is unavailable during login attempt - using fallback auth");
               
               // Try fallback authentication for users registered during outage
-              const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
+              const fallbackUser = await checkFallbackUsers(credentials.usernameOrEmail, credentials.password);
               if (fallbackUser) {
-                console.log(`Authenticated ${credentials.email} via fallback mechanism`);
+                console.log(`Authenticated ${credentials.usernameOrEmail} via fallback mechanism`);
                 return fallbackUser;
               }
               
@@ -213,22 +213,22 @@ export const authOptions: NextAuthOptions = {
             console.error("Database connectivity check failed:", connError);
             
             // Try fallback authentication before giving up
-            const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
+            const fallbackUser = await checkFallbackUsers(credentials.usernameOrEmail, credentials.password);
             if (fallbackUser) {
-              console.log(`Authenticated ${credentials.email} via fallback after connectivity error`);
+              console.log(`Authenticated ${credentials.usernameOrEmail} via fallback after connectivity error`);
               return fallbackUser;
             }
             
             throw new Error("We're having trouble connecting to our database. Please try again shortly.");
           }
           
-          console.log(`Querying database for user: ${credentials.email}`);
+          console.log(`Querying database for user: ${credentials.usernameOrEmail}`);
           
           // Get the user from database with retries and extended timeout
           const user = await queryDatabaseWithRetry(
             () => prisma.user.findUnique({
               where: { 
-                email: credentials.email.trim().toLowerCase() 
+                email: credentials.usernameOrEmail.trim().toLowerCase() 
               }
             }),
             3,  // 3 retries
@@ -236,7 +236,7 @@ export const authOptions: NextAuthOptions = {
           );
           
           if (!user) {
-            console.log(`No user found with email: ${credentials.email}`);
+            console.log(`No user found with email: ${credentials.usernameOrEmail}`);
             
             // Try one more search with case-insensitive compare
             const userCaseInsensitive = await queryDatabaseWithRetry(
@@ -244,7 +244,7 @@ export const authOptions: NextAuthOptions = {
                 where: {
                   email: {
                     mode: 'insensitive',
-                    equals: credentials.email.trim()
+                    equals: credentials.usernameOrEmail.trim()
                   }
                 }
               }),
@@ -276,31 +276,31 @@ export const authOptions: NextAuthOptions = {
             }
             
             // One more check of fallback users if normal DB lookup fails
-            const fallbackUser = await checkFallbackUsers(credentials.email, credentials.password);
+            const fallbackUser = await checkFallbackUsers(credentials.usernameOrEmail, credentials.password);
             if (fallbackUser) {
-              console.log(`Found fallback user for: ${credentials.email}`);
+              console.log(`Found fallback user for: ${credentials.usernameOrEmail}`);
               return fallbackUser;
             }
             
             throw new Error("No account found with this email address");
           }
           
-          console.log(`User found, verifying password for: ${credentials.email}`);
+          console.log(`User found, verifying password for: ${credentials.usernameOrEmail}`);
     
           // Verify password
           if (!user.password) {
-            console.error(`User ${credentials.email} has no password set`);
+            console.error(`User ${credentials.usernameOrEmail} has no password set`);
             throw new Error("Account requires password reset");
           }
           
           const passwordMatch = await bcrypt.compare(credentials.password, user.password);
-          console.log(`Password verification result for ${credentials.email}: ${passwordMatch ? 'match' : 'mismatch'}`);
+          console.log(`Password verification result for ${credentials.usernameOrEmail}: ${passwordMatch ? 'match' : 'mismatch'}`);
           
           if (!passwordMatch) {
             throw new Error("Incorrect password");
           }
           
-          console.log(`Authentication successful for: ${credentials.email}`);
+          console.log(`Authentication successful for: ${credentials.usernameOrEmail}`);
           return {
             id: user.id.toString(),
             email: user.email,

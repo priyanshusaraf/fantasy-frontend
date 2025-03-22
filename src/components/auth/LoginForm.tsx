@@ -47,11 +47,10 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       
       setIsSubmitting(true);
       
-      // Simplified credentials object - just use the single credential field correctly
-      // NextAuth expects email field for credentials provider
+      // Fix: Use usernameOrEmail instead of email to match server expectations
       const signInResult = await signIn("credentials", {
         redirect: false,
-        email: username, // Use username input as email
+        usernameOrEmail: username, // Fix: Changed from 'email' to 'usernameOrEmail'
         password,
         callbackUrl: callbackUrl
       });
