@@ -30,7 +30,7 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginFailed, setLoginFailed] = useState(false);
   const [error, setError] = useState("");
-  const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
+  const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'disconnected' | 'fallback'>('checking');
   const [isCheckingDb, setIsCheckingDb] = useState(false);
   
   // Function to check database connection
@@ -67,11 +67,25 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       }
       
       const data = await response.json();
-      const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
       
-      setDbStatus(isConnected ? 'connected' : 'disconnected');
+      // Check if we're using fallback database
+      if (data.connected && data.usingFallback) {
+        setDbStatus('fallback');
+        console.log('Using fallback database:', data);
+      } else {
+        const isConnected = data.connected !== undefined ? data.connected : data.status === 'healthy';
+        setDbStatus(isConnected ? 'connected' : 'disconnected');
+      }
       
-      if (!isConnected) {
+      // Show appropriate notifications
+      if (data.connected) {
+        if (data.usingFallback) {
+          toast.info('Using development fallback database', {
+            description: 'The application is running with a local database. Some features may be limited.',
+            duration: 5000
+          });
+        }
+      } else {
         console.error('Database connection issue:', data);
         toast.error('System issue: Database connection problem detected', {
           description: 'Your login might fail. Please try again in a few moments.',
@@ -203,20 +217,93 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
     }
   };
 
+  const diagnoseDatabase = async () => {
+    try {
+      toast.info("Diagnosing database issues...");
+      const response = await fetch('/api/debug-db', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Database diagnostic report:', data);
+      
+      if (data.success) {
+        toast.success("Database diagnostics completed", {
+          description: "Check the console for detailed information",
+          duration: 5000
+        });
+        
+        // Show SQLite status if using fallback
+        if (data.database?.usingFallback) {
+          if (data.database.sqlite?.tested) {
+            toast.success("SQLite fallback is working properly");
+          } else {
+            toast.error("SQLite fallback is configured but not working");
+          }
+        }
+      } else {
+        toast.error("Database diagnostics failed", {
+          description: data.error || "Unknown error",
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Database diagnostics error:', error);
+      toast.error("Failed to run database diagnostics", {
+        description: error instanceof Error ? error.message : "Unknown error",
+        duration: 5000
+      });
+    }
+  };
+
   const attemptDirectAdminLogin = async () => {
     try {
       setIsSubmitting(true);
       toast.info("Attempting direct admin login...");
       
-      // Try both providers sequentially
+      // Try the new direct API endpoint first (works without database)
+      try {
+        const directResponse = await fetch('/api/auth/direct-login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: username || process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@example.com",
+            password: password || process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "adminpass123",
+          }),
+        });
+        
+        const directData = await directResponse.json();
+        
+        if (directResponse.ok && directData.success) {
+          toast.success("Emergency admin login successful");
+          console.log("Direct admin login succeeded");
+          window.location.href = directData.redirectTo || "/admin/dashboard";
+          return;
+        }
+        
+        console.log("Direct admin login failed:", directData);
+      } catch (directError) {
+        console.error("Direct login API error:", directError);
+      }
+      
+      // Fall back to NextAuth admin provider if direct method fails
       const adminResult = await signIn("admin-credentials", {
         redirect: false,
         usernameOrEmail: username || process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@example.com",
-        password: password || process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "adminpass",
+        password: password || process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "adminpass123",
         callbackUrl: "/admin/dashboard"
       });
       
-      console.log("Direct admin login attempt:", {
+      console.log("NextAuth admin login attempt:", {
         success: !adminResult?.error,
         error: adminResult?.error,
         email: username,
@@ -229,10 +316,56 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
         return;
       }
       
-      toast.error("Direct admin login failed: " + adminResult.error);
+      toast.error("All admin login methods failed", {
+        description: adminResult?.error || "Unknown error",
+        duration: 8000
+      });
     } catch (error) {
       console.error("Direct admin login error:", error);
       toast.error("Direct admin login attempt failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Add emergency login method
+  const emergencyLogin = async () => {
+    try {
+      setIsSubmitting(true);
+      
+      // Show a confirmation dialog
+      if (!window.confirm("This will attempt an emergency login, bypassing the database. Continue?")) {
+        setIsSubmitting(false);
+        return;
+      }
+      
+      toast.info("Attempting emergency login...");
+      
+      // Try direct login API
+      const response = await fetch('/api/auth/direct-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: "admin@example.com",
+          password: "adminpass123", 
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        toast.success("Emergency login successful");
+        window.location.href = data.redirectTo || "/admin/dashboard";
+      } else {
+        toast.error("Emergency login failed", {
+          description: data.error || "Unknown error"
+        });
+      }
+    } catch (error) {
+      console.error("Emergency login error:", error);
+      toast.error("Emergency login failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -247,6 +380,7 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
         {/* Database connection status indicator */}
         <div className={`flex items-center justify-center gap-2 text-sm p-2 rounded-md mt-2 
           ${dbStatus === 'connected' ? 'text-green-600 bg-green-50' : 
+            dbStatus === 'fallback' ? 'text-blue-600 bg-blue-50' :
             dbStatus === 'disconnected' ? 'text-red-600 bg-red-50' : 
             'text-amber-600 bg-amber-50'}`}>
           
@@ -254,6 +388,11 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
             <>
               <CheckCircle size={16} />
               <span>Database connected</span>
+            </>
+          ) : dbStatus === 'fallback' ? (
+            <>
+              <Database size={16} />
+              <span>Using development database</span>
             </>
           ) : dbStatus === 'disconnected' ? (
             <>
@@ -350,6 +489,12 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
             Warning: Database is currently unavailable. Login may fail.
           </p>
         )}
+        
+        {dbStatus === 'fallback' && (
+          <p className="text-xs text-center text-blue-600">
+            Using development database mode. Limited functionality available.
+          </p>
+        )}
       </form>
       
       <div className="text-center text-sm">
@@ -359,15 +504,23 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
         </Link>
       </div>
 
-      <button 
-        type="button" 
-        className="text-sm text-muted-foreground mt-4"
-        onClick={testDirectAuth}
-      >
-        Run Auth Diagnostics
-      </button>
+      <div className="flex flex-col space-y-2">
+        <button 
+          type="button" 
+          className="text-sm text-muted-foreground"
+          onClick={testDirectAuth}
+        >
+          Run Auth Diagnostics
+        </button>
 
-      <div className="mt-4">
+        <button 
+          type="button" 
+          className="text-sm text-muted-foreground"
+          onClick={diagnoseDatabase}
+        >
+          Diagnose Database Issues
+        </button>
+
         <button 
           type="button" 
           className="text-xs text-muted-foreground underline"
@@ -375,6 +528,16 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
         >
           Admin Login Troubleshooter
         </button>
+        
+        {dbStatus === 'disconnected' && (
+          <button 
+            type="button" 
+            className="text-xs text-red-500 font-semibold mt-2"
+            onClick={emergencyLogin}
+          >
+            EMERGENCY LOGIN
+          </button>
+        )}
       </div>
 
       {loginFailed && (

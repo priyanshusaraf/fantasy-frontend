@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server';
-import prisma, { checkDatabaseConnection } from '@/lib/db';
+import prisma, { checkDatabaseConnection, isUsingFallbackDatabase } from '@/lib/db';
 
 // Keep a history of recent connection statuses
-const connectionHistory: Array<{ timestamp: number; connected: boolean; error?: string }> = [];
+const connectionHistory: Array<{ 
+  timestamp: number; 
+  connected: boolean; 
+  usingFallback: boolean;
+  error?: string;
+}> = [];
 const MAX_HISTORY = 10;
 
 // Add a record to connection history
-function recordConnectionStatus(connected: boolean, error?: string) {
+function recordConnectionStatus(connected: boolean, usingFallback: boolean, error?: string) {
   const timestamp = Date.now();
-  connectionHistory.unshift({ timestamp, connected, error });
+  connectionHistory.unshift({ timestamp, connected, usingFallback, error });
   
   // Trim history to keep only the latest entries
   if (connectionHistory.length > MAX_HISTORY) {
@@ -55,8 +60,11 @@ export async function GET() {
       connected = false;
     }
     
+    // Get fallback status
+    const usingFallback = isUsingFallbackDatabase();
+    
     // Record this connection status
-    const timestamp = recordConnectionStatus(connected, error || undefined);
+    const timestamp = recordConnectionStatus(connected, usingFallback, error || undefined);
     
     // Calculate total latency
     const totalLatency = Date.now() - startTime;
@@ -65,6 +73,8 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       connected,
+      usingFallback,
+      fallbackAvailable: process.env.ENABLE_DB_FALLBACK === 'true',
       timestamp,
       timestampISO: new Date(timestamp).toISOString(),
       latency: {
@@ -79,11 +89,13 @@ export async function GET() {
     console.error('Error in database connection check API:', error);
     
     // Record this failed connection
-    const timestamp = recordConnectionStatus(false, error.message || 'Unknown error');
+    const timestamp = recordConnectionStatus(false, false, error.message || 'Unknown error');
     
     return NextResponse.json({
       success: false,
       connected: false,
+      usingFallback: false,
+      fallbackAvailable: process.env.ENABLE_DB_FALLBACK === 'true',
       timestamp,
       timestampISO: new Date(timestamp).toISOString(),
       error: error.message || 'Unknown error occurred while checking database connection',

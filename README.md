@@ -152,3 +152,50 @@ You can test the maintenance mode by:
 1. Temporarily stopping your database server
 2. Visiting a protected route like `/admin` or `/wallet`
 3. You should be redirected to the `/maintenance` page
+
+## Database Connection Troubleshooting
+
+If you encounter database connection issues, follow these steps:
+
+1. **Run the database reset and diagnostic script**:
+
+```bash
+node src/scripts/test-db-connection.mjs --reset
+```
+
+This script will:
+- Kill any idle database connections
+- Update your connection parameters with longer timeouts
+- Test and verify the database connection
+- Output detailed diagnostics about your database
+
+2. **Manual connection parameter adjustment**:
+
+If you still have issues, try updating the `DATABASE_URL` in `.env.local` with longer timeouts:
+
+```
+DATABASE_URL="mysql://user:password@hostname:3306/dbname?connection_limit=5&pool_timeout=60000&connect_timeout=60000&socket_timeout=60000&ssl=true"
+```
+
+3. **Check AWS RDS status**:
+
+- Verify your RDS instance is running
+- Check security groups to ensure they allow connections from your application
+- Monitor RDS metrics for high CPU or memory usage
+
+4. **Common issues and solutions**:
+
+- **ETIMEDOUT errors**: Indicates network connectivity issues or firewall restrictions
+- **Access Denied errors**: Check database credentials
+- **Too many connections**: Increase `max_connections` parameter in RDS
+- **SSL/TLS issues**: Try with `ssl=false` for testing
+
+## Running the Application
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+The application will be available at [http://localhost:3000](http://localhost:3000).
