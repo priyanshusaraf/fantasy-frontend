@@ -68,15 +68,29 @@ export function LoginForm({ callbackUrl = "/user/dashboard" }: LoginFormProps) {
       // Show success toast
       toast.success("Login successful");
       
-      // Redirect immediately without timeout
-      console.log("Login successful, redirecting to user dashboard");
+      // Get session to check user role
+      const session = await fetch('/api/auth/session');
+      const sessionData = await session.json();
       
-      // Use router.push instead of window.location for smoother navigation
-      if (signInResult?.url) {
-        window.location.href = signInResult.url;
-      } else {
-        window.location.href = callbackUrl || "/user/dashboard";
+      // Determine correct dashboard based on user role
+      let targetUrl = callbackUrl;
+      if (!targetUrl || targetUrl === "/user/dashboard") {
+        const role = sessionData?.user?.role;
+        // Only override if it's the default
+        if (role === "TOURNAMENT_ADMIN" || role === "MASTER_ADMIN") {
+          targetUrl = "/admin/dashboard";
+        } else if (role === "REFEREE") {
+          targetUrl = "/referee/dashboard";
+        } else if (role === "PLAYER") {
+          targetUrl = "/player/dashboard";
+        } else {
+          targetUrl = "/user/dashboard";
+        }
+        console.log(`Redirecting based on role: ${role} to ${targetUrl}`);
       }
+      
+      // Use signInResult.url if available (NextAuth redirect logic), otherwise use role-based redirect
+      window.location.href = signInResult?.url || targetUrl;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Authentication failed";
       console.error("Login error:", error);
